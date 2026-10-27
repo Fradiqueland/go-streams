@@ -1,0 +1,11 @@
+{
+  "bytes": 3710962,
+  "sha256": "abde2eb590f9bb706eeaa9b6630809acfcd107d90a34c142239ae1ef8b9161fe",
+  "architectures": [
+    "x64",
+    "arm64"
+  ],
+  "sourceSha256": "193309758ff175846bc8a6867a723d93eaa2d1f6d26ca068a582b00af246715e",
+  "toolchain": "go version go1.27.3 windows/amd64",
+  "macExecutionVerified": false
+}

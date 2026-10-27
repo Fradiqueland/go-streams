@@ -1,0 +1,35 @@
+# Keep only application source and build inputs at the project root.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/app/
+# Runtime state, local reports, compiled releases and developer dependencies.
+**/data/
+**/.tmp/
+**/__pycache__/
+**/*.pyc
+**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/session.url
+**/vault.key
+**/vault.dpapi
+**/*.backup
+/app/release/
+# Downloadable runtime binaries and archives; keep pinned manifests and notices.
+/app/vendor/runtime/*
+!/app/vendor/runtime/downloads.json
+!/app/vendor/runtime/darwin-x64/
+!/app/vendor/runtime/darwin-arm64/
+!/app/vendor/runtime/win32-x64/
+/app/vendor/runtime/*/*
+!/app/vendor/runtime/*/manifest.json
+!/app/vendor/runtime/*/*LICENSE*.txt
+!/app/vendor/runtime/*/FFMPEG-README.txt
+/app/vendor/yt-dlp/*
+!/app/vendor/yt-dlp/manifest.json
+!/app/vendor/yt-dlp/LICENSE
+!/app/vendor/yt-dlp/THIRD_PARTY_LICENSES.txt

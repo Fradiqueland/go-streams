@@ -1,0 +1,38 @@
+{
+  "target": "darwin-x64",
+  "node": "24.14.1",
+  "nodeArchiveSha256": "2526230ad7d922be82d4fdb1e7ee1e84303e133e3b4b0ec4c2897ab31de0253d",
+  "ffmpeg": "b6.1.1",
+  "files": [
+    {
+      "name": "node",
+      "bytes": 121494672,
+      "sha256": "9ab4f6249a8de4671c3205ef58621dfb19d120a9c59fd96ed206571bafb0319c"
+    },
+    {
+      "name": "NODE-LICENSE.txt",
+      "bytes": 156926,
+      "sha256": "4573185d56580da2b890ba34a85a409257640f1c5632eade4300137266194d18"
+    },
+    {
+      "name": "ffmpeg",
+      "bytes": 78862176,
+      "sha256": "ebdddc936f61e14049a2d4b549a412b8a40deeff6540e58a9f2a2da9e6b18894"
+    },
+    {
+      "name": "ffprobe",
+      "bytes": 78780408,
+      "sha256": "fa3add0ce901f7241abe0dfc0155d958fc834aca3f8ce61f87cc712ae669c1e0"
+    },
+    {
+      "name": "FFMPEG-LICENSE.txt",
+      "bytes": 4346,
+      "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af"
+    },
+    {
+      "name": "FFMPEG-README.txt",
+      "bytes": 6227,
+      "sha256": "e88a0325f8e5b75210355e37341824f074d3cd82def2125be54c914b62848a36"
+    }
+  ]
+}

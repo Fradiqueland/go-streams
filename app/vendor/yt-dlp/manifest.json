@@ -1,0 +1,54 @@
+{
+  "version": "2026.10.21",
+  "upstream": "https://github.com/yt-dlp/yt-dlp/releases/tag/2026.10.21",
+  "files": [
+    {
+      "path": "win32/yt-dlp.exe",
+      "platforms": [
+        "win32"
+      ],
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp.exe",
+      "bytes": 17880111,
+      "sha256": "33121d192d706e62f684a06f80918e3f3a8ba52ac3a65213b6951c39c7d9f555"
+    },
+    {
+      "path": "darwin/yt-dlp",
+      "platforms": [
+        "darwin"
+      ],
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp_macos",
+      "bytes": 37180736,
+      "sha256": "7a6fe71d7d680f1fb0ac18d4949873d77db2859e90017c0f44bd94b23be4ee40"
+    },
+    {
+      "path": "source/yt-dlp.tar.gz",
+      "platforms": [
+        "win32",
+        "darwin"
+      ],
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.21/yt-dlp.tar.gz",
+      "bytes": 6028705,
+      "sha256": "5f1e419f76e49c996061511ef9eacce50d4aa4959c34480539562e9e1295708d"
+    },
+    {
+      "path": "LICENSE",
+      "platforms": [
+        "win32",
+        "darwin"
+      ],
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.21/LICENSE",
+      "bytes": 1211,
+      "gitSha1": "68a49daad8ff7e35068f2b7a97d643aab440eaec"
+    },
+    {
+      "path": "THIRD_PARTY_LICENSES.txt",
+      "platforms": [
+        "win32",
+        "darwin"
+      ],
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.10.21/THIRD_PARTY_LICENSES.txt",
+      "bytes": 243550,
+      "gitSha1": "88f9872c66b456703e91ca32db4041e1ec47258d"
+    }
+  ]
+}

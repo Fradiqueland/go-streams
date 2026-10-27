@@ -1,0 +1,14 @@
+{
+  "module": "github.com/jetbrains/go-dmg-writer",
+  "moduleVersion": "v0.0.0-20260914114223-48284c0071ae",
+  "moduleZipSha256": "30080f3c9eee41dd34130970c24320334c576e729918bd586fc11ded56b19e1a",
+  "go": {
+    "version": "go1.27.3",
+    "filename": "go1.27.3.windows-amd64.zip",
+    "os": "windows",
+    "arch": "amd64",
+    "sha256": "f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff",
+    "size": 79010309,
+    "kind": "archive"
+  }
+}

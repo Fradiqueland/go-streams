@@ -1,0 +1,38 @@
+{
+  "target": "win32-x64",
+  "node": "24.14.1",
+  "ffmpeg": "9.0.2-full_build-www.gyan.dev",
+  "origin": "Installed OpenJS-signed Node and WinGet Gyan.FFmpeg; copied unchanged",
+  "files": [
+    {
+      "name": "FFMPEG-LICENSE.txt",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "name": "FFMPEG-README.txt",
+      "bytes": 45523,
+      "sha256": "e7db34704804ed8844e837714eebbf843ca0a499555541df9e47fa2cc033dcb1"
+    },
+    {
+      "name": "ffmpeg.exe",
+      "bytes": 227823104,
+      "sha256": "589e50b766d251afdf181dd664d40bd94407e200b019989fd7468c7d118a28d0"
+    },
+    {
+      "name": "ffprobe.exe",
+      "bytes": 227621376,
+      "sha256": "02264dfa4f56baaa31e443ece8aa16d397f6b008200e7fd184d22b9009e75fd3"
+    },
+    {
+      "name": "NODE-LICENSE.txt",
+      "bytes": 159882,
+      "sha256": "523a930fb637c449ad05d17f2feea062edc999b80f14bb5bbb5e0679506f6f9e"
+    },
+    {
+      "name": "node.exe",
+      "bytes": 91426304,
+      "sha256": "58e74bf02fc5bbacc41dcb8bef089961cd5bddd37830b87784e4fc624d145d1f"
+    }
+  ]
+}
