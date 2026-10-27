@@ -65,4 +65,14 @@ html[lang^="id"] .view-toggle button[data-action=media-list]::after{content:"Daf
 
 .import-options{margin-bottom:20px;flex-wrap:wrap}.import-options>button{white-space:normal}
 
+/* Local social icons stay available in expanded and compact menus. */
+.creator-social-links{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:10px 0}
+.creator-social-links a{display:inline-flex;align-items:center;justify-content:center;flex:0 0 40px;width:40px;height:40px;border:1px solid #435169;border-radius:9px;color:#e6edf7;transition:background .15s,border-color .15s}
+.creator-social-links a:hover{background:#34475c;border-color:#9cabc0;color:#fff}
+.creator-social-links a:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.creator-social-links svg{display:block;width:22px;height:22px;fill:currentColor}
+.sidebar{overflow-y:auto}.brand,.workspace-label,.sidebar-bottom{flex-shrink:0}#nav{min-height:96px}
+@media(max-width:950px){.creator-social-links{gap:4px}.creator-social-links a{flex-basis:26px;width:26px;height:32px;border-radius:6px}.creator-social-links svg{width:18px;height:18px}}
+@media(min-width:951px){html[data-compact-nav="true"] .creator-social-links{gap:4px}html[data-compact-nav="true"] .creator-social-links a{flex-basis:26px;width:26px;height:32px;border-radius:6px}html[data-compact-nav="true"] .creator-social-links svg{width:18px;height:18px}}
+
 .overlay-shortcut{display:flex;justify-content:flex-end;margin-bottom:14px}.overlay-editor fieldset{border:1px solid var(--border);border-radius:8px;margin:18px 0;padding:16px;min-width:0}.overlay-editor legend{font-weight:700;padding:0 8px}.overlay-preview{position:relative;aspect-ratio:16/9;width:100%;background:linear-gradient(135deg,#263449,#526783);overflow:hidden;border-radius:8px;container-type:inline-size}.overlay-preview>img{position:absolute;height:auto}.overlay-bar{position:absolute;left:0;width:100%;overflow:hidden;display:flex;align-items:center}.overlay-bar.top{top:0}.overlay-bar.bottom{bottom:0}.overlay-bar>span{position:absolute;left:0;white-space:pre;font-family:Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;font-weight:bold;animation:overlay-scroll linear infinite}@keyframes overlay-scroll{from{transform:translateX(100cqw)}to{transform:translateX(-100%)}}@media(prefers-reduced-motion:reduce){.overlay-bar>span{animation:none;position:relative;padding-left:8px}}
