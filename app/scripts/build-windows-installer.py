@@ -114,7 +114,7 @@ def build_msi(application,output,version,*,test_identity=None):
     add('Property',[
         ('UpgradeCode',upgrade),('INSTALLLEVEL','1'),('DefaultUIFont','Normal'),
         ('REBOOT','ReallySuppress'),('MSIRESTARTMANAGERCONTROL','DisableShutdown'),
-        ('ARPPRODUCTICON','GoStreamsIcon'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
+        ('ARPPRODUCTICON','GoStreams.exe'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
         ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYDATADIR'),
         ('REINSTALLMODE','amus'),('ARPCOMMENTS','User projects and profiles are preserved when updating or uninstalling.')
     ])
@@ -155,10 +155,12 @@ def build_msi(application,output,version,*,test_identity=None):
         ('PortableData',1,registry,'LegacyDataDirectory','[LEGACYDATADIR]','Registration')
     ])
     executable=identity('F','GoStreams.exe')
-    add('Icon',[('GoStreamsIcon',msilib.Binary(str(application/'public/icon.ico')))])
+    # Shortcut icon resources must be PE files with the target's .exe extension.
+    # The launcher is small and already embeds the selected application icon.
+    add('Icon',[('GoStreams.exe',msilib.Binary(str(application/'GoStreams.exe')))])
     add('Shortcut',[
-        ('DesktopShortcut','DesktopFolder','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreamsIcon',0,1,'INSTALLDIR'),
-        ('StartMenuShortcut','GoStreamsMenu','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreamsIcon',0,1,'INSTALLDIR')
+        ('DesktopShortcut','DesktopFolder','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreams.exe',0,1,'INSTALLDIR'),
+        ('StartMenuShortcut','GoStreamsMenu','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreams.exe',0,1,'INSTALLDIR')
     ])
     add('CreateFolder',[('GoStreamsMenu','Registration')])
     add('RemoveFile',[('RemoveEmptyStartMenu','Registration',None,'GoStreamsMenu',2)])

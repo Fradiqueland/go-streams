@@ -36,6 +36,7 @@ def validate(package):
         assert required in paths, 'Missing installer component: '+required
     assert {row[1] for row in shortcuts}=={'DesktopFolder','GoStreamsMenu'}
     assert all(row[4]=='[#'+paths['GoStreams.exe']+']' for row in shortcuts)
+    assert all(row[8]=='GoStreams.exe' for row in shortcuts) and properties['ARPPRODUCTICON']=='GoStreams.exe'
     assert all(row[0]==properties['UpgradeCode'] for row in upgrades)
     assert sequence['InstallInitialize']<sequence['RemoveExistingProducts']<sequence['ProcessComponents']
     assert not rows(db,'CustomAction'), 'Shipping package must not execute custom installer scripts'
