@@ -11,6 +11,13 @@ const {privateKey,publicKey}=crypto.generateKeyPairSync('ed25519');const key=pub
 function manifest(overrides={}){const release={product:'go-streams',platform:process.platform,version:'99.0.0',url:'https://updates.example.test/app.zip',sha256:crypto.createHash('sha256').update(archive).digest('hex'),bytes:archive.length,...overrides};const payload=Buffer.from(JSON.stringify(release));return{payload:payload.toString('base64'),signature:crypto.sign(null,payload,privateKey).toString('base64')};}
 function make(fetcher){const store=new Store(fs.mkdtempSync(path.join(root,'data-')));const u=new Updates(store,{fetcher});closers.push(u);u.save({feed:'https://updates.example.test/latest.json',publicKey:key});return u;}
 
+test('signed Electron NSIS updates retain their executable extension without starting setup',{skip:process.platform!=='win32'},async()=>{
+ const envelope=manifest({url:'https://updates.example.test/GoStreams-99.0.0-Electron-Setup.exe',format:'nsis'});
+ const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(envelope):archive));
+ await u.check();assert.equal(u.release.format,'nsis');await u.download();
+ assert.ok(u.state().package.endsWith('.exe'));assert.equal(u.state().format,'nsis');assert.deepEqual(fs.readFileSync(u.state().package),archive);
+});
+
 test('signed Windows installers retain their MSI extension and leave existing user profiles unchanged',{skip:process.platform!=='win32'},async()=>{
  const envelope=manifest({url:'https://updates.example.test/GoStreams-99.0.0-Setup.msi',format:'msi'});
  const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(envelope):archive));

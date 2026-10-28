@@ -3,6 +3,7 @@
 !/.gitignore
 !/.gitattributes
 !/README.md
+!/.github/
 !/app/
 # Runtime state, local reports, compiled releases and developer dependencies.
 **/data/

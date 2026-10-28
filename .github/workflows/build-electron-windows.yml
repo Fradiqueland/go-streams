@@ -1,0 +1,86 @@
+name: Build Electron Windows installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/build-electron-windows.yml']
+permissions:
+  contents: read
+concurrency:
+  group: electron-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Prepare verified application runtimes
+        run: |
+          node --input-type=module -e "import {prepareYtdlp} from './scripts/vendor-ytdlp.mjs'; import {prepareRuntime} from './scripts/vendor-runtime.mjs'; await prepareYtdlp(process.cwd(),{platforms:['win32']}); await prepareRuntime(process.cwd(),'win32');"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/build.mjs --platform=win32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test application and data preservation
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          node scripts/check.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare Electron and installer compiler
+        run: |
+          $toolchain = Get-Content electron/toolchain.json -Raw | ConvertFrom-Json
+          $tools = Join-Path $env:RUNNER_TEMP 'gostreams-build-tools'
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          Invoke-WebRequest -Uri $toolchain.url -OutFile (Join-Path $tools 'electron.zip')
+          $actual = (Get-FileHash -LiteralPath (Join-Path $tools 'electron.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $toolchain.sha256) { throw 'Official Electron checksum mismatch' }
+          Invoke-WebRequest -Uri 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe' -OutFile (Join-Path $tools 'rcedit-x64.exe')
+          $nsis = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if ($nsis) { $compiler = $nsis.Source } else {
+            choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'NSIS compiler unavailable' }
+          "GS_BUILD_TOOLS=$tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "GS_NSIS=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build Electron setup EXE
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          python scripts/build-electron-windows.py --electron-zip "$env:GS_BUILD_TOOLS\electron.zip" --application-root "release/GoStreams-$version" --nsis "$env:GS_NSIS" --rcedit "$env:GS_BUILD_TOOLS\rcedit-x64.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify installation, upgrades and uninstallation
+        run: |
+          python scripts/verify-electron-installer.py --nsis "$env:GS_NSIS"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native Electron window and persistent sessions
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $report = Get-Content "release/GoStreams-$version-Electron-build.json" -Raw | ConvertFrom-Json
+          node scripts/verify-electron.mjs "$($report.application)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload installer and verification reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: GoStreams-Electron-Windows
+          path: |
+            app/release/*Electron-Setup.exe
+            app/release/*Electron*verification.json
+            app/release/*Electron-build.json
+          if-no-files-found: error
+          retention-days: 30

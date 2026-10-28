@@ -2,7 +2,17 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **0.16.0**. Windows now also has a native MSI installer. The existing Mac portable delivery remains at **0.15.5** until rebuilt.
+Current source version: **0.17.0**. Windows now also has an Electron desktop edition and setup EXE. The existing Mac portable delivery remains at **0.15.5** until rebuilt.
+
+## Electron Windows edition
+
+The Electron edition includes its own Chromium window and Node.js runtime, plus FFmpeg, FFprobe and yt-dlp. The setup EXE installs the application and creates desktop and Start menu shortcuts. It uses the fixed identity `net.antoniofradique.gostreams`; install files are separate from `%LOCALAPPDATA%\Go Streams\data`. The Electron session stays in `data\electron-session` across upgrades. Uninstallation deletes only the packaged files and keeps projects, protected credentials, session data and unknown user-added files.
+
+The first launch reuses existing Go Streams projects and credentials. Local UI preferences can be copied once from the old dedicated browser profile. Edge/Chrome cookie databases remain untouched and are not converted into Electron cookies; external services may require a first sign-in in a different browser. Subsequent Electron updates keep the same persistent session path.
+
+Closing the Electron window drains the engine and exits. When streams or other operations are active, closing requires confirmation. HTTPS product and social links open in the system browser. The renderer has no Node.js integration and runs with context isolation and Chromium sandboxing enabled.
+
+The pinned Electron ZIP and official SHA-256 digest are recorded in `app/electron/toolchain.json`. Build with `app/scripts/build-electron-windows.py`; use `--portable` to recover verified runtimes from an existing single-file release or `--application-root` for a prepared Windows folder. Supply the pinned ZIP, NSIS compiler and rcedit through the documented command-line arguments. The GitHub workflow builds the setup EXE on Windows and runs installer and native session tests; its reports distinguish successful verification from failures. No code signing certificate or live update feed is included.
 
 ## Windows installation and updates
 

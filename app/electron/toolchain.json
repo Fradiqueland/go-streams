@@ -1,0 +1,8 @@
+{
+  "electronVersion": "44.9.3",
+  "archive": "electron-v44.9.3-win32-x64.zip",
+  "sha256": "41a1ffa0541cb0f2c9b9fe920dd2cef1793ad0ea2ada1a9582958880f4d1b23c",
+  "url": "https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-win32-x64.zip",
+  "checksumSource": "https://api.github.com/repos/electron/electron/releases/tags/v44.9.3",
+  "appId": "net.antoniofradique.gostreams"
+}

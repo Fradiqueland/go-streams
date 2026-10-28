@@ -1,6 +1,14 @@
-# Go Streams 0.16.0
+# Go Streams 0.17.0
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Versão Windows compilada e pacote macOS experimental, ainda sem execução validada num Mac. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
+
+## Edição Electron 0.17.0
+
+A edição Electron tem janela e navegador incorporados. O instalador `.exe` cria atalhos no ambiente de trabalho e no menu Iniciar. Os dados mantêm-se em `%LOCALAPPDATA%\Go Streams\data`, separados dos ficheiros instalados, e o perfil Electron fica em `data\electron-session`. Atualizações e desinstalação preservam essa pasta.
+
+Projetos e credenciais existentes são reutilizados. As preferências locais do antigo navegador podem ser copiadas na primeira abertura; os cookies protegidos do Edge/Chrome ficam intactos no perfil original e não são convertidos em cookies Electron. A passagem para um navegador diferente pode exigir autenticação inicial. Nas atualizações Electron seguintes, a pasta de sessão não muda.
+
+Ao fechar a janela Electron, o motor é encerrado. Se houver transmissões ou operações ativas, a aplicação pede confirmação antes de as parar. Os links externos HTTPS abrem no navegador predefinido. A janela não expõe Node.js à interface e mantém o sandbox e o isolamento de contexto.
 
 ## Instalador Windows 0.16.0
 

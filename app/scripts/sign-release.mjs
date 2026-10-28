@@ -10,7 +10,8 @@ if(!['win32','darwin'].includes(platform))throw Error('Platform must be win32 or
 newer(version,'0.0.0');const key=crypto.createPrivateKey(fs.readFileSync(keyFile));if(key.asymmetricKeyType!=='ed25519')throw Error('Use an Ed25519 private key.');
 const stat=fs.statSync(archive);if(stat.size>500*1024*1024)throw Error('Package exceeds 500 MB.');
 const hash=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(archive))hash.update(chunk);
-const format=releaseFormat({url,format:path.extname(archive).slice(1).toLowerCase()},platform);
+const extension=path.extname(archive).slice(1).toLowerCase();
+const format=releaseFormat({url,format:extension==='exe'?'nsis':extension},platform);
 const payload=Buffer.from(JSON.stringify({product:'go-streams',platform,version,url:httpsUrl(url),format,sha256:hash.digest('hex'),bytes:stat.size}));
 fs.writeFileSync(output,JSON.stringify({payload:payload.toString('base64'),signature:crypto.sign(null,payload,key).toString('base64')},null,2),{flag:'wx'});
 console.log('Signed release manifest created. The private key was not copied.');
