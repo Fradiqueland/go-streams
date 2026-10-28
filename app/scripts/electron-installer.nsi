@@ -104,7 +104,78 @@ Function LegacyDataPage
   Abort
  !insertmacro MUI_HEADER_TEXT "Keep existing projects" "Optional portable data migration"
  nsDialogs::Create 1018
- Pop…646 tokens truncated…erved." /SD IDOK
+ Pop $0
+ ${If} $0 == error
+  Abort
+ ${EndIf}
+ ${NSD_CreateLabel} 0 0 100% 56u "Existing projects in the normal Go Streams user folder are reused automatically.$\r$\n$\r$\nIf your portable edition used its own data folder, select that folder below. The original is kept. Leave empty for a new installation."
+ Pop $0
+ ${NSD_CreateDirRequest} 0 67u 78% 14u "$LegacyFolder"
+ Pop $LegacyInput
+ ${NSD_CreateBrowseButton} 81% 66u 19% 16u "Browse..."
+ Pop $0
+ ${NSD_OnClick} $0 LegacyBrowse
+ ${NSD_CreateLabel} 0 100u 100% 40u "Select the folder containing project.json. Close the old Go Streams before opening the Electron edition."
+ Pop $0
+ nsDialogs::Show
+FunctionEnd
+
+Function LegacyBrowse
+ nsDialogs::SelectFolderDialog "Select the previous portable data folder" "$LegacyFolder"
+ Pop $0
+ ${If} $0 != error
+  ${NSD_SetText} $LegacyInput "$0"
+ ${EndIf}
+FunctionEnd
+
+Function LegacyDataLeave
+ ${NSD_GetText} $LegacyInput $LegacyFolder
+ ${If} $LegacyFolder != ""
+  IfFileExists "$LegacyFolder\project.json" accepted
+   MessageBox MB_OK|MB_ICONEXCLAMATION "Choose the data folder containing project.json, or leave the field empty."
+   Abort
+  accepted:
+ ${EndIf}
+FunctionEnd
+
+Section "Go Streams" Main
+ SetShellVarContext current
+ SetRegView 64
+ ; Never replace a running Electron executable or terminate an active stream.
+ IfFileExists "$INSTDIR\GoStreams.exe" 0 check_directory
+ ClearErrors
+ FileOpen $0 "$INSTDIR\GoStreams.exe" a
+ IfErrors running
+ FileClose $0
+ Goto check_directory
+ running:
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Close Go Streams before updating, then run setup again. Your projects and sessions have not been removed." /SD IDOK
+  SetErrorLevel 2
+  Abort
+ check_directory:
+ ; An existing application directory must carry our own ownership marker.
+ IfFileExists "$INSTDIR\.gostreams-electron-install" verify_owner
+ FindFirst $0 $1 "$INSTDIR\*.*"
+ empty_directory_loop:
+  StrCmp $1 "" empty_directory
+  StrCmp $1 "." next_directory_entry
+  StrCmp $1 ".." next_directory_entry
+  FindClose $0
+  Goto foreign_directory
+ next_directory_entry:
+  FindNext $0 $1
+  Goto empty_directory_loop
+ empty_directory:
+ FindClose $0
+ Goto install_files
+ verify_owner:
+ FileOpen $0 "$INSTDIR\.gostreams-electron-install" r
+ IfErrors foreign_directory
+ FileRead $0 $1
+ FileClose $0
+ StrCmp $1 "net.antoniofradique.gostreams$\r$\n" install_files
+ foreign_directory:
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Choose a new empty application folder. Existing files were preserved." /SD IDOK
   SetErrorLevel 2
   Abort
  install_files:
