@@ -1,6 +1,18 @@
-# Go Streams 0.15.5
+# Go Streams 0.16.0
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Versão Windows compilada e pacote macOS experimental, ainda sem execução validada num Mac. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
+
+## Instalador Windows 0.16.0
+
+Abra `GoStreams-0.16.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Go Streams`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
+
+Para atualizar, encerre o Go Streams e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
+
+Na primeira instalação, os dados já existentes na pasta normal são reutilizados. Se o portable guardava os dados junto do executável, o instalador permite indicar essa pasta (a que contém `project.json`). A migração copia os conteúdos sem apagar a origem e nunca substitui dados de uma instalação já utilizada. Feche a versão portable antes de copiar o perfil do navegador.
+
+O código de atualização usa uma identidade MSI fixa entre versões e recusa versões anteriores. Os pacotes assinados do canal de atualização podem agora ser `.msi`, mantendo essa extensão após descarregar. A instalação é iniciada pelo utilizador depois de fechar a aplicação.
+
+O MSI foi gerado e o conteúdo pode ser verificado com `python scripts/verify-windows-installer.py release/GoStreams-0.16.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
 
 ## Abrir e atualizar
 

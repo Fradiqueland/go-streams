@@ -629,5 +629,6 @@
   "Não foi possível ler a imagem.": "Could not read the image.",
   "A imagem deve ter no máximo 4096 × 4096 píxeis.": "The image must not exceed 4096 × 4096 pixels.",
   "Imagem inválida.": "Invalid image.",
-  "Aguarde o restauro da cópia de segurança.": "Please wait for the backup restore to finish."
+  "Aguarde o restauro da cópia de segurança.": "Please wait for the backup restore to finish.",
+  ". Encerre a aplicação e execute o instalador. Os projetos, as definições e as sessões existentes são conservados.": ". Close the application and run the installer. Your existing projects, settings and sessions are preserved."
 }

@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 class Launcher {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
@@ -41,6 +42,17 @@ class Launcher {
     internal static string DataDirectory(string root) {
         string data = Environment.GetEnvironmentVariable("GO_STREAMS_DATA");
         if (!String.IsNullOrWhiteSpace(data)) return Path.GetFullPath(data);
+        if (Installed(root)) {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string existing = InstalledDataDirectory(local, null);
+            if (Directory.Exists(existing) && Directory.GetFileSystemEntries(existing).Length > 0) return existing;
+            string legacy = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Antonio Fradique\Go Streams", "LegacyDataDirectory", null) as string;
+            if (String.IsNullOrWhiteSpace(legacy)) {
+                string source = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Antonio Fradique\Go Streams", "LegacyPortableRoot", null) as string;
+                legacy = FindPortableData(source);
+            }
+            return InstalledDataDirectory(local, legacy);
+        }
         data = Path.Combine(root, "data");
         var folder = new DirectoryInfo(root);
         if (!Directory.Exists(data) && folder.Name.StartsWith("GoStreams-") && folder.Parent != null) {
@@ -57,6 +69,84 @@ class Launcher {
             else if (Directory.Exists(legacy)) data = legacy;
         }
         return data;
+    }
+
+    internal static bool Installed(string root) {
+        string marker = Path.Combine(root, ".installed");
+        return File.Exists(marker) && File.ReadAllText(marker).Trim() == "go-streams-installed-v1";
+    }
+
+    internal static string FindPortableData(string source) {
+        if (String.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return null;
+        var candidates = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string relative in new[]{"GoStreams-data", "data", Path.Combine("GoStreams", "data")}) {
+            string candidate = Path.Combine(source, relative);
+            if (File.Exists(Path.Combine(candidate, "project.json"))) candidates.Add(Path.GetFullPath(candidate));
+        }
+        foreach (string child in Directory.GetDirectories(source, "GoStreams*")) {
+            string candidate = Path.Combine(child, "data");
+            if (File.Exists(Path.Combine(candidate, "project.json"))) candidates.Add(Path.GetFullPath(candidate));
+        }
+        if (candidates.Count > 1) throw new IOException("More than one portable project was found. Run setup again with LEGACYDATADIR set to the data folder you want to keep.");
+        foreach (string candidate in candidates) return candidate;
+        return null;
+    }
+
+    static void RegularDataPath(string path) {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("The old data folder contains a directory link. Export its project before switching installations.");
+    }
+
+    static void CopyDataTree(string source, string destination) {
+        RegularDataPath(source); Directory.CreateDirectory(destination);
+        foreach (string file in Directory.GetFiles(source)) {
+            RegularDataPath(file);
+            // A local engine token is transient; browser cookies and profiles are kept.
+            if (Path.GetFileName(file).Equals("session.url", StringComparison.OrdinalIgnoreCase)) continue;
+            using (var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(Path.Combine(destination, Path.GetFileName(file)), FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+                input.CopyTo(output); output.Flush(true);
+            }
+        }
+        foreach (string child in Directory.GetDirectories(source))
+            CopyDataTree(child, Path.Combine(destination, Path.GetFileName(child)));
+    }
+
+    internal static string InstalledDataDirectory(string localData, string legacy) {
+        string target = Path.GetFullPath(Path.Combine(localData, "Go Streams", "data"));
+        string parent = Path.GetDirectoryName(target), stage = null;
+        using (var mutex = new Mutex(false, @"Local\GoStreams.InstalledDataMigration")) {
+            bool acquired = false;
+            try {
+                try { acquired = mutex.WaitOne(30000); } catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired) throw new IOException("Another Go Streams launch is preserving your existing data. Try again shortly.");
+                // Never merge into or overwrite any existing installed user data.
+                if (Directory.Exists(target) && Directory.GetFileSystemEntries(target).Length > 0) return target;
+                if (String.IsNullOrWhiteSpace(legacy)) return target;
+                legacy = Path.GetFullPath(legacy).TrimEnd(Path.DirectorySeparatorChar);
+                if (String.Equals(legacy, target, StringComparison.OrdinalIgnoreCase)) return target;
+                if (target.StartsWith(legacy + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                    legacy.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("The old and new data folders must be separate.");
+                if (!File.Exists(Path.Combine(legacy, "project.json"))) throw new IOException("Select the portable data folder containing project.json. Its files have not been changed.");
+                int port; if (!Int32.TryParse(Environment.GetEnvironmentVariable("GO_STREAMS_PORT"), out port) || port < 1 || port > 65535) port = 4317;
+                if (Ready(Session(legacy, port))) throw new IOException("Close the portable Go Streams before importing its profile, then open the installed version again.");
+                Directory.CreateDirectory(parent);
+                stage = Path.Combine(parent, ".data-migration-" + Guid.NewGuid().ToString("N"));
+                CopyDataTree(legacy, stage);
+                if (Directory.Exists(target)) Directory.Delete(target); // Only an empty directory, never recursive.
+                Directory.Move(stage, target); stage = null;
+                return target;
+            } finally {
+                if (stage != null && Directory.Exists(stage)) {
+                    // This is only the newly created private staging directory; source data is untouched.
+                    if (Path.GetDirectoryName(stage) != parent || !Path.GetFileName(stage).StartsWith(".data-migration-"))
+                        throw new IOException("Invalid migration staging path.");
+                    Directory.Delete(stage, true);
+                }
+                if (acquired) mutex.ReleaseMutex();
+            }
+        }
     }
 
     internal static string Session(string data, int port) {
@@ -201,7 +291,7 @@ class Launcher {
             Process engine = null, browser = null; var errors = new StringBuilder(); string url = null;
             using (var activation = new EventWaitHandle(false, EventResetMode.AutoReset, eventName)) {
                 try {
-                    Log(data, "Launcher 0.15.5 started.");
+                    Log(data, "Launcher started.");
                     url = Session(data, port);
                     if (!Ready(url)) {
                         var info = new ProcessStartInfo(node, EscapeArgument(server));

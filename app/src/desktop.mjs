@@ -5,8 +5,9 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {runProcess,AppError} from './core.mjs';
 
-export function defaultDataDirectory(root,{platform=process.platform,home=os.homedir()}={}){
-  return platform==='darwin'?path.join(home,'Library','Application Support','Go Streams'):path.join(root,'data');
+export function defaultDataDirectory(root,{platform=process.platform,home=os.homedir(),localData=process.env.LOCALAPPDATA||path.join(home,'AppData','Local'),installed=fs.existsSync(path.join(root,'.installed'))&&fs.readFileSync(path.join(root,'.installed'),'utf8').trim()==='go-streams-installed-v1'}={}){
+  if(platform==='darwin')return path.join(home,'Library','Application Support','Go Streams');
+  return platform==='win32'&&installed?path.join(localData,'Go Streams','data'):path.join(root,'data');
 }
 export async function nativePicker({platform=process.platform,execute=runProcess}={}) {
   if (platform === 'darwin') {

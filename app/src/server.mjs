@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {APP_VERSION} from './version.mjs';
 import {nativePicker,openBrowser,defaultDataDirectory,showStartupError} from './desktop.mjs';
 import { AppError, Store, Vault, Studio, toolsFor, runProcess, atomicWrite } from './core.mjs';
 import { validateEncoding } from './encoding.mjs';
@@ -69,7 +70,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/ready' && req.method === 'GET') { res.setHeader('X-Go-Streams-Ready', '1'); return json(res, { ready: true }); }
       if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state()});
       if (pathname === '/api/health' && req.method === 'GET') {
-        if (!healthCache) healthCache = Promise.all(['ffmpeg', 'ffprobe','ytdlp'].map(async key => { try { const command = toolsFor(store.data.settings)[key]; const r = await runProcess(command, [key==='ytdlp'?'--version':'-version'], { timeout: 10000 }); return [key, { available: true, version: r.stdout.split(/\r?\n/)[0] }]; } catch (e) { return [key, { available: false, error: e.message }]; } })).then(results => ({ tools: Object.fromEntries(results), version: '0.15.5', platform: os.platform(), secureStorage: process.platform === 'win32' && !portableVault ? 'Windows DPAPI' : 'Chave local privada', dataDirectory: directory }));
+        if (!healthCache) healthCache = Promise.all(['ffmpeg', 'ffprobe','ytdlp'].map(async key => { try { const command = toolsFor(store.data.settings)[key]; const r = await runProcess(command, [key==='ytdlp'?'--version':'-version'], { timeout: 10000 }); return [key, { available: true, version: r.stdout.split(/\r?\n/)[0] }]; } catch (e) { return [key, { available: false, error: e.message }]; } })).then(results => ({ tools: Object.fromEntries(results), version: APP_VERSION, platform: os.platform(), secureStorage: process.platform === 'win32' && !portableVault ? 'Windows DPAPI' : 'Chave local privada', dataDirectory: directory }));
         return json(res, await healthCache);
       }
       if(pathname==='/api/updates'&&req.method==='PUT')return json(res,updates.save(body));

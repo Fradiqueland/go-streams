@@ -2,7 +2,25 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current application version: **0.15.5**, for Windows and macOS (Intel and Apple Silicon).
+Current source version: **0.16.0**. Windows now also has a native MSI installer. The existing Mac portable delivery remains at **0.15.5** until rebuilt.
+
+## Windows installation and updates
+
+The Windows MSI includes Node.js, FFmpeg, FFprobe and yt-dlp. It installs for the current user under `%LOCALAPPDATA%\Programs\Go Streams` and creates desktop and Start menu shortcuts. Projects, settings, protected credentials and the dedicated browser profile remain under `%LOCALAPPDATA%\Go Streams\data`, outside the installation directory. Updates and uninstallation do not package or delete that data folder.
+
+Close Go Streams before installing an update. Run the new MSI over the existing installation; there is no need to uninstall first. The installer keeps the same upgrade identity and blocks installing an older version. Signed update downloads now preserve the `.msi` extension; installation is started manually after closing the application.
+
+The first installed launch reuses existing data in the standard user folder. It can also copy a portable data folder next to the installer, leaving the original untouched. If that folder is elsewhere, enter its full path (the folder containing `project.json`) in the installer's optional portable data field. Existing installed data is never overwritten by a later migration. Close the portable application before copying its browser profile. Transient local engine tokens are recreated on launch; saved browser cookies, preferences and user data are retained.
+
+Build on Windows with Python **3.11 or 3.12** (the MSI authoring module is bundled in those versions):
+
+```powershell
+cd app
+python scripts/build-windows-installer.py --portable "release/GoStreams for Windows-0.15.5.exe"
+python scripts/verify-windows-installer.py release/GoStreams-0.16.0-Windows-Setup.msi --native
+```
+
+An existing prepared Windows folder can be supplied with `--application-root` instead. Runtime bytes extracted from a single-file executable are checked against its embedded SHA-256 manifest before packaging. Python and the compiler are build requirements only. The generated application still uses an available system browser for its interface.
 
 The application source, translations, artwork, tests and packaging scripts are in [`app/`](app/). See [`app/README.md`](app/README.md) for capabilities, verification coverage and known validation limits.
 
