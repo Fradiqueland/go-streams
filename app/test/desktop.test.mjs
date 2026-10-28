@@ -25,8 +25,10 @@ test('macOS native picker parses Unicode and quoted paths, cancellation and malf
 });
 test('macOS browser opens an app window or delegates one URL without shell interpolation',()=>{
  for(const browserPresent of [true,false]){
-  let call;openBrowser('http://127.0.0.1:4317/?launch='+'a'.repeat(64),{platform:'darwin',exists:()=>browserPresent,spawnProcess:(...args)=>{call=args;const child=new EventEmitter();child.unref=()=>{};return child;}});
-  assert.equal(call[0],browserPresent?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':'/usr/bin/open');assert.equal(call[2].stdio,'ignore');assert.ok(!call[1].some(x=>x.includes('--no-sandbox')));
+  let call;const url='http://127.0.0.1:4317/?launch='+'a'.repeat(64);openBrowser(url,{platform:'darwin',directory:'/Users/João/Library/Application Support/Go Streams',prepareProfile:()=>'/Users/João/Library/Application Support/Go Streams/desktop-browser',exists:()=>browserPresent,spawnProcess:(...args)=>{call=args;const child=new EventEmitter();child.unref=()=>{};return child;}});
+  assert.equal(call[0],'/usr/bin/open');assert.equal(call[2].stdio,'ignore');assert.ok(!call[1].some(x=>x.includes('--no-sandbox')));
+  if(browserPresent){assert.deepEqual(call[1].slice(0,4),['-n','-a','/Applications/Google Chrome.app','--args']);assert.ok(call[1].includes('--app='+url));assert.ok(!call[1].some(arg=>arg.startsWith('--user-data-dir=')));assert.ok(call[1].includes('--disable-features=Translate,msEdgeTranslate'));assert.ok(!call[1].includes('-g'));}
+  else assert.deepEqual(call[1],[url]);
  }
 });
 test('POSIX group cancellation requires a child explicitly spawned as its own group',async()=>{

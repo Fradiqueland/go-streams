@@ -1,6 +1,8 @@
 name: Build Electron Windows installer
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ['app/**', '.github/workflows/build-electron-windows.yml']
   push:
     branches: [main]
     paths: ['app/**', '.github/workflows/build-electron-windows.yml']

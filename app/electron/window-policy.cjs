@@ -5,6 +5,11 @@ function appUrl(value,base){
  try{const u=new URL(value);return u.origin===base&&u.pathname==='/'&&!u.username&&!u.password;}catch{return false;}
 }
 function rendererPreferences(session){return {session,nodeIntegration:false,nodeIntegrationInWorker:false,nodeIntegrationInSubFrames:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,backgroundThrottling:false};}
+function activateWindow(window){
+ if(!window||window.isDestroyed())return;
+ if(window.isMinimized())window.restore();
+ window.show();window.moveTop();window.focus();
+}
 function wireNavigation(contents,{base,openExternal}){
  const external=value=>{const safe=externalUrl(value);if(safe)Promise.resolve(openExternal(safe)).catch(()=>{});};
  contents.setWindowOpenHandler(({url})=>{external(url);return {action:'deny'};});
@@ -24,4 +29,4 @@ function shutdownCoordinator({backend,confirm,finish}){
   try{return await pending;}finally{pending=null;}
  };
 }
-module.exports={externalUrl,appUrl,rendererPreferences,wireNavigation,shutdownCoordinator};
+module.exports={externalUrl,appUrl,rendererPreferences,activateWindow,wireNavigation,shutdownCoordinator};

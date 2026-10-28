@@ -1,0 +1,58 @@
+name: Build and verify Mac portable
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['app/**', '.github/workflows/build-mac.yml']
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/build-mac.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mac-portable-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Prepare verified Intel and Apple Silicon runtimes
+        run: |
+          node --input-type=module -e "import {prepareYtdlp} from './scripts/vendor-ytdlp.mjs'; import {prepareRuntime} from './scripts/vendor-runtime.mjs'; await prepareYtdlp(process.cwd(),{platforms:['darwin']}); await prepareRuntime(process.cwd(),'darwin');"
+          target=$(node -p "process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64'")
+          echo "$PWD/vendor/runtime/$target" >> "$GITHUB_PATH"
+          echo "$PWD/vendor/yt-dlp/darwin" >> "$GITHUB_PATH"
+      - name: Test application and Mac startup
+        run: |
+          node scripts/check.mjs
+          npm test
+      - name: Build and exercise the native Mac application
+        run: |
+          node scripts/build.mjs --platform=darwin
+          version=$(node -p "require('./package.json').version")
+          node scripts/verify-mac-runtime.mjs "release/GoStreams-$version-mac/GoStreams.app"
+      - name: Package Mac portable
+        run: python scripts/package-mac-portable.py
+      - name: Upload Mac package and verification reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: GoStreams-Mac-Portable
+          path: |
+            app/release/*Mac-Portable.zip
+            app/release/*Mac-Portable-verification.json
+            app/release/*Mac-runtime-verification.json
+          if-no-files-found: error
+          retention-days: 30
