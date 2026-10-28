@@ -3,6 +3,12 @@ from pathlib import Path
 import argparse, ctypes, hashlib, importlib.util, json, os, subprocess, time, uuid
 ROOT=Path(__file__).resolve().parents[1]
 
+def run_installer(exe, target, timeout=120):
+    # NSIS consumes /D= as the unquoted remainder of the Windows command line.
+    # Passing an argv list makes Python quote paths with spaces, hiding /D=.
+    command=subprocess.list2cmdline([str(exe),'/S'])+' /D='+str(target)
+    return subprocess.run(command,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW).returncode
+
 def verify_directory_validation(work, nsis, builder):
     # Silent installation skips the directory page. Execute its actual callback
     # separately so a disabled Next button cannot pass the silent-install tests.
@@ -22,9 +28,9 @@ def verify_directory_validation(work, nsis, builder):
     existing=work/'Existing';existing.mkdir()
     new=work/'New parent'/'Go Streams Electron'
     def check(target, allowed):
-        result=subprocess.run([str(probe),'/S','/D='+str(target)],timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
-        assert (result.returncode==0)==allowed, f'Directory validation: {target}: {result.returncode}'
-    for target in [existing,new,work/'Acentos João'/'Go Streams Electron']:
+        result=run_installer(probe,target,timeout=30)
+        assert (result==0)==allowed, f'Directory validation: {target}: {result}'
+    for target in [existing,new,work/'Acentos Jo�o'/'Go Streams Electron']:
         check(target,True)
     assert not new.parent.exists(), 'Validation must not create the destination'
     for target in [Path(work.anchor),os.environ['LOCALAPPDATA'],os.environ['USERPROFILE'],os.environ['WINDIR'],os.environ.get('ProgramFiles(x86)',os.environ['ProgramFiles']),data_root,data_root/'data',data_root/'new',data_root/'other'/'..'/'data']:
@@ -44,7 +50,7 @@ def main():
         file=data/relative;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(content)
     def snapshot():return {str(f.relative_to(data)):hashlib.sha256(f.read_bytes()).hexdigest() for f in data.rglob('*') if f.is_file()}
     original=snapshot()
-    def apply(exe,target):return subprocess.run([str(exe),'/S','/D='+str(target)],timeout=120,creationflags=subprocess.CREATE_NO_WINDOW).returncode
+    apply=run_installer
     assert not install.parent.exists()
     assert apply(one,install)==0
     assert (install/'revision.txt').read_text()=='first' and (work/'Desktop/Go Streams.lnk').is_file()

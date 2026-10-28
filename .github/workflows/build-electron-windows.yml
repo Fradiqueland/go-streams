@@ -60,14 +60,14 @@ jobs:
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'NSIS compiler unavailable' }
           "GS_BUILD_TOOLS=$tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "GS_NSIS=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify installation, upgrades and uninstallation
+        run: |
+          python scripts/verify-electron-installer.py --nsis "$env:GS_NSIS"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build Electron setup EXE
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           python scripts/build-electron-windows.py --electron-zip "$env:GS_BUILD_TOOLS\electron.zip" --application-root "release/GoStreams-$version" --nsis "$env:GS_NSIS" --rcedit "$env:GS_BUILD_TOOLS\rcedit-x64.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify installation, upgrades and uninstallation
-        run: |
-          python scripts/verify-electron-installer.py --nsis "$env:GS_NSIS"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native Electron window and persistent sessions
         run: |
