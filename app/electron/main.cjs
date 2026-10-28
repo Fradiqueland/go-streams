@@ -5,7 +5,7 @@ const {pathToFileURL}=require('node:url');
 const {execFileSync}=require('node:child_process');
 const net=require('node:net');
 const {userPaths,migrateData,migratePreferences,discoverLegacy}=require('./data-policy.cjs');
-const {rendererPreferences,wireNavigation,shutdownCoordinator}=require('./window-policy.cjs');
+const {rendererPreferences,activateWindow,wireNavigation,shutdownCoordinator}=require('./window-policy.cjs');
 
 app.setName('Go Streams');
 app.setAppUserModelId('net.antoniofradique.gostreams');
@@ -17,7 +17,7 @@ let window,backend,requestQuit,quitting=false;
 const smoke=process.env.GO_STREAMS_ELECTRON_SMOKE==='1'&&Boolean(process.env.GO_STREAMS_DATA);
 if(!app.requestSingleInstanceLock())app.quit();
 else{
- app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});
+ app.on('second-instance',()=>activateWindow(window));
  app.on('before-quit',event=>{if(!quitting){event.preventDefault();if(requestQuit)void requestQuit().catch(fail);else{quitting=true;app.quit();}}});
  app.on('window-all-closed',()=>{if(!quitting&&requestQuit)void requestQuit().catch(fail);});
  app.whenReady().then(start).catch(fail);
@@ -62,7 +62,7 @@ async function start(){
  }});
  window.on('close',event=>{if(!quitting){event.preventDefault();void requestQuit().catch(fail);}});
  backend.server.on('close',()=>{if(!quitting)void finish();});
- window.once('ready-to-show',()=>{if(!smoke)window.show();});
+ window.once('ready-to-show',()=>{if(!smoke)activateWindow(window);});
  await window.loadURL(backend.url);
  if(smoke)await smokeCheck(browserSession);
 }

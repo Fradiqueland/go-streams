@@ -13,11 +13,12 @@ class Launcher {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
 
     internal static string BrowserArguments(string url, string profile) {
         return "--user-data-dir=" + EscapeArgument(profile) +
             " --profile-directory=Default --no-first-run --no-default-browser-check --disable-background-mode" +
-            " --hide-crash-restore-bubble --disable-sync --disable-features=msImplicitSignin" +
+            " --hide-crash-restore-bubble --disable-sync --disable-features=msImplicitSignin,Translate,msEdgeTranslate" +
             " --edge-skip-compat-layer-relaunch --window-size=1440,960 --app=" + EscapeArgument(url);
     }
 
@@ -216,14 +217,25 @@ class Launcher {
         catch (System.ComponentModel.Win32Exception) { }
     }
 
-    static void Activate(ref Process browser, string url, string data) {
-        if (!HasExited(browser)) {
+    static void FocusBrowser(Process browser) {
+        var waiting = Stopwatch.StartNew();
+        while (!HasExited(browser) && waiting.ElapsedMilliseconds < 10000) {
             browser.Refresh();
             IntPtr window = browser.MainWindowHandle;
             if (window != IntPtr.Zero) {
                 if (IsIconic(window)) ShowWindow(window, 9);
+                // Raise once at launch/explicit activation, never keep it always on top.
+                SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, 0x0043);
                 SetForegroundWindow(window);
+                return;
             }
+            Thread.Sleep(100);
+        }
+    }
+
+    static void Activate(ref Process browser, string url, string data) {
+        if (!HasExited(browser)) {
+            FocusBrowser(browser);
             return; // A still-starting browser must not produce a second window.
         }
         if (browser != null) browser.Dispose();
@@ -237,6 +249,7 @@ class Launcher {
         browser = Process.Start(new ProcessStartInfo(executable, BrowserArguments(url, profile)) {
             UseShellExecute = false, CreateNoWindow = false, WindowStyle = ProcessWindowStyle.Normal
         });
+        FocusBrowser(browser);
     }
 
     static void Log(string data, string message) {

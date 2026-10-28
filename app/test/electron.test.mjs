@@ -62,6 +62,14 @@ test('Electron isolates its renderer and sends only HTTPS links to the system br
  for(const key of ['sandbox','contextIsolation','webSecurity'])assert.equal(preferences[key],true);
 });
 function backend(){return {studio:{jobs:new Map(),pendingImports:new Set(),pendingPreparations:new Set(),pendingOperations:new Set()},downloads:{active:new Map()},async close(){}};}
+test('explicit Electron activation restores and raises the window without keeping it on top',()=>{
+ for(const minimized of [false,true]){
+  const calls=[];const window={isDestroyed:()=>false,isMinimized:()=>minimized};
+  for(const action of ['restore','show','moveTop','focus'])window[action]=()=>calls.push(action);
+  policy.activateWindow(window);assert.deepEqual(calls,minimized?['restore','show','moveTop','focus']:['show','moveTop','focus']);
+ }
+ policy.activateWindow(null);policy.activateWindow({isDestroyed:()=>true});
+});
 test('closing Electron during a stream requires confirmation and preserves the running application when declined',async()=>{
  const b=backend();b.studio.jobs.set('live',{ended:false});let closed=0,finished=0;b.close=async()=>closed++;
  const quit=policy.shutdownCoordinator({backend:b,confirm:async()=>false,finish:async()=>finished++});

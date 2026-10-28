@@ -33,12 +33,14 @@ export function openBrowser(url,{platform=process.platform,spawnProcess=spawn,ex
   if (platform === 'win32') {
     const candidates = [path.join(process.env['ProgramFiles(x86)'] || '', 'Microsoft/Edge/Application/msedge.exe'), path.join(process.env.ProgramFiles || '', 'Microsoft/Edge/Application/msedge.exe'), path.join(process.env.ProgramFiles || '', 'Google/Chrome/Application/chrome.exe')];
     const browser = candidates.find(p => exists(p));
-    if (browser) { const child = spawnProcess(browser, [`--app=${url}`, `--user-data-dir=${prepareProfile(directory)}`, '--profile-directory=Default', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--hide-crash-restore-bubble', '--disable-sync', '--disable-features=msImplicitSignin', '--edge-skip-compat-layer-relaunch', '--window-size=1440,960'], { detached: true, stdio: 'ignore', windowsHide: false }); child.on('error', () => {}); child.unref(); return; }
+    if (browser) { const child = spawnProcess(browser, [`--app=${url}`, `--user-data-dir=${prepareProfile(directory)}`, '--profile-directory=Default', '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--hide-crash-restore-bubble', '--disable-sync', '--disable-features=msImplicitSignin,Translate,msEdgeTranslate', '--edge-skip-compat-layer-relaunch', '--window-size=1440,960'], { detached: true, stdio: 'ignore', windowsHide: false }); child.on('error', () => {}); child.unref(); return; }
     const child = spawnProcess(windowsTool('browser'), ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore', windowsHide: true }); child.on('error', () => {}); child.unref();
   } else {
     if(platform==='darwin'){
       const browser=['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'].find(exists);
-      if(browser){const child=spawnProcess(browser,[`--app=${url}`,'--window-size=1440,960'],{detached:true,stdio:'ignore'});child.on('error',()=>{});child.unref();return;}
+      // Launch Services brings the browser to the foreground. A separate
+      // instance ensures app arguments are honoured even if it is already open.
+      if(browser){const bundle=browser.slice(0,browser.indexOf('.app')+4);const child=spawnProcess('/usr/bin/open',['-n','-a',bundle,'--args',`--app=${url}`,'--disable-features=Translate,msEdgeTranslate','--window-size=1440,960'],{detached:true,stdio:'ignore'});child.on('error',()=>{});child.unref();return;}
     }
     const child = spawnProcess(platform === 'darwin' ? '/usr/bin/open' : 'xdg-open', [url], { detached: true, stdio: 'ignore' }); child.on('error', () => {}); child.unref(); }
 }

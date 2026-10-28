@@ -72,9 +72,17 @@ Function .onInit
 FunctionEnd
 
 Function .onVerifyInstDir
- GetFullPathName $0 "$INSTDIR"
+ ; NSIS GetFullPathName requires the final path component to exist.
+ ; The Win32 API canonicalizes new paths without creating them; SetOutPath
+ ; creates the application directory only when installation starts.
+ System::Call 'kernel32::GetFullPathNameW(w "$INSTDIR", i ${NSIS_MAX_STRLEN}, w .r0, p 0) i .r3'
+ ${If} $3 == 0
+ ${OrIf} $3 >= ${NSIS_MAX_STRLEN}
+  Abort
+ ${EndIf}
  ${GetRoot} "$0" $1
  ${If} $0 == $1
+ ${OrIf} $0 == "$1\"
   Abort
  ${EndIf}
  ${If} $0 == "$LOCALAPPDATA"
