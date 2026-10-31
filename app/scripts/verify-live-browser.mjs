@@ -14,6 +14,11 @@ const binary=process.env.GO_STREAMS_BROWSER||candidates.find(p=>fs.existsSync(p)
 if(!binary)throw Error('Set GO_STREAMS_BROWSER to an installed Chromium browser.');
 const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const directory=fs.mkdtempSync(path.join(parent,'live-browser-'));
 let app,browser,socket;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
+let phase='startup';
+const watchdog=setTimeout(()=>{
+ console.error(JSON.stringify({testTimedOut:true,phase,jobs:app?.studio.state().jobs,recordings:app?.recordings.state(),pageErrors:pagesErrors}));
+ socket?.close();browser?.kill();for(const receiver of receivers)receiver.child.kill();for(const job of app?.studio.jobs.values()||[])job.child?.kill();process.exit(1);
+},90000).unref();
 async function freePort(){const s=net.createServer();await new Promise((resolve,reject)=>{s.once('error',reject);s.listen(0,'127.0.0.1',resolve);});const port=s.address().port;await new Promise(resolve=>s.close(resolve));return port;}
 try{
  app=await createApplication({directory:path.join(directory,'data'),port:0,portableVault:true,chatOptions:{request:async(url,options)=>{
@@ -56,6 +61,7 @@ try{
  await waitFor("Boolean(document.querySelector('[data-capture=preview]'))");
  await evaluate("document.querySelector('[data-capture=preview]').click()");
  await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");
+ phase='preview-ready';console.log(JSON.stringify({phase}));
  assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject.getVideoTracks().length"),1);
  assert.equal(app.studio.jobs.size,0,'Preview must not create a broadcast');
  await evaluate("const chat=document.querySelector('.chat-connect');chat.querySelector('[name=resource]').value='abcdefghijk';chat.querySelector('[name=confirmed]').checked=true;chat.querySelector('button').click();");
@@ -63,23 +69,29 @@ try{
  assert.equal(await evaluate("document.querySelectorAll('.chat-messages script').length"),0);
  await evaluate("document.querySelector('.chat-message [data-chat=reply]').click();document.querySelector('.chat-compose textarea').value='Thank you';document.querySelector('.chat-compose button').click();");
  await waitFor("document.querySelectorAll('.chat-own').length===1");assert.equal(chatPosts.length,1);assert.equal(chatPosts[0].snippet.textMessageDetails.messageText,'@Test viewer Thank you');
+ phase='chat-ready';console.log(JSON.stringify({phase}));
  await evaluate("const name=document.querySelector('.production-tools [name=name]');name.value='Test presenter';name.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-production=record]').click();");
  await waitFor("!document.querySelector('[data-production=stop-record]').disabled");
+ phase='local-recording-started';console.log(JSON.stringify({phase}));
  await evaluate("document.querySelectorAll('.capture-destinations input').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});const consent=document.querySelector('[data-capture=consent]');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-capture=start]').click();");
+ phase='waiting-live-frames';console.log(JSON.stringify({phase}));
  const started=Date.now();while(![...app.studio.jobs.values()].filter(j=>j.status==='running').length||[...app.studio.jobs.values()].some(j=>j.frame<10)){
   if(Date.now()-started>30000){const diagnostics={jobs:app.studio.state().jobs,renderer:await evaluate('window.__captureTest'),pageErrors:pagesErrors,liveInputs:[...app.studio.liveCapture.sessions.values()].map(s=>({sequence:s.sequence,age:Date.now()-s.lastInput})),recordings:app.recordings.state()};throw Error('Live destinations did not receive frames: '+JSON.stringify(diagnostics));}await delay(200);
  }
  assert.equal(app.studio.jobs.size,2);
+ phase='live-frames-received';console.log(JSON.stringify({phase}));
  await evaluate("location.hash='live'");await waitFor("document.querySelectorAll('.job').length===2");
  assert.equal(await evaluate("document.querySelectorAll('[data-action=pause-job],[data-action=restart-job],[data-action=job-settings]').length"),0);
  await evaluate("location.hash='capture'");await waitFor("Boolean(document.querySelector('.capture-preview')?.srcObject)");
  await evaluate("document.querySelector('[data-capture=stop]').click()");
  await waitFor("!document.querySelector('[data-capture=release]').disabled");
+ phase='live-stopped';console.log(JSON.stringify({phase}));
  await Promise.all([...app.studio.jobs.values()].map(j=>j.completion));
  assert.ok([...app.studio.jobs.values()].every(j=>j.status==='stopped'));
  assert.equal(app.recordings.active.size,1,'Stopping live destinations must not discard local recording');
  await evaluate("document.querySelector('[data-production=stop-record]').click()");
  await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
+ phase='recording-saved';console.log(JSON.stringify({phase}));
  assert.equal(app.recordings.state()[0].status,'completed');
  const localMedia=await runProcess(ffprobe,['-v','error','-show_format','-of','json',app.recordings.media(app.recordings.state()[0].id)]);
  assert.ok(Number(JSON.parse(localMedia.stdout).format.duration)>1);
@@ -90,7 +102,9 @@ try{
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
  await command('Browser.close').catch(()=>{});
 }finally{
+ phase='cleanup';
  socket?.close();if(browser&&browser.exitCode===null)browser.kill();
  await app?.close();for(const r of receivers)if(r.child.exitCode===null)r.child.kill();await Promise.allSettled(receivers.map(r=>r.done));
  if(!passed)console.error('Browser test evidence directory: '+directory);
+ clearTimeout(watchdog);
 }
