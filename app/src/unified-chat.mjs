@@ -30,6 +30,8 @@ export class UnifiedChat {
   if(!channel||!supported.includes(channel.platform))throw new AppError('Integrated chat is currently available for YouTube and Twitch. Use the platform producer panel for this destination.');
   if(input.confirmed!==true)throw new AppError('Confirm the account and chat destination.');
   this.disconnect(channel.id);
+  for(const message of this.messages)if(message.connectionId===channel.id)this.seen.delete(message.connectionId+':'+message.remoteId);
+  this.messages=this.messages.filter(message=>message.connectionId!==channel.id);
   const connection={id:channel.id,channelId:channel.id,name:channel.name,platform:channel.platform,status:'connecting',error:'',resource:String(input.resource||'').trim(),lastMessage:null};
   this.connections.set(connection.id,connection);
   try{
@@ -100,7 +102,7 @@ export class UnifiedChat {
   if(!/^[a-f0-9-]{36}$/i.test(input.requestId||''))throw new AppError('A unique message request ID is required.');
   const c=this.connections.get(input.connectionId);if(!c||c.status!=='connected')throw new AppError('Connect this chat before replying.',409);
   if(typeof input.text!=='string'||!input.text.trim()||[...input.text].length>(c.platform==='YouTube'?200:500)||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(input.text))throw new AppError('Enter a message within the platform character limit.');
-  const fingerprint=JSON.stringify([c.id,input.text,input.replyTo||null]),old=this.sends.get(input.requestId);
+  const fingerprint=JSON.stringify([c.id,c.chatId||c.broadcasterId,input.text,input.replyTo||null]),old=this.sends.get(input.requestId);
   if(old){if(old.fingerprint!==fingerprint)throw new AppError('A message request ID cannot be reused for different content.',409);return old.task;}
   if(c.sending)throw new AppError('Wait for the pending reply before sending another message.',409);
   const parent=input.replyTo?this.messages.find(m=>m.id===input.replyTo&&m.connectionId===c.id):null;

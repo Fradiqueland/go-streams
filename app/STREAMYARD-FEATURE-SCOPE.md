@@ -16,7 +16,7 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 | Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; not a shared online studio |
 | Presenter notes | Private notes and scrolling teleprompter | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
-| Local recording | Record composed WebM and mixed audio independently of RTMP broadcasting | Stored on this computer only; bounded upload buffer, finalized index/duration, interrupted-file recovery |
+| Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting | Stored on this computer only; bounded upload buffer, finalized index/duration, interrupted-file recovery |
 | Chat aggregation | YouTube and Twitch messages in one panel with origin labels and filters | Official provider authorization and registered OAuth applications required |
 | Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs; rate limits, moderation and quotas apply |
 | Featured comments | Show/hide an incoming comment on the captured program | Local canvas overlay; does not automatically post a message |

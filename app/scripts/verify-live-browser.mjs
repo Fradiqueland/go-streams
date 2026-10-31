@@ -79,7 +79,13 @@ try{
   if(Date.now()-started>30000){const diagnostics={jobs:app.studio.state().jobs,renderer:await evaluate('window.__captureTest'),pageErrors:pagesErrors,liveInputs:[...app.studio.liveCapture.sessions.values()].map(s=>({sequence:s.sequence,age:Date.now()-s.lastInput})),recordings:app.recordings.state()};throw Error('Live destinations did not receive frames: '+JSON.stringify(diagnostics));}await delay(200);
  }
  assert.equal(app.studio.jobs.size,2);
+ assert.equal(await evaluate('window.__captureTest.length'),1,'Recording and live output must share one browser encoder');
  phase='live-frames-received';console.log(JSON.stringify({phase}));
+ await evaluate("document.querySelector('[data-production=stop-record]').click()");
+ await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
+ assert.ok([...app.studio.jobs.values()].every(j=>!j.ended),'Stopping recording must preserve live destinations');
+ await evaluate("document.querySelector('[data-production=record]').click()");
+ await waitFor("!document.querySelector('[data-production=stop-record]').disabled");await delay(4000);
  await evaluate("location.hash='live'");await waitFor("document.querySelectorAll('.job').length===2");
  assert.equal(await evaluate("document.querySelectorAll('[data-action=pause-job],[data-action=restart-job],[data-action=job-settings]').length"),0);
  await evaluate("location.hash='capture'");await waitFor("Boolean(document.querySelector('.capture-preview')?.srcObject)");
@@ -98,7 +104,7 @@ try{
  await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
  for(const receiver of receivers){await receiver.done;const {stdout}=await runProcess(ffprobe,['-v','error','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');}
  assert.deepEqual(pagesErrors,[]);passed=true;
- const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false};
+ const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false};
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
  await command('Browser.close').catch(()=>{});
 }finally{

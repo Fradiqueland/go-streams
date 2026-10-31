@@ -9,7 +9,7 @@ export function layoutRects(layout,width,height,hasCamera,hasScreen){
  return [{source:'screen',x:0,y:0,w:width,h:height},{source:'camera',x:width*.70,y:height*.70,w:width*.28,h:height*.28}];
 }
 export class ProductionTools {
- constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot});this.values={...defaults};this.images={};this.scenes={};try{this.scenes=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');}catch{}this.level=0;}
+ constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed});this.values={...defaults};this.images={};this.scenes={};try{this.scenes=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');}catch{}this.level=0;}
  get recording(){return Boolean(this.recordingId)||Boolean(this.finishing)||Boolean(this.starting);}
  mount(parent){
   if(this.element)return;
@@ -57,23 +57,17 @@ export class ProductionTools {
  async startRecording(){
   if(!this.getStream()||this.recording)return;
   this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
-  try{
-   const mimeType=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'].find(x=>MediaRecorder.isTypeSupported(x));if(!mimeType)throw Error('Use a Chromium browser with WebM recording support.');
-   this.recordStream=this.getStream().clone();
-   const recorder=new MediaRecorder(this.recordStream,{mimeType,videoBitsPerSecond:6000000,audioBitsPerSecond:192000});
-   const {id}=await this.api('/api/recordings/start',{confirmed:true});this.recordingId=id;
-   this.upload=new this.uploaderClass({stopRemote:()=>this.api(`/api/recordings/${id}/finish`,{}),onError:error=>{this.toast(error.message,true);void this.stopRecording();},fetchChunk:async(blob,sequence)=>{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Local recording upload failed. Previous data was preserved.');}});
-   this.recorder=recorder;recorder.ondataavailable=e=>this.upload?.push(e.data);recorder.onerror=()=>{void this.stopRecording();};recorder.start(1000);this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.');
-  }catch(error){if(this.recordingId)await this.api(`/api/recordings/${this.recordingId}/finish`,{}).catch(()=>{});this.recordingId=null;for(const track of this.recordStream?.getTracks()||[])track.stop();this.recordStream=null;this.toast(error.message,true);}finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
+  try{const feedId=await this.acquireFeed('recording');const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.');}
+  catch(error){await this.releaseFeed('recording').catch(()=>{});this.recordingId=null;this.toast(error.message,true);}
+  finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
  }
  async stopRecording(){
-  if(this.startDone)await this.startDone;
-  if(this.finishing)return this.finishing;if(!this.recordingId)return;
+  if(this.startDone)await this.startDone;if(this.finishing)return this.finishing;if(!this.recordingId)return;
   this.finishing=(async()=>{
-   this.element.querySelector('.recording-status').textContent=t('Finalizing local recording…','A finalizar gravação local…');
-   try{if(this.recorder?.state!=='inactive'){const recorder=this.recorder;await new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});recorder.stop();});}await this.upload.finish();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
-   catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
-   finally{for(const track of this.recordStream?.getTracks()||[])track.stop();this.recordStream=null;this.recordingId=null;this.recorder=null;this.upload=null;this.finishing=null;this.update();}
+   this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
+   try{await this.api(`/api/recordings/${this.recordingId}/finish`,{});await this.releaseFeed('recording');this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
+   catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);await this.releaseFeed('recording').catch(()=>{});}
+   finally{this.recordingId=null;this.finishing=null;this.update();}
   })();this.update();return this.finishing;
  }
  async action(button){

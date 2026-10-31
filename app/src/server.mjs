@@ -4,6 +4,7 @@ import {RemoteSources} from './remote-sources.mjs';
 import {LiveCapture} from './live-capture.mjs';
 import {UnifiedChat} from './unified-chat.mjs';
 import {LocalRecordings} from './local-recordings.mjs';
+import {CaptureFeeds} from './capture-feeds.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,7 +50,7 @@ function serveFile(req, res, file, contentType) {
   const stream = fs.createReadStream(file, { start, end }); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
 export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions, chatOptions } = {}) {
-  let store, vault, studio, downloads, notifications, updates, remoteSources, chat, recordings;
+  let store, vault, studio, downloads, notifications, updates, remoteSources, chat, recordings, feeds;
   const token = crypto.randomBytes(32).toString('hex'); let base = '', shuttingDown = false, restoring = false, healthCache;
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
@@ -73,6 +74,8 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
       const liveChunk = /^\/api\/live\/([\w-]+)\/chunks$/.exec(pathname);
+      const captureChunk=/^\/api\/capture\/([\w-]+)\/chunks$/.exec(pathname);
+      if(captureChunk&&req.method==='POST')return json(res,await feeds.ingest(captureChunk[1],url.searchParams.get('sequence'),req));
       if (liveChunk && req.method === 'POST') return json(res, await studio.liveCapture.ingest(liveChunk[1], url.searchParams.get('sequence'), req));
       const recordingChunk = /^\/api\/recordings\/([\w-]+)\/chunks$/.exec(pathname);
       if(recordingChunk&&req.method==='POST')return json(res,await recordings.ingest(recordingChunk[1],url.searchParams.get('sequence'),req));
@@ -80,6 +83,9 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
       if (pathname === '/api/ready' && req.method === 'GET') { res.setHeader('X-Go-Streams-Ready', '1'); return json(res, { ready: true }); }
+      if(pathname==='/api/capture/start'&&req.method==='POST')return json(res,feeds.create(body),201);
+      const captureStop=/^\/api\/capture\/([\w-]+)\/stop$/.exec(pathname);
+      if(captureStop&&req.method==='POST'){feeds.stop(captureStop[1]);return json(res,{ok:true});}
       if (pathname === '/api/live/start' && req.method === 'POST') return json(res, studio.liveCapture.start(body), 201);
       const liveStop = /^\/api\/live\/([\w-]+)\/stop$/.exec(pathname);
       if (liveStop && req.method === 'POST') { studio.liveCapture.stop(liveStop[1]); return json(res, {ok:true}); }
@@ -87,7 +93,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
       const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
       if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1]));
-      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}.webm"`);return serveFile(req,res,recordings.media(recordingFile[1]),'video/webm');}
+      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file);res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.mp4'?'video/mp4':'video/webm');}
       if(pathname==='/api/chat'&&req.method==='GET')return json(res,chat.state());
       if(pathname==='/api/chat/settings'&&req.method==='PUT')return json(res,chat.auth.configure(body.provider,body));
       if(pathname==='/api/chat/authorize'&&req.method==='POST')return json(res,await chat.auth.begin(body.provider));
@@ -225,7 +231,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
   const sessionFile = path.join(directory, 'session.url');
   try {
     store = new Store(directory); vault = new Vault(directory, { portable: portableVault }); remoteSources=new RemoteSources({base,settings:()=>store.data.settings,execute:runProcess,...remoteOptions});studio = new Studio(store, vault,{remoteSources});
-    new LiveCapture(studio, {clock, ...liveOptions});
+    feeds=new CaptureFeeds(studio,{clock});new LiveCapture(studio, {clock, ...liveOptions});
     chat=new UnifiedChat(studio,{base,...chatOptions});
     studio.chat=chat;
     recordings=new LocalRecordings(studio,{clock});studio.recordings=recordings;
@@ -249,7 +255,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
     });
     return closeTask;
   }
-  return { server, handler, studio, store, downloads, notifications, updates, recordings, base, token, url: `${base}/?launch=${token}`, close };
+  return { server, handler, studio, store, downloads, notifications, updates, recordings, feeds, base, token, url: `${base}/?launch=${token}`, close };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   createApplication({ port: Number(process.env.GO_STREAMS_PORT || 4317) }).then(app => {

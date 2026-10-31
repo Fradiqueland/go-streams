@@ -781,6 +781,7 @@ export class Studio {
     this.closing = true;
     const chatShutdown=this.chat?.shutdown();
     const recordingShutdown=this.recordings?.shutdown();
+    const feedShutdown=this.feeds?.shutdown();
     const liveShutdown=this.liveCapture?.shutdown();
     const remoteShutdown=this.remoteSources?.shutdown();
     const operations = [...this.pendingOperations.values()];
@@ -790,6 +791,7 @@ export class Studio {
     await liveShutdown;
     await chatShutdown;
     await recordingShutdown;
+    await feedShutdown;
     await Promise.all([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
   }
 }

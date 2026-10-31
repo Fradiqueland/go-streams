@@ -13,6 +13,7 @@ export class LiveCapture {
   constructor(studio, {idleTimeout = 20000, writeTimeout = 7000, clock = true} = {}) {
     this.studio = studio;
     this.sessions = new Map();
+    this.subscriptions = new Map();
     this.idleTimeout = idleTimeout;
     this.writeTimeout = writeTimeout;
     studio.liveCapture = this;
@@ -20,6 +21,9 @@ export class LiveCapture {
   }
   start(input) {
     const studio = this.studio;
+    const feed = input.feedId ? studio.feeds?.get(input.feedId) : null;
+    if(input.feedId&&!feed)fail('Shared capture is unavailable.',410);
+    if(feed&&(feed.quality!==input.quality||feed.aspect!==input.aspect||feed.source!==input.source))fail('The live destination format must match the shared capture.');
     if (studio.closing || studio.importingProject) fail('The studio is busy or closing.', 409);
     if (input.confirmed !== true) fail('Confirm the live broadcast destinations before starting.');
     if (!['camera', 'screen', 'screen-camera'].includes(input.source)) fail('Choose a live capture source.');
@@ -35,7 +39,7 @@ export class LiveCapture {
     const command = toolsFor(studio.store.data.settings).ffmpeg;
     const keys = channels.map(c => studio.vault.decrypt(c.secret));
     const encoded = encodingArgs({...studio.store.data.settings.encoding, copy:false, aspect:input.aspect, fps:30, videoBitrate:input.quality === '1080p' ? 4500 : 2500}, input.quality, [{audio:{}}]);
-    const session = {id:crypto.randomUUID(), jobs:[], sequence:0, receiving:false, lastInput:Date.now(), stopped:false};
+    const session = {id:crypto.randomUUID(), feedId:input.feedId||null, jobs:[], sequence:0, receiving:false, lastInput:Date.now(), stopped:false};
     this.sessions.set(session.id, session);
     for (const channel of channels) {
       const job = {id:crypto.randomUUID(), liveSessionId:session.id, sourceType:'live', source:input.source, channelId:channel.id, channelName:channel.name, platform:channel.platform, playlistId:null, mediaId:null, playlistName:'Live camera / screen', preview:false, quality:input.quality, status:'starting', started:new Date().toISOString(), ended:null, elapsed:0, frame:0, fps:0, bitrate:'', error:'', output:null, child:null, secrets:[], retries:0, autoRestart:false};
@@ -54,7 +58,7 @@ export class LiveCapture {
   launch(session, job, channel, key, command, encoded) {
     const target = `${channel.url}/${key}`;
     job.secrets = [key, channel.url, target];
-    const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0', ...encoded.args, '-rw_timeout', '10000000', '-flvflags', 'no_duration_filesize', '-f', 'flv', target];
+    const args = session.feedId ? ['-hide_banner','-loglevel','warning','-nostdin','-progress','pipe:1','-stats_period','1','-probesize','4194304','-analyzeduration','3000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target] : ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0', ...encoded.args, '-rw_timeout', '10000000', '-flvflags', 'no_duration_filesize', '-f', 'flv', target];
     const child = this.studio.spawnProcess(command, args, {shell:false, windowsHide:true, stdio:['pipe','pipe','pipe']});
     job.child = child;
     let progress = '', stderr = '';
@@ -76,6 +80,7 @@ export class LiveCapture {
     child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-12000); });
     child.on('error', () => { job.captureError = 'The live encoder could not be started.'; });
     child.on('close', code => {
+      this.subscriptions.get(job.id)?.();this.subscriptions.delete(job.id);
       if (job.ended) return;
       const stopped = job.status === 'stopping';
       let error = job.captureError || (!stopped && code !== 0 ? stderr.slice(-2500) || 'The live destination disconnected.' : '');
@@ -84,10 +89,12 @@ export class LiveCapture {
       this.studio.finish(job, error ? 'error' : stopped ? 'stopped' : 'completed', error);
       if (session.jobs.every(j => j.ended)) this.sessions.delete(session.id);
     });
+    if(session.feedId)this.subscriptions.set(job.id,this.studio.feeds.attach(session.feedId,child.stdin,error=>this.stopJob(job,error)));
   }
   async ingest(id, sequence, req) {
     const session = this.sessions.get(id);
     if (!session || session.stopped) fail('This live session has ended.', 410);
+    if(session.feedId)fail('Send video to the shared capture input.',409);
     if (session.receiving || sequence !== String(session.sequence)) fail('Live video chunks must arrive in order.', 409);
     if (req.headers['content-type']?.split(';')[0] !== 'video/webm') fail('Expected a WebM video chunk.', 415);
     const declared = req.headers['content-length'];
@@ -130,6 +137,7 @@ export class LiveCapture {
   stopJob(job, error = '') {
     if (job.ended || job.status === 'stopping') return;
     job.status = 'stopping';
+    this.subscriptions.get(job.id)?.();this.subscriptions.delete(job.id);
     if (error) job.captureError = error;
     if (!job.child) return this.studio.finish(job, error ? 'error' : 'stopped', error);
     const child = job.child;
@@ -144,7 +152,7 @@ export class LiveCapture {
     for (const job of session.jobs) this.stopJob(job, error);
   }
   expire(time = Date.now()) {
-    for (const session of this.sessions.values()) if (!session.stopped && time-session.lastInput > this.idleTimeout) this.stop(session.id, 'Live capture disconnected or the capture window was closed.');
+    for (const session of this.sessions.values()) if (!session.feedId && !session.stopped && time-session.lastInput > this.idleTimeout) this.stop(session.id, 'Live capture disconnected or the capture window was closed.');
   }
   async shutdown() {
     clearInterval(this.timer);

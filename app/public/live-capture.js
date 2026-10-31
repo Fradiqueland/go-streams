@@ -57,7 +57,7 @@ export class LiveCapturePanel {
     if(this.session)void fetch(`/api/live/${this.session.id}/stop`,{method:'POST',headers:{'Content-Type':'application/json','X-Go-Streams':'1'},body:'{}',keepalive:true}).catch(()=>{});
    });
   }
-  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.output,uploaderClass:LiveUploader,setVolume:(name,value)=>{for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=value;},setClipAudio:video=>{
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),setVolume:(name,value)=>{for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=value;},setClipAudio:video=>{
    this.clipAudio?.disconnect();this.clipAudio=null;
    if(video&&this.audio){this.clipAudio=this.audio.createMediaElementSource(video);this.clipAudio.connect(this.master);}
    for(const input of this.audioInputs||[])input.gain.gain.value=video?0:Number(this.production.element.querySelector(`[name="${input.name}"]`).value);
@@ -148,38 +148,46 @@ export class LiveCapturePanel {
   try{const devices=await navigator.mediaDevices.enumerateDevices();for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const select=this.element.querySelector(`[name="${name}"]`),previous=select.value;select.innerHTML='<option value="">'+text('Default device','Dispositivo predefinido')+'</option>'+devices.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||`${kind} ${i+1}`)}</option>`).join('');select.value=previous;}}catch{}
  }
  toggleMute(){if(!this.mic)return;this.muted=!this.muted;this.mic.enabled=!this.muted;this.element.querySelector('[data-capture="mute"]').textContent=this.muted?text('Unmute microphone','Ativar microfone'):text('Mute microphone','Silenciar microfone');}
- async start(){
-  if(!this.output||this.session||this.preparing)return;
-  this.preparing=true;this.controls();
-  try{
+ async acquireFeed(role){
+  this.feedUsers ||= new Set();this.feedUsers.add(role);
+  if(this.feedStarting)return this.feedStarting;
+  if(this.feedSession)return this.feedSession.id;
+  this.feedStarting=(async()=>{
    const mimeType=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
-   if(!mimeType)throw Error('Live WebM capture is unavailable. Open Go Streams in Chrome or Edge.');
+   if(!mimeType)throw Error('Live WebM capture is unavailable. Use Chrome or Edge.');
    const recorder=new MediaRecorder(this.output,{mimeType,videoBitsPerSecond:this.config.quality==='1080p'?4500000:2500000,audioBitsPerSecond:128000});
+   this.feedSession=await this.api('/api/capture/start',{...this.config,confirmed:true});this.feedMime=mimeType;const id=this.feedSession.id;
+   this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop();void this.production.stopRecording();},fetchChunk:async(blob,sequence)=>{
+    const response=await fetch(`/api/capture/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
+   }});
+   this.feedRecorder=recorder;recorder.ondataavailable=event=>this.feedUploader?.push(event.data);recorder.onerror=()=>this.feedUploader?.fail(Error('Live capture failed. Start a new capture.'));recorder.start(1000);return id;
+  })();
+  try{return await this.feedStarting;}catch(error){this.feedUsers.delete(role);if(this.feedSession)await this.api(`/api/capture/${this.feedSession.id}/stop`,{}).catch(()=>{});this.feedSession=null;throw error;}finally{this.feedStarting=null;}
+ }
+ async releaseFeed(role){
+  this.feedUsers?.delete(role);if(this.feedStarting)await this.feedStarting.catch(()=>{});
+  if(this.feedUsers?.size||!this.feedSession)return;
+  if(this.feedClosing)return this.feedClosing;
+  this.feedClosing=(async()=>{
+   try{const recorder=this.feedRecorder;if(recorder&&recorder.state!=='inactive')await new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});recorder.stop();});await this.feedUploader?.finish();}
+   finally{this.feedSession=null;this.feedRecorder=null;this.feedUploader=null;this.feedClosing=null;}
+  })();return this.feedClosing;
+ }
+ async start(){
+  if(!this.output||this.session||this.preparing)return;this.preparing=true;this.controls();
+  try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);
    if(!channelIds.length||!this.element.querySelector('[data-capture="consent"]').checked)throw Error('Confirm at least one live destination.');
-   this.session=await this.api('/api/live/start',{...this.config,mimeType,channelIds,confirmed:true});
-   const id=this.session.id;
-   const stopRemote=()=>this.api(`/api/live/${id}/stop`,{});
-   this.uploader=new LiveUploader({stopRemote,onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop();},fetchChunk:async(blob,sequence)=>{
-    const response=await fetch(`/api/live/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});
-    if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
-   }});
-   this.recorder=recorder;recorder.ondataavailable=event=>this.uploader?.push(event.data);
-   recorder.onerror=()=>{this.status('Live capture failed. Start a new broadcast.',true);void this.stop();};
-   recorder.start(1000);this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
-  }catch(error){if(this.session){await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;}this.status(error.message,true);this.toast(error.message,true);}
+   const feedId=await this.acquireFeed('live');this.session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
+   this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
+  }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});this.status(error.message,true);this.toast(error.message,true);}
   finally{this.preparing=false;this.controls();}
  }
  async stop(){
-  if(this.stopping)return;
-  this.stopping=true;this.controls();
-  try{
-   if(this.recorder?.state!=='inactive'&&this.recorder){const recorder=this.recorder;await new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});recorder.stop();});}
-   if(this.uploader)await this.uploader.finish();
-   else if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});
-   this.status(text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'));
-  }catch(error){this.status(error.message,true);}
-  finally{this.session=null;this.recorder=null;this.uploader=null;this.stopping=false;this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();}
+  if(this.stopping)return;this.stopping=true;this.controls();
+  try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});await this.releaseFeed('live');this.status(text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'));}
+  catch(error){this.status(error.message,true);}
+  finally{this.session=null;this.stopping=false;this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();}
  }
  releaseDevices(){
   clearInterval(this.drawTimer);

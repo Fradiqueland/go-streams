@@ -41,6 +41,7 @@ test('YouTube chat merges messages, respects polling interval, sends only to its
  f.chat.add(c,{remoteId:'sent-id',author:'Presenter',text:'echo'});assert.equal(f.chat.messages.length,2);
  await assert.rejects(f.chat.send({...input,text:'Different'}),/reused/);
  const parent=f.chat.messages[0];parent.connectionId='other';await assert.rejects(f.chat.send({...input,requestId:crypto.randomUUID()}),/no longer/);
+ parent.connectionId=id;const oldMessageId=parent.id;await f.chat.connect({channelId:id,resource:'https://www.youtube.com/live/abcdefghijk',confirmed:true});assert.ok(!f.chat.messages.some(m=>m.id===oldMessageId));
 });
 test('Twitch chat subscribes with the authorized sender and supports threaded responses; rejected sends are not reported delivered',async t=>{
  const requests=[];let deliver=true;
