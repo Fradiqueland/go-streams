@@ -56,5 +56,6 @@ jobs:
             app/release/*Mac-Portable.zip
             app/release/*Mac-Portable-verification.json
             app/release/*Mac-runtime-verification.json
+            app/release/*live-studio*-verification.json
           if-no-files-found: error
           retention-days: 30

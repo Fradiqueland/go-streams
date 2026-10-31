@@ -57,6 +57,7 @@ def main():
     runtime_manifest=application/'runtime/win32-x64/manifest.json'
     runtime=json.loads(runtime_manifest.read_text('utf-8'));runtime['files']=[entry for entry in runtime['files'] if entry['name']!='node.exe'];runtime['nodeRuntime']='Electron '+toolchain['electronVersion'];runtime_manifest.write_text(json.dumps(runtime,indent=2)+'\n','utf-8')
     for name in ['package.json','README.md']:shutil.copy2(ROOT/name,application/name)
+    if (ROOT/'STREAMYARD-FEATURE-SCOPE.md').is_file():shutil.copy2(ROOT/'STREAMYARD-FEATURE-SCOPE.md',application/'STREAMYARD-FEATURE-SCOPE.md')
     (application/'.installed').write_text('go-streams-installed-v1\n','ascii')
     (stage/'.gostreams-electron-install').write_bytes(b'net.antoniofradique.gostreams\r\n')
     run([args.rcedit,stage/'GoStreams.exe','--set-icon',ROOT/'public/icon.ico','--set-version-string','ProductName','Go Streams','--set-version-string','FileDescription','Go Streams','--set-version-string','CompanyName','Antonio Fradique','--set-file-version',version+'.0','--set-product-version',version+'.0'])

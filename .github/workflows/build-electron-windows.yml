@@ -88,5 +88,6 @@ jobs:
             app/release/*Electron-Setup.exe
             app/release/*Electron*verification.json
             app/release/*Electron-build.json
+            app/release/*live-studio*-verification.json
           if-no-files-found: error
           retention-days: 30

@@ -779,6 +779,8 @@ export class Studio {
   }
   async shutdown() {
     this.closing = true;
+    const chatShutdown=this.chat?.shutdown();
+    const recordingShutdown=this.recordings?.shutdown();
     const liveShutdown=this.liveCapture?.shutdown();
     const remoteShutdown=this.remoteSources?.shutdown();
     const operations = [...this.pendingOperations.values()];
@@ -786,6 +788,8 @@ export class Studio {
     for (const job of this.jobs.values()) this.stop(job.id);
     await remoteShutdown;
     await liveShutdown;
+    await chatShutdown;
+    await recordingShutdown;
     await Promise.all([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
   }
 }

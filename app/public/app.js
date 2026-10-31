@@ -1,5 +1,6 @@
 import {overlayEditor,overlayValues,renderBanner,imageData,overlayPreview,styleOverlayPreview} from './overlays-ui.js';
 import {LiveCapturePanel} from './live-capture.js';
+import {ChatPanel} from './unified-chat.js';
 import {tr,language,localeTag,setLanguage,applyLocale} from './i18n.js';
 import { localToUtc, utcToLocal } from './timezones.js';
 import { advancedSettings, downloadsPanel } from './extras.js';
@@ -9,6 +10,9 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 const names = {dashboard:tr("Visão geral"),golive:tr("Entrar em direto"),capture:language()==='pt-PT'?'Câmara e ecrã ao vivo':'Live camera & screen',live:tr("Em direto agora"),media:tr("Biblioteca de vídeos"),channels:tr("Canais"),playlists:tr("Playlists"),schedules:tr("Agendamento"),tools:tr("Ferramentas"),history:tr("Histórico"),settings:tr("Definições"),help:tr("Ajuda")};
 const paging={};
 let capturePanel;
+let chatPanel;
+names.chat=language()==='pt-PT'?'Chat unificado':'Unified chat';
+function mountChat(container){chatPanel ||= new ChatPanel({api,toast,onFeature:message=>{if(capturePanel)capturePanel.featuredComment=message;else toast(language()==='pt-PT'?'Abra a pré-visualização ao vivo para mostrar comentários.':'Open the live preview to feature comments.');}});chatPanel.mount(container,state.chat,state.channels);}
 let interfaceClosing=false,exitPending=false;
 let downloadsQuery='';
 const pendingActions=new Set(), settingsDrafts=new Map();
@@ -42,6 +46,7 @@ async function refresh(render = true) {
   if(interfaceClosing||request<refreshApplied)return;
   refreshApplied=request;state=next;
   capturePanel?.update(state);
+  chatPanel?.update(state.chat,state.channels);
   if(typeof render==='function'?render():render)draw();
   if(typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('go-streams-ready'));
   const banner=$('#connection-warning');if(banner)banner.hidden=true;
@@ -80,6 +85,10 @@ function draw() {
   if(page==='capture'){
     capturePanel ||= new LiveCapturePanel({api,toast,getState:()=>state});
     capturePanel.mount($('#content'),state);
+    mountChat(capturePanel.element);
+  }else if(page==='chat'){
+    if(!chatPanel?.element||chatPanel.element.parentNode!==$('#content'))$('#content').innerHTML='';
+    mountChat($('#content'));
   }else $('#content').innerHTML = ({ dashboard, golive:goLiveView, live:liveView, media: mediaView, channels, playlists, schedules, tools, history, settings, help:helpView }[page])();
   if(page==='settings')restoreSettings();
   applyBusyActions();

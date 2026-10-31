@@ -19,6 +19,7 @@ export function buildMac(root){
   fs.mkdirSync(app,{recursive:true});fs.mkdirSync(macos,{recursive:true});
   for(const folder of ['src','public'])fs.cpSync(path.join(root,folder),path.join(app,folder),{recursive:true});
   for(const name of ['package.json','README.md'])fs.copyFileSync(path.join(root,name),path.join(app,name));
+  if(fs.existsSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md')))fs.copyFileSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md'),path.join(app,'STREAMYARD-FEATURE-SCOPE.md'));
   copyYtdlp(root,app,'darwin');copyRuntime(root,app,'darwin');
   fs.copyFileSync(path.join(root,'public','icon.icns'),path.join(resources,'GoStreams.icns'));
   fs.copyFileSync(launcherFile,path.join(macos,'GoStreams'));fs.chmodSync(path.join(macos,'GoStreams'),0o755);

@@ -10,11 +10,17 @@ Open **Live camera & screen** to preview a camera, a screen/window, or a screen 
 
 Capture uses the browser's media APIs and a bounded in-memory WebM upload queue. The bundled FFmpeg converts the feed to H.264/AAC for each destination. Destination workers have independent status and failures, share the existing concurrency limit and channel reservations, and appear in the monitor/history. Stop individual destinations in the monitor or stop the live feed from the capture page. Live input cannot be paused, replayed or resumed from a saved position; start a fresh live session after an interruption.
 
-Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. Chromium with WebM MediaRecorder support is required. Live output is not saved as a recording, and is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
+Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. Chromium with WebM MediaRecorder support is required. The optional local recording saves the composed video/audio to this computer; cloud recording is excluded. Live input is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
 
 Bandwidth and CPU load grow with the number of destinations. The computer and app must remain running and awake. Check account eligibility, stream keys and receipt in each platform's own dashboard. No public platform broadcast or long-duration 24/7 live capture certification is implied by loopback tests.
 
 Verification: `npm run test:live` exercises consent, API authentication, destination isolation, bounded uploads, timeout/stop behavior and two native RTMP loopback receivers. `npm run test:live:browser` exercises the real browser with synthetic camera/microphone, without accessing real devices or publishing externally. Actual hardware and native screen picker checks remain manual.
+
+## Local production and unified chat
+
+The capture studio includes live layouts, logo/background/colors, presenter titles, banners, a moving ticker, local intro/outro clips, reusable scenes, private notes/teleprompter, snapshots and independent local WebM recording. YouTube and Twitch chat adapters aggregate messages and allow explicit replies to the selected destination; official OAuth application configuration and account authorization are required. Other platforms are clearly marked unsupported for integrated chat.
+
+See [the feature scope and account setup guide](app/STREAMYARD-FEATURE-SCOPE.md) for current capabilities and validation limits. Cloud recording is excluded; no guest/webinar hosting service is deployed.
 
 ## Electron Windows edition
 

@@ -88,6 +88,7 @@ using(var output=File.Create(Path.Combine(args[1],name+".bin")))input.CopyTo(out
         if not (application/name).is_file():raise ValueError('Missing included runtime: '+name)
     for folder in ['src','public']:shutil.copytree(ROOT/folder,application/folder)
     for name in ['package.json','README.md']:shutil.copy2(ROOT/name,application/name)
+    if (ROOT/'STREAMYARD-FEATURE-SCOPE.md').is_file():shutil.copy2(ROOT/'STREAMYARD-FEATURE-SCOPE.md',application/'STREAMYARD-FEATURE-SCOPE.md')
     (application/'.installed').write_text('go-streams-installed-v1\n',encoding='ascii')
     version=json.loads((ROOT/'package.json').read_text('utf-8'))['version']
     assembly=work/'AssemblyVersion.cs'

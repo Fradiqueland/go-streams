@@ -3,6 +3,7 @@ import {tr,language,localeTag,setLanguage,applyLocale} from './i18n.js';
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paths={
 capture:'M3 6h12v12H3z M15 10l6-4v12l-6-4z',
+chat:'M3 3h18v14H8l-5 4z M7 7h10 M7 12h7',
 dashboard:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
 golive:'m9 5 11 7-11 7z M4 5v14',live:'M9 9a4 4 0 0 1 6 0 M6 6a8 8 0 0 1 12 0 M3 3a12 12 0 0 1 18 0 M12 12v9 M8 21h8',
 media:'M3 4h18v16H3z m7 4 6 4-6 4z',channels:'M3 5h18v12H3z M8 21h8 M12 17v4',

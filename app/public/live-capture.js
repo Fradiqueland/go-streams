@@ -1,4 +1,5 @@
 import {language} from './i18n.js';
+import {ProductionTools} from './live-production.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const text=(en,pt)=>language()==='pt-PT'?pt:en;
 export const LIVE_BUFFER_LIMIT=8*1024*1024;
@@ -56,6 +57,15 @@ export class LiveCapturePanel {
     if(this.session)void fetch(`/api/live/${this.session.id}/stop`,{method:'POST',headers:{'Content-Type':'application/json','X-Go-Streams':'1'},body:'{}',keepalive:true}).catch(()=>{});
    });
   }
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.output,uploaderClass:LiveUploader,setVolume:(name,value)=>{for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=value;},setClipAudio:video=>{
+   this.clipAudio?.disconnect();this.clipAudio=null;
+   if(video&&this.audio){this.clipAudio=this.audio.createMediaElementSource(video);this.clipAudio.connect(this.master);}
+   for(const input of this.audioInputs||[])input.gain.gain.value=video?0:Number(this.production.element.querySelector(`[name="${input.name}"]`).value);
+  },snapshot:()=>{
+   if(!this.canvas||!this.output){this.toast(text('Open a local preview first.','Abra primeiro a pré-visualização local.'),true);return;}
+   this.canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},'image/png');
+  }});
+  this.production.mount(this.element);
   if(this.element.parentNode!==container){container.innerHTML='';container.appendChild(this.element);}
   this.update(state);
  }
@@ -69,9 +79,11 @@ export class LiveCapturePanel {
   this.element.querySelector('[data-capture="stop"]').disabled=!this.session||this.stopping;
   const hasDestinations=Boolean(this.element.querySelector('.capture-destinations input:checked:not(:disabled)'));
   this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
+  this.production?.update(this.recordings||[]);
  }
  update(state){
   if(!this.element)return;
+  this.recordings=state.recordings||[];
   const selected=new Set([...this.element.querySelectorAll('.capture-destinations input:checked')].map(el=>el.value));
   const signature=JSON.stringify(state.channels.map(c=>[c.id,c.name,c.platform,c.hasKey,state.jobs.some(j=>!j.ended&&j.channelId===c.id)]));
   if(signature!==this.destinationsSignature){
@@ -110,15 +122,20 @@ export class LiveCapturePanel {
    [this.canvas.width,this.canvas.height]=this.config.aspect==='9:16'?[height,Math.round(height*16/9/2)*2]:[Math.round(height*16/9/2)*2,height];
    const ctx=this.canvas.getContext('2d');
    const draw=()=>{
-    const w=this.canvas.width,h=this.canvas.height;ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);
+    const w=this.canvas.width,h=this.canvas.height;
     const fit=(v,x,y,w,h)=>{if(!v?.videoWidth)return;const scale=Math.min(w/v.videoWidth,h/v.videoHeight),vw=v.videoWidth*scale,vh=v.videoHeight*scale;ctx.drawImage(v,x+(w-vw)/2,y+(h-vh)/2,vw,vh);};
-    fit(this.screenVideo||this.cameraVideo,0,0,w,h);
-    if(this.screenVideo&&this.cameraVideo){ctx.fillStyle='#111';ctx.fillRect(w*.70-4,h*.70-4,w*.28+8,h*.28+8);fit(this.cameraVideo,w*.70,h*.70,w*.28,h*.28);}
+    this.production.draw(ctx,w,h,this.cameraVideo,this.screenVideo,fit);
+    if(this.featuredComment){
+     ctx.fillStyle='rgba(10,10,20,0.88)';ctx.fillRect(w*.04,h*.74,w*.92,h*.22);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(this.featuredComment.author,w*.06,h*.79,w*.88);ctx.font=`${Math.round(h*.029)}px sans-serif`;
+     const words=this.featuredComment.text.split(/\s+/);let line='',row=0;for(const word of words){if(ctx.measureText(line+' '+word).width>w*.86){ctx.fillText(line,w*.06,h*(.84+row*.045));line=word;if(++row>=2)break;}else line+=(line?' ':'')+word;}if(row<2)ctx.fillText(line,w*.06,h*(.84+row*.045),w*.86);
+    }
    };
    draw();this.drawTimer=setInterval(draw,1000/30);
    this.audio=new AudioContext();await this.audio.resume();const destination=this.audio.createMediaStreamDestination();
-   this.silence=this.audio.createOscillator();const silentGain=this.audio.createGain();silentGain.gain.value=0;this.silence.connect(silentGain).connect(destination);this.silence.start();
-   for(const stream of this.streams)if(stream.getAudioTracks().length)this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(destination);
+   this.master=this.audio.createGain();this.master.connect(destination);this.analyser=this.audio.createAnalyser();this.master.connect(this.analyser);this.audioInputs=[];
+   this.silence=this.audio.createOscillator();const silentGain=this.audio.createGain();silentGain.gain.value=0;this.silence.connect(silentGain).connect(this.master);this.silence.start();
+   for(const stream of this.streams)if(stream.getAudioTracks().length){const gain=this.audio.createGain(),name=stream===this.screen?'screenVolume':'micVolume';gain.gain.value=Number(this.production.element.querySelector(`[name="${name}"]`).value);this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(gain).connect(this.master);this.audioInputs.push({name,gain});}
+   const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length);this.production.element.querySelector('meter').value=Math.min(1,rms*3);},100);
    this.output=new MediaStream([...this.canvas.captureStream(30).getVideoTracks(),...destination.stream.getAudioTracks()]);
    this.element.querySelector('.capture-preview').srcObject=this.output;
    this.muted=false;this.element.querySelector('[data-capture="mute"]').textContent=text('Mute microphone','Silenciar microfone');
@@ -166,6 +183,7 @@ export class LiveCapturePanel {
  }
  releaseDevices(){
   clearInterval(this.drawTimer);
+  clearInterval(this.meterTimer);this.audioInputs=[];
   for(const stream of [...this.streams,this.output].filter(Boolean))for(const track of stream.getTracks())track.stop();
   this.streams=[];this.output=null;this.mic=null;this.camera=null;this.screen=null;
   for(const v of [this.cameraVideo,this.screenVideo])if(v){v.pause();v.srcObject=null;}
@@ -173,5 +191,5 @@ export class LiveCapturePanel {
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
   if(this.element)this.element.querySelector('.capture-preview').srcObject=null;
  }
- async release(){await this.stop();this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));this.controls();}
+ async release(){await this.production?.stopRecording();this.production?.stopClip();await this.stop();this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));this.controls();}
 }

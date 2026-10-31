@@ -16,7 +16,7 @@ function wireNavigation(contents,{base,openExternal}){
  contents.on('will-navigate',(event,url)=>{if(!appUrl(url,base)){event.preventDefault();external(url);}});
  contents.on('will-attach-webview',event=>event.preventDefault());
 }
-function activeWork(backend){return [...backend.studio.jobs.values()].some(job=>!job.ended)||Boolean(backend.studio.pendingImports.size||backend.studio.pendingPreparations.size||backend.studio.pendingOperations.size||backend.downloads.active.size);}
+function activeWork(backend){return [...backend.studio.jobs.values()].some(job=>!job.ended)||Boolean(backend.studio.pendingImports.size||backend.studio.pendingPreparations.size||backend.studio.pendingOperations.size||backend.downloads.active.size||backend.recordings?.active.size||backend.recordings?.finalizing.size);}
 function shutdownCoordinator({backend,confirm,finish}){
  let pending=null,done=false;
  return async function requestQuit(){

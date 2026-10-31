@@ -2,6 +2,8 @@ import {prepareOverlays,assetFile} from './overlays.mjs';
 import {exportBackup,decryptBackup,prepareBackupRestore} from './backups.mjs';
 import {RemoteSources} from './remote-sources.mjs';
 import {LiveCapture} from './live-capture.mjs';
+import {UnifiedChat} from './unified-chat.mjs';
+import {LocalRecordings} from './local-recordings.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -46,8 +48,8 @@ function serveFile(req, res, file, contentType) {
   if (req.method === 'HEAD' || !stat.size) return res.end();
   const stream = fs.createReadStream(file, { start, end }); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions } = {}) {
-  let store, vault, studio, downloads, notifications, updates, remoteSources;
+export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions, chatOptions } = {}) {
+  let store, vault, studio, downloads, notifications, updates, remoteSources, chat, recordings;
   const token = crypto.randomBytes(32).toString('hex'); let base = '', shuttingDown = false, restoring = false, healthCache;
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
@@ -58,6 +60,10 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (req.headers.origin && req.headers.origin !== base) throw new AppError('Origem recusada.', 403);
       const url = new URL(req.url, base); const pathname = url.pathname;
       if(pathname.startsWith('/source/'))return await remoteSources.handle(req,res);
+      if(pathname==='/oauth/youtube'&&req.method==='GET'){
+        await chat.auth.callback(url.searchParams);
+        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end('<!doctype html><html lang="en"><title>Go Streams — Account connected</title><h1>YouTube account connected</h1><p>You can close this tab and return to Go Streams.</p></html>');
+      }
       if (req.method === 'GET' && pathname === '/' && url.searchParams.get('launch') === token) {
         res.setHeader('Set-Cookie', `go_streams=${token}; HttpOnly; SameSite=Strict; Path=/`); res.writeHead(303, { Location: '/' }); return res.end();
       }
@@ -68,6 +74,8 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
       const liveChunk = /^\/api\/live\/([\w-]+)\/chunks$/.exec(pathname);
       if (liveChunk && req.method === 'POST') return json(res, await studio.liveCapture.ingest(liveChunk[1], url.searchParams.get('sequence'), req));
+      const recordingChunk = /^\/api\/recordings\/([\w-]+)\/chunks$/.exec(pathname);
+      if(recordingChunk&&req.method==='POST')return json(res,await recordings.ingest(recordingChunk[1],url.searchParams.get('sequence'),req));
       const body = !['GET', 'HEAD'].includes(req.method) ? await readJson(req,pathname==='/api/backups/restore'?24*1024*1024:pathname==='/api/settings'?6*1024*1024:1024*1024) : {};
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
@@ -75,7 +83,18 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/live/start' && req.method === 'POST') return json(res, studio.liveCapture.start(body), 201);
       const liveStop = /^\/api\/live\/([\w-]+)\/stop$/.exec(pathname);
       if (liveStop && req.method === 'POST') { studio.liveCapture.stop(liveStop[1]); return json(res, {ok:true}); }
-      if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state()});
+      if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state(),chat:chat.state(),recordings:recordings.state()});
+      if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
+      const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
+      if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1]));
+      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}.webm"`);return serveFile(req,res,recordings.media(recordingFile[1]),'video/webm');}
+      if(pathname==='/api/chat'&&req.method==='GET')return json(res,chat.state());
+      if(pathname==='/api/chat/settings'&&req.method==='PUT')return json(res,chat.auth.configure(body.provider,body));
+      if(pathname==='/api/chat/authorize'&&req.method==='POST')return json(res,await chat.auth.begin(body.provider));
+      if(pathname==='/api/chat/account/disconnect'&&req.method==='POST'){chat.disconnectAccount(body.provider);return json(res,{ok:true});}
+      if(pathname==='/api/chat/connect'&&req.method==='POST')return json(res,await chat.connect(body));
+      if(pathname==='/api/chat/disconnect'&&req.method==='POST'){chat.disconnect(body.connectionId);return json(res,{ok:true});}
+      if(pathname==='/api/chat/send'&&req.method==='POST')return json(res,await chat.send(body));
       if (pathname === '/api/health' && req.method === 'GET') {
         if (!healthCache) healthCache = Promise.all(['ffmpeg', 'ffprobe','ytdlp'].map(async key => { try { const command = toolsFor(store.data.settings)[key]; const r = await runProcess(command, [key==='ytdlp'?'--version':'-version'], { timeout: 10000 }); return [key, { available: true, version: r.stdout.split(/\r?\n/)[0] }]; } catch (e) { return [key, { available: false, error: e.message }]; } })).then(results => ({ tools: Object.fromEntries(results), version: APP_VERSION, platform: os.platform(), secureStorage: process.platform === 'win32' && !portableVault ? 'Windows DPAPI' : 'Chave local privada', dataDirectory: directory }));
         return json(res, await healthCache);
@@ -157,7 +176,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(pathname==='/api/backups/export'&&req.method==='POST')return json(res,await exportBackup(store,vault,body));
       if(pathname==='/api/backups/restore'&&req.method==='POST'){
         if(body.confirmed!==true)throw new AppError('Confirme o restauro e a substituição dos dados.');
-        const idle=(own)=>!studio.closing&&!studio.importingProject&&![...studio.pendingImports].some(item=>item!==own)&&!studio.pendingPreparations.size&&!studio.pendingOperations.size&&!studio.tickTask&&![...studio.jobs.values()].some(j=>!j.ended)&&!downloads.active.size&&!downloads.manualImports.size&&!notifications.processing&&!notifications.testing&&!updates.operation;
+        const idle=(own)=>!studio.closing&&!studio.importingProject&&![...studio.pendingImports].some(item=>item!==own)&&!studio.pendingPreparations.size&&!studio.pendingOperations.size&&!studio.tickTask&&![...studio.jobs.values()].some(j=>!j.ended)&&!downloads.active.size&&!downloads.manualImports.size&&!recordings.active.size&&!recordings.finalizing.size&&!notifications.processing&&!notifications.testing&&!updates.operation;
         if(!idle())throw new AppError('Pare as transmissões e aguarde as operações em curso antes de restaurar.',409);
         const payload=await decryptBackup(body.backup,body.password);
         if(!idle())throw new AppError('Uma operação começou durante a leitura. Tente novamente.',409);
@@ -195,7 +214,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
         return serveFile(req, res, asset[1] === 'thumb' ? path.join(directory, 'thumbs', `${media.id}.jpg`) : media.path);
       }
       if (pathname === '/api/shutdown' && req.method === 'POST') { json(res, { ok: true }); setImmediate(() => close().catch(()=>{console.error('O encerramento terminou com falhas.');process.exitCode=1;})); return; }
-      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/live-capture.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
+      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/live-capture.js', '/live-production.js', '/unified-chat.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
       throw new AppError('Não encontrado.', 404);
     } catch (e) { if (!res.headersSent) json(res, { error: e instanceof AppError ? e.message : 'Ocorreu um erro interno. Os dados existentes foram preservados.' }, e.status || 500); else res.destroy(); }
   };
@@ -207,6 +226,9 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
   try {
     store = new Store(directory); vault = new Vault(directory, { portable: portableVault }); remoteSources=new RemoteSources({base,settings:()=>store.data.settings,execute:runProcess,...remoteOptions});studio = new Studio(store, vault,{remoteSources});
     new LiveCapture(studio, {clock, ...liveOptions});
+    chat=new UnifiedChat(studio,{base,...chatOptions});
+    studio.chat=chat;
+    recordings=new LocalRecordings(studio,{clock});studio.recordings=recordings;
     downloads = new Downloads(studio,downloadOptions); notifications = new Notifications(studio,notificationOptions); updates=new Updates(store,updateOptions);updates.startTimer();
     studio.onStatus = (job,status) => notifications.enqueue(job,status);
     studio.onScheduleStatus = details => notifications.enqueueSchedule(details);
@@ -227,7 +249,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
     });
     return closeTask;
   }
-  return { server, handler, studio, store, downloads, notifications, updates, base, token, url: `${base}/?launch=${token}`, close };
+  return { server, handler, studio, store, downloads, notifications, updates, recordings, base, token, url: `${base}/?launch=${token}`, close };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   createApplication({ port: Number(process.env.GO_STREAMS_PORT || 4317) }).then(app => {

@@ -21,6 +21,7 @@ if(platforms.includes('win32')){
  fs.mkdirSync(release,{recursive:true});
  for(const folder of ['src','public'])fs.cpSync(path.join(root,folder),path.join(release,folder),{recursive:true});
  for(const name of ['package.json','README.md'])fs.copyFileSync(path.join(root,name),path.join(release,name));
+  if(fs.existsSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md')))fs.copyFileSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md'),path.join(release,'STREAMYARD-FEATURE-SCOPE.md'));
  copyYtdlp(root,release,'win32');copyRuntime(root,release,'win32');
  const csc=path.join(process.env.WINDIR||'C:\\Windows','Microsoft.NET','Framework64','v4.0.30319','csc.exe');
  const result=spawnSync(csc,['/nologo','/target:winexe','/reference:System.Windows.Forms.dll','/win32icon:'+path.join(root,'public','icon.ico'),'/out:'+binary,path.join(root,'scripts','Launcher.cs')],{encoding:'utf8',windowsHide:true});
