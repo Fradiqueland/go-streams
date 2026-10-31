@@ -9,7 +9,7 @@ export function layoutRects(layout,width,height,hasCamera,hasScreen){
  return [{source:'screen',x:0,y:0,w:width,h:height},{source:'camera',x:width*.70,y:height*.70,w:width*.28,h:height*.28}];
 }
 export class ProductionTools {
- constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed});this.values={...defaults};this.images={};this.scenes={};try{this.scenes=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');}catch{}this.level=0;}
+ constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed});this.values={...defaults};this.images={};this.scenes={};try{const saved=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))this.scenes=saved;}catch{}this.level=0;}
  get recording(){return Boolean(this.recordingId)||Boolean(this.finishing)||Boolean(this.starting);}
  mount(parent){
   if(this.element)return;
@@ -42,14 +42,19 @@ export class ProductionTools {
    ctx.save();if(rect.source==='camera'&&v.mirror){ctx.translate(rect.x+rect.w,rect.y);ctx.scale(-1,1);fit(camera,0,0,rect.w,rect.h);}else fit(rect.source==='camera'?camera:screen,rect.x,rect.y,rect.w,rect.h);ctx.restore();
   }
   if(this.clip&&!this.clip.paused&&!this.clip.ended){ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);fit(this.clip,0,0,w,h);}
-  if(this.images.logo){const image=this.images.logo,iw=w*.13,ih=iw*image.height/image.width;ctx.drawImage(image,w-iw-w*.03,h*.03,iw,Math.min(ih,h*.2));}
+  if(this.images.logo){const image=this.images.logo,scale=Math.min(w*.13/image.width,h*.2/image.height),iw=image.width*scale,ih=image.height*scale;ctx.drawImage(image,w-iw-w*.03,h*.03,iw,ih);}
   const band=(value,y,height)=>{ctx.fillStyle=v.accent;ctx.fillRect(w*.03,y,w*.94,height);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(value,w*.05,y+height*.65,w*.9);};
   if(v.name){band(v.name+(v.title?' — '+v.title:''),h*.82,h*.08);}
   if(v.banner)band(v.banner,h*.72,h*.08);
   if(v.ticker){ctx.fillStyle=v.accent;ctx.fillRect(0,h*.94,w,h*.06);ctx.font=`${Math.round(h*.03)}px sans-serif`;ctx.fillStyle='#fff';const span=ctx.measureText(v.ticker).width+w;ctx.fillText(v.ticker,w-(performance.now()/20)%span,h*.982);}
  }
- update(recordings=[]){
+ update(recordings=this.recordings||[]){
   if(!this.element)return;
+  this.recordings=recordings;
+  const current=recordings.find(item=>item.id===this.recordingId);
+  if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
+   this.recordingId=null;void this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
+  }
   this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording;
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
   const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${item.id}/file">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
@@ -65,23 +70,25 @@ export class ProductionTools {
   if(this.startDone)await this.startDone;if(this.finishing)return this.finishing;if(!this.recordingId)return;
   this.finishing=(async()=>{
    this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
-   try{await this.api(`/api/recordings/${this.recordingId}/finish`,{});await this.releaseFeed('recording');this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
-   catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);await this.releaseFeed('recording').catch(()=>{});}
-   finally{this.recordingId=null;this.finishing=null;this.update();}
+   let saved=false;
+   try{await this.api(`/api/recordings/${this.recordingId}/finish`,{});saved=true;await this.releaseFeed('recording');this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
+   catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
+   finally{if(saved)this.recordingId=null;this.finishing=null;this.update();}
   })();this.update();return this.finishing;
  }
  async action(button){
+  button.disabled=true;
   try{
    const action=button.dataset.production;
    if(action==='record')await this.startRecording();if(action==='stop-record')await this.stopRecording();
    if(action==='recover'){button.disabled=true;await this.api(`/api/recordings/${button.dataset.id}/finish`,{});this.toast(t('Recording recovered.','Gravação recuperada.'));}
-   if(action==='clear-images'){this.values.logo='';this.values.backgroundImage='';this.images={};}
+   if(action==='clear-images'){this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}
    if(action==='snapshot')this.snapshot();
    if(action==='stop-clip')this.stopClip();
    if(action==='play-clip'){
     if(!this.getStream())throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
     const file=this.element.querySelector('[name=clipFile]').files[0];if(!file||!['video/mp4','video/webm'].includes(file.type))throw Error(t('Choose a local MP4 or WebM video.','Escolha um vídeo local MP4 ou WebM.'));
-    this.stopClip();this.clipUrl=URL.createObjectURL(file);this.clip=document.createElement('video');this.clip.playsInline=true;this.clip.src=this.clipUrl;this.clip.onended=()=>this.stopClip();this.clip.onerror=()=>{this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};this.setClipAudio(this.clip);try{await this.clip.play();}catch(error){this.stopClip();throw error;}
+    this.stopClip();this.clipUrl=URL.createObjectURL(file);this.clip=document.createElement('video');this.clip.playsInline=true;this.clip.src=this.clipUrl;this.clip.onended=()=>this.stopClip();this.clip.onerror=()=>{this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};try{this.setClipAudio(this.clip);await this.clip.play();}catch(error){this.stopClip();throw error;}
    }
    if(action==='save-scene'){this.scenes[this.element.querySelector('[name=scene]').value]={...this.values};try{localStorage.setItem('go-streams-scenes',JSON.stringify(this.scenes));this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}}
    if(action==='load-scene'){const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.values={...defaults,...values};for(const [name,value]of Object.entries(this.values)){const el=this.element.querySelector(`[name="${name}"]`);if(el&&el.type!=='file'){if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};for(const name of ['logo','backgroundImage'])if(/^data:image\/(png|jpeg|webp);base64,/.test(this.values[name])){const image=new Image();image.src=this.values[name];await image.decode();this.images[name]=image;}}

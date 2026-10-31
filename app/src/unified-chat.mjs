@@ -7,15 +7,16 @@ export class UnifiedChat {
  constructor(studio,options={}){
   this.studio=studio;this.auth=new ChatAuth(studio,options);this.connections=new Map();this.messages=[];this.seen=new Set();this.sends=new Map();this.socketFactory=options.socketFactory||((url)=>new WebSocket(url));this.closed=false;
  }
- state(){return {accounts:this.auth.state(),connections:[...this.connections.values()].map(({socket,timer,seen,...c})=>c),messages:this.messages,capabilities:this.studio.store.data.channels.map(c=>({channelId:c.id,platform:c.platform,supported:supported.includes(c.platform)}))};}
+ state(){return {accounts:this.auth.state(),connections:[...this.connections.values()].map(({socket,sockets,timer,seen,...c})=>c),messages:this.messages,capabilities:this.studio.store.data.channels.map(c=>({channelId:c.id,platform:c.platform,supported:supported.includes(c.platform)}))};}
  add(connection,item){
   if(this.closed||this.connections.get(connection.id)!==connection||connection.status==='disconnected')return;
   const key=connection.id+':'+item.remoteId;if(this.seen.has(key))return;
   this.seen.add(key);this.messages.push({id:crypto.randomUUID(),connectionId:connection.id,channelId:connection.channelId,channelName:connection.name,platform:connection.platform,author:String(item.author||'Viewer').slice(0,150),text:String(item.text||'').slice(0,2000),time:item.time||new Date().toISOString(),remoteId:item.remoteId,own:item.own===true});
   while(this.messages.length>500){const old=this.messages.shift();this.seen.delete(old.connectionId+':'+old.remoteId);}
  }
- async api(provider,path,{method='GET',body}={}){
+ async api(provider,path,{method='GET',body,validate}={}){
   const account=await this.auth.token(provider),origin=provider==='YouTube'?'https://www.googleapis.com/youtube/v3/':'https://api.twitch.tv/helix/';
+  validate?.();
   if(!/^[a-zA-Z]/.test(path))throw new AppError('Invalid chat API path.');
   const headers={Authorization:'Bearer '+account.accessToken,...(provider==='Twitch'?{'Client-Id':this.auth.data.settings.Twitch.clientId}:{}),...(body?{'Content-Type':'application/json'}:{})};
   const response=await this.auth.http(origin+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});
@@ -71,10 +72,11 @@ export class UnifiedChat {
   }catch(error){if(this.connections.get(c.id)!==c)return;c.status='error';c.error=error instanceof AppError?error.message:'YouTube chat disconnected.';}
  }
  openTwitch(c,url='wss://eventsub.wss.twitch.tv/ws',previous=null){
-  const parsed=new URL(url);if(parsed.protocol!=='wss:'||parsed.hostname!=='eventsub.wss.twitch.tv'||parsed.username||parsed.password)throw new AppError('Twitch reconnection address rejected.');
-  const socket=this.socketFactory(url);c.socket=socket;
-  const alive=()=>!this.closed&&this.connections.get(c.id)===c&&c.socket===socket;
-  const deadline=seconds=>{clearTimeout(c.timer);c.timer=setTimeout(()=>{if(alive()){c.status='error';c.error='Twitch chat connection timed out. Reconnect the chat.';socket.close();previous?.close();}},Math.max(10,seconds)*1000+5000).unref();};
+  const parsed=new URL(url);if(parsed.protocol!=='wss:'||parsed.hostname!=='eventsub.wss.twitch.tv'||parsed.port||parsed.username||parsed.password)throw new AppError('Twitch reconnection address rejected.');
+  const socket=this.socketFactory(url),sessionState={timer:null,keepalive:c.sockets?.get(previous)?.keepalive||10,welcomed:false,reconnecting:false};c.socket=socket;c.sockets??=new Map();c.sockets.set(socket,sessionState);
+  const alive=()=>!this.closed&&this.connections.get(c.id)===c&&c.sockets.has(socket);
+  const fail=message=>{if(alive()){c.status='error';c.error=message;this.closeTwitch(c);}};
+  const deadline=seconds=>{clearTimeout(sessionState.timer);sessionState.timer=setTimeout(()=>fail('Twitch chat connection timed out. Reconnect the chat.'),seconds*1000+5000).unref();};
   deadline(20);
   socket.addEventListener('message',event=>{
    if(!alive())return;
@@ -82,21 +84,23 @@ export class UnifiedChat {
     if(typeof event.data!=='string'||event.data.length>1024*1024)throw Error();
     const data=JSON.parse(event.data),kind=data.metadata?.message_type,session=data.payload?.session;
     if(kind==='session_welcome'){
-     deadline(session.keepalive_timeout_seconds||10);
-     if(!previous){const account=await this.auth.token('Twitch');await this.api('Twitch','eventsub/subscriptions',{method:'POST',body:{type:'channel.chat.message',version:'1',condition:{broadcaster_user_id:c.broadcasterId,user_id:account.id},transport:{method:'websocket',session_id:session.id}}});}
-     if(!alive())return;c.status='connected';c.error='';if(previous)previous.close();
-    }else if(kind==='session_keepalive')deadline(20);
-    else if(kind==='session_reconnect')this.openTwitch(c,session.reconnect_url,socket);
-    else if(kind==='revocation'){c.status='error';c.error='Twitch chat permission was revoked. Reconnect the account.';socket.close();}
+     if(sessionState.welcomed||typeof session?.id!=='string'||!session.id)throw Error();sessionState.welcomed=true;
+     sessionState.keepalive=Math.min(600,Math.max(10,Number(session.keepalive_timeout_seconds)||sessionState.keepalive));deadline(sessionState.keepalive);
+     if(!previous){const account=await this.auth.token('Twitch');if(!alive())return;await this.api('Twitch','eventsub/subscriptions',{method:'POST',validate:()=>{if(!alive())throw new AppError('Chat disconnected.',409);},body:{type:'channel.chat.message',version:'1',condition:{broadcaster_user_id:c.broadcasterId,user_id:account.id},transport:{method:'websocket',session_id:session.id}}});}
+     if(!alive())return;c.status='connected';c.error='';if(previous)this.closeTwitch(c,previous);
+    }else if(kind==='session_keepalive')deadline(sessionState.keepalive);
+    else if(kind==='session_reconnect'){if(c.socket===socket&&!sessionState.reconnecting){sessionState.reconnecting=true;this.openTwitch(c,session.reconnect_url,socket);}}
+    else if(kind==='revocation')fail('Twitch chat permission was revoked. Reconnect the account.');
     else if(kind==='notification'){
-     deadline(20);const message=data.payload?.event;
+     deadline(sessionState.keepalive);const message=data.payload?.event;
      if(data.payload?.subscription?.type==='channel.chat.message'&&message?.broadcaster_user_id===c.broadcasterId)this.add(c,{remoteId:message.message_id,author:message.chatter_user_name,text:message.message?.text,time:data.metadata.message_timestamp,own:message.chatter_user_id===this.auth.data.accounts.Twitch?.id});
     }
-   })().catch(()=>{if(alive()){c.status='error';c.error='Twitch chat could not be connected. Check account permissions.';socket.close();}});
+   })().catch(()=>fail('Twitch chat could not be connected. Check account permissions.'));
   });
-  const closed=()=>{if(alive()){previous?.close();if(c.status!=='disconnected'){clearTimeout(c.timer);c.status='error';c.error||='Twitch chat disconnected. Reconnect the chat.';}}};
+  const closed=()=>{if(alive()){if(c.socket!==socket&&c.sockets.size>1){this.closeTwitch(c,socket);return;}fail('Twitch chat disconnected. Reconnect the chat.');}};
   socket.addEventListener('error',closed);socket.addEventListener('close',closed);
  }
+ closeTwitch(c,only){for(const [socket,state] of c.sockets||[]){if(only&&socket!==only)continue;clearTimeout(state.timer);c.sockets.delete(socket);try{socket.close();}catch{}}}
  async send(input){
   if(input.confirmed!==true)throw new AppError('Confirm sending this chat message.');
   if(!/^[a-f0-9-]{36}$/i.test(input.requestId||''))throw new AppError('A unique message request ID is required.');
@@ -111,13 +115,14 @@ export class UnifiedChat {
   c.sending=true;
   const task=(async()=>{
    try{
-    const account=await this.auth.token(c.platform);let id;
+    const validate=()=>{if(this.closed||this.connections.get(c.id)!==c||c.status!=='connected')throw new AppError('The chat was disconnected or changed before this reply could be sent.',409);};
+    const account=await this.auth.token(c.platform);validate();let id;
     if(c.platform==='YouTube'){
      const message=parent?'@'+parent.author+' '+input.text:input.text;
      if([...message].length>200)throw new AppError('The reply, including the viewer mention, exceeds 200 characters.');
-     const result=await this.api('YouTube','liveChat/messages?part=snippet',{method:'POST',body:{snippet:{liveChatId:c.chatId,type:'textMessageEvent',textMessageDetails:{messageText:message}}}});id=result.id;
+     const result=await this.api('YouTube','liveChat/messages?part=snippet',{method:'POST',validate,body:{snippet:{liveChatId:c.chatId,type:'textMessageEvent',textMessageDetails:{messageText:message}}}});id=result.id;
     }else{
-     const result=await this.api('Twitch','chat/messages',{method:'POST',body:{broadcaster_id:c.broadcasterId,sender_id:account.id,message:input.text,...(parent?{reply_parent_message_id:parent.remoteId}:{})}}),sent=result.data?.[0];
+     const result=await this.api('Twitch','chat/messages',{method:'POST',validate,body:{broadcaster_id:c.broadcasterId,sender_id:account.id,message:input.text,...(parent?{reply_parent_message_id:parent.remoteId}:{})}}),sent=result.data?.[0];
      if(!sent?.is_sent)throw new AppError('Twitch did not send this message. Check moderation and chat restrictions.',409);id=sent.message_id;
     }
     if(!id)throw new AppError('The platform did not confirm delivery. Check its chat before retrying.',502);
@@ -127,7 +132,8 @@ export class UnifiedChat {
   this.sends.set(input.requestId,{fingerprint,task});while(this.sends.size>100)this.sends.delete(this.sends.keys().next().value);
   return task;
  }
- disconnect(id){const c=this.connections.get(id);if(!c)return;c.status='disconnected';clearTimeout(c.timer);c.socket?.close();this.connections.delete(id);}
+ disconnect(id,{clearMessages=false}={}){const c=this.connections.get(id);if(c){c.status='disconnected';clearTimeout(c.timer);this.connections.delete(id);this.closeTwitch(c);}if(clearMessages){for(const message of this.messages)if(message.connectionId===id)this.seen.delete(message.connectionId+':'+message.remoteId);this.messages=this.messages.filter(message=>message.connectionId!==id);}}
+ syncChannel(id){const c=this.connections.get(id),channel=this.studio.store.data.channels.find(item=>item.id===id);if(!channel||c&&c.platform!==channel.platform||this.messages.some(message=>message.connectionId===id&&message.platform!==channel.platform)){this.disconnect(id,{clearMessages:true});return;}if(c)c.name=channel.name;for(const message of this.messages)if(message.connectionId===id)message.channelName=channel.name;}
  disconnectAccount(provider){for(const c of this.connections.values())if(c.platform===provider)this.disconnect(c.id);this.auth.disconnect(provider);}
  async shutdown(){this.closed=true;for(const id of this.connections.keys())this.disconnect(id);await this.auth.shutdown();await Promise.allSettled([...this.sends.values()].map(s=>s.task));this.messages=[];this.seen.clear();}
 }

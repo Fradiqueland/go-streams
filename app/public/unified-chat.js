@@ -30,7 +30,7 @@ export class ChatPanel {
   }
   const options=channels.filter(c=>['YouTube','Twitch'].includes(c.platform)),destination=this.element.querySelector('.chat-connect select');
   const key=JSON.stringify(options.map(c=>[c.id,c.name,c.platform]));if(key!==this.channelSignature){this.channelSignature=key;const selected=destination.value;destination.innerHTML=options.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} — ${esc(c.platform)}</option>`).join('');destination.value=options.some(c=>c.id===selected)?selected:options[0]?.id||'';}
-  const connectionKey=JSON.stringify(this.snapshot.connections.map(c=>[c.id,c.status,c.name,c.error]));
+  const connectionKey=JSON.stringify([this.snapshot.connections.map(c=>[c.id,c.status,c.name,c.platform,c.error]),channels.map(c=>[c.id,c.name,c.platform,c.producerUrl])]);
   if(connectionKey!==this.connectionSignature){
    this.connectionSignature=connectionKey;const selector=this.element.querySelector('.chat-compose select'),selected=selector.value,filter=this.element.querySelector('[data-chat="filter"]'),oldFilter=filter.value;
    const ready=this.snapshot.connections.filter(c=>c.status==='connected');selector.innerHTML=ready.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} — ${esc(c.platform)}</option>`).join('');selector.value=ready.some(c=>c.id===selected)?selected:ready[0]?.id||'';
@@ -42,8 +42,10 @@ export class ChatPanel {
  updateComposer(){
   const selector=this.element.querySelector('.chat-compose select'),target=this.snapshot.connections.find(c=>c.id===selector.value);
   this.element.querySelector('.chat-compose button').disabled=this.sending||!target||target.status!=='connected';
-  this.element.querySelector('.chat-compose textarea').maxLength=target?.platform==='Twitch'?500:200;
-  const parent=this.snapshot.messages.find(m=>m.id===this.replyTo);this.element.querySelector('.chat-reply-target').textContent=parent?text('Replying to ','A responder a ')+parent.author+': '+parent.text:'';
+  selector.disabled=Boolean(this.sending);const textarea=this.element.querySelector('.chat-compose textarea');textarea.disabled=Boolean(this.sending);textarea.maxLength=target?.platform==='Twitch'?500:200;
+  this.element.querySelector('[data-chat="cancel-reply"]').disabled=Boolean(this.sending);
+  for(const button of this.element.querySelectorAll('[data-chat="reply"]'))button.disabled=Boolean(this.sending);
+  const parent=this.snapshot.messages.find(m=>m.id===this.replyTo&&m.connectionId===selector.value);if(!parent)this.replyTo=null;this.element.querySelector('.chat-reply-target').textContent=parent?text('Replying to ','A responder a ')+parent.author+': '+parent.text:'';
  }
  renderMessages(){
   const filter=this.element.querySelector('[data-chat="filter"]').value,items=this.snapshot.messages.filter(m=>!filter||m.connectionId===filter),signature=JSON.stringify(items.map(m=>m.id))+filter;
@@ -66,7 +68,7 @@ export class ChatPanel {
   finally{this.busyForms.delete(form);this.sending=false;button.disabled=false;this.updateComposer();}
  }
  async action(button){
-  const action=button.dataset.chat;button.disabled=true;
+  const action=button.dataset.chat;if(this.sending&&['reply','cancel-reply'].includes(action))return;button.disabled=true;
   try{
    if(action==='authorize'){await this.api('/api/chat/authorize',{provider:button.dataset.provider});this.toast(text('Open the authorization link in Accounts to finish signing in.','Abra a ligação de autorização em Contas para concluir a sessão.'));}
    if(action==='disconnect-account')await this.api('/api/chat/account/disconnect',{provider:button.dataset.provider});

@@ -34,7 +34,7 @@ try {
     await page.screenshot({path:path.join(base,file),fullPage:true});
     screenshots.push({file,section,viewport:page.viewportSize()});
   }
-  const navigation=page.getByRole('navigation',{name:'Menu principal'});
+  const navigation=page.locator('#nav');
   async function goTo(name){
     await navigation.getByRole('link',{name,exact:true}).click();
     await page.waitForFunction(expected=>document.querySelector('#crumb')?.textContent===expected,name);
@@ -42,6 +42,7 @@ try {
 
   await page.goto(app.base + '/');
   await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();
+  assert.equal(await navigation.getAttribute('aria-label'),'Main menu');
   assert.equal(await page.locator('#language-select').inputValue(),'en');
   assert.equal(await page.locator('#language-select option').count(),10);
   assert.ok(await page.locator('.nav-item').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=16));
@@ -209,9 +210,10 @@ try {
   await capture('dashboard-populated.png');
   for(const width of [1440,800,390]){
     await page.setViewportSize({width,height:1000});
-    for(const name of ['Visão geral','Entrar em direto','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
+    for(const name of ['Visão geral','Entrar em direto','Câmara e ecrã ao vivo','Chat unificado','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
       await goTo(name);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${name}: horizontal page overflow at ${width}px`);checks++;
+      if(name==='Câmara e ecrã ao vivo'||name==='Chat unificado')assert.ok(await page.locator('#content').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${name}: clipped panel content at ${width}px`);
       const section=await page.evaluate(()=>location.hash.slice(1)||'dashboard');
       await capture(`screen-${width}-${section}.png`,section);
     }

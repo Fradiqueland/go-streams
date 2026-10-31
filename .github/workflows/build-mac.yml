@@ -14,7 +14,7 @@ concurrency:
 jobs:
   mac:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: app
@@ -37,9 +37,12 @@ jobs:
       - name: Test application and Mac startup
         run: |
           node scripts/check.mjs
-          npm test
           npm run test:live
           npm run test:live:browser
+          qa="$RUNNER_TEMP/gostreams-ui-qa"
+          npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
+          GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
+          npm run test:review
       - name: Build and exercise the native Mac application
         run: |
           node scripts/build.mjs --platform=darwin
@@ -57,5 +60,9 @@ jobs:
             app/release/*Mac-Portable-verification.json
             app/release/*Mac-runtime-verification.json
             app/release/*live-studio*-verification.json
+            app/release/*review*-verification.json
+            app/.tmp/review-loop/*.log
+            app/.tmp/ui-check/result.json
+            app/.tmp/ui-check/*.png
           if-no-files-found: error
           retention-days: 30

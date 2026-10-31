@@ -12,7 +12,7 @@ const response=(value,status=200)=>new Response(JSON.stringify(value),{status});
 function fixture(t,request){
  const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const root=fs.mkdtempSync(path.join(parent,'chat-test-'));
  const store=new Store(root),studio=new Studio(store,new Vault(root,{portable:true})),sockets=[];
- const chat=new UnifiedChat(studio,{base:'http://127.0.0.1:4317',request,socketFactory:url=>{const socket=new EventTarget();socket.url=url;socket.close=()=>socket.dispatchEvent(new Event('close'));sockets.push(socket);return socket;}});
+ const chat=new UnifiedChat(studio,{base:'http://127.0.0.1:4317',request,socketFactory:url=>{const socket=new EventTarget();socket.url=url;socket.closeCount=0;socket.close=()=>{socket.closeCount++;socket.dispatchEvent(new Event('close'));};sockets.push(socket);return socket;}});
  t.after(async()=>{await chat.shutdown();await studio.shutdown();assert.ok(root.startsWith(parent+path.sep));fs.rmSync(root,{recursive:true,force:true});});
  return {root,studio,chat,sockets};
 }
@@ -81,4 +81,79 @@ test('Twitch public device authorization and refresh serialize rotating tokens w
  clearTimeout(pending.timer);await f.chat.auth.pollDevice(pending);assert.equal(f.chat.state().accounts.Twitch.authorized,true);
  f.chat.auth.data.accounts.Twitch.expires=0;await Promise.all([f.chat.auth.token('Twitch'),f.chat.auth.token('Twitch')]);assert.equal(refreshes,1);assert.equal(f.chat.auth.data.accounts.Twitch.refreshToken,'rotated-1');assert.ok(calls.every(c=>!new URLSearchParams(c.options.body||'').has('client_secret')));
  await assert.rejects(f.chat.auth.http('https://evil.test/token'),/rejected/);
+});
+
+test('a stale Twitch device callback cannot cancel a newer authorization',async t=>{
+ let calls=0;const f=fixture(t,async()=>{calls++;return response({device_code:'device-'+calls,user_code:'CODE',verification_uri:'https://www.twitch.tv/activate',expires_in:600});});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.begin('Twitch');const previous=f.chat.auth.pending.get('Twitch');
+ await f.chat.auth.begin('Twitch');const current=f.chat.auth.pending.get('Twitch');
+ await f.chat.auth.pollDevice(previous);assert.equal(f.chat.auth.pending.get('Twitch'),current);assert.equal(calls,2);
+});
+
+test('changing a Google application does not reuse the previous application secret',t=>{
+ const f=fixture(t,async()=>response({}));f.chat.auth.configure('YouTube',{clientId:'123-first.apps.googleusercontent.com',clientSecret:'first-secret'});
+ f.chat.auth.configure('YouTube',{clientId:'123-second.apps.googleusercontent.com'});assert.equal(f.chat.auth.data.settings.YouTube.clientSecret,'');
+});
+
+test('authorizing a different channel never retains the old channel refresh token',async t=>{
+ const f=fixture(t,async()=>response({items:[{id:'new-owner',snippet:{title:'New presenter'}}]}));
+ f.chat.auth.data.accounts.YouTube={id:'old-owner',name:'Old',accessToken:'old-access',refreshToken:'old-refresh'};
+ await f.chat.auth.accept('YouTube',{access_token:'new-access',expires_in:3600});assert.equal(f.chat.auth.data.accounts.YouTube.refreshToken,'');
+});
+
+test('a reply waiting for credentials cannot post after its chat was disconnected',async t=>{
+ let posts=0;const f=fixture(t,async()=>{posts++;return response({id:'sent'});});
+ const c={id:'chat',chatId:'room',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ const account={id:'owner',name:'Host',accessToken:'private'};f.chat.auth.token=async()=>account;
+ const sending=f.chat.send({connectionId:c.id,text:'Do not send to a stale room',requestId:crypto.randomUUID(),confirmed:true});f.chat.disconnect(c.id);
+ await assert.rejects(sending,/disconnected|changed/);assert.equal(posts,0);
+});
+
+test('reply destination is checked again after API credential lookup',async t=>{
+ let posts=0,lookups=0;const f=fixture(t,async()=>{posts++;return response({id:'sent'});});
+ const c={id:'chat',chatId:'room',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ f.chat.auth.token=async()=>{if(++lookups===2)f.chat.disconnect(c.id);return {id:'owner',name:'Host',accessToken:'private'};};
+ await assert.rejects(f.chat.send({connectionId:c.id,text:'Stale destination',requestId:crypto.randomUUID(),confirmed:true}),/disconnected|changed/);assert.equal(lookups,2);assert.equal(posts,0);
+});
+
+test('Twitch reconnect retains old-socket events until welcome and closes every socket on disconnect',async t=>{
+ let subscriptions=0;const f=fixture(t,async(url)=>{if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});subscriptions++;return response({data:[{id:'subscription'}]},202);});
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
+ const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://127.0.0.1:9/live',key:'key'});await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});
+ const emit=(socket,type,payload)=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_type:type},payload})}));
+ const first=f.sockets[0];emit(first,'session_welcome',{session:{id:'first',keepalive_timeout_seconds:60}});await turn();
+ emit(first,'session_reconnect',{session:{reconnect_url:'wss://eventsub.wss.twitch.tv/ws?reconnect=one'}});await turn();const second=f.sockets[1];
+ emit(first,'notification',{subscription:{type:'channel.chat.message'},event:{broadcaster_user_id:'broadcaster',chatter_user_name:'Viewer',message_id:'during-handoff',message:{text:'Preserve this message'}}});await turn();
+ assert.equal(f.chat.messages.length,1);assert.equal(first.closeCount,0);
+ emit(second,'session_welcome',{session:{id:'second',keepalive_timeout_seconds:60}});await turn();assert.equal(first.closeCount,1);assert.equal(subscriptions,1);assert.equal(f.chat.connections.get(id).status,'connected');
+ emit(second,'session_reconnect',{session:{reconnect_url:'wss://eventsub.wss.twitch.tv/ws?reconnect=two'}});await turn();const third=f.sockets[2];
+ assert.doesNotThrow(()=>JSON.stringify(f.chat.state()));f.chat.disconnect(id);assert.equal(second.closeCount,1);assert.equal(third.closeCount,1);
+ emit(second,'notification',{subscription:{type:'channel.chat.message'},event:{broadcaster_user_id:'broadcaster',message_id:'late',message:{text:'Discard'}}});await turn();assert.equal(f.chat.messages.length,1);
+});
+
+test('Twitch honors a negotiated keepalive window throughout reconnects',async t=>{
+ const f=fixture(t,async(url)=>response(url.includes('users?')?{data:[{id:'broadcaster'}]}:{data:[{id:'subscription'}]},url.includes('users?')?200:202));
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
+ t.mock.timers.enable({apis:['setTimeout']});
+ const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://127.0.0.1:9/live',key:'key'});await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});
+ const emit=(socket,type,payload)=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_type:type},payload})}));
+ const first=f.sockets[0];emit(first,'session_welcome',{session:{id:'first',keepalive_timeout_seconds:60}});await turn();emit(first,'session_keepalive',{});await turn();
+ t.mock.timers.tick(26000);assert.equal(f.chat.connections.get(id).status,'connected');
+ emit(first,'session_reconnect',{session:{reconnect_url:'wss://eventsub.wss.twitch.tv/ws?reconnect=one'}});await turn();const second=f.sockets[1];emit(second,'session_welcome',{session:{id:'second',keepalive_timeout_seconds:null}});await turn();
+ t.mock.timers.tick(26000);assert.equal(f.chat.connections.get(id).status,'connected');t.mock.timers.tick(40000);assert.equal(f.chat.connections.get(id).status,'error');assert.equal(second.closeCount,1);
+});
+
+test('chat HTTP requests prohibit redirects and reject malformed or oversized provider responses',async t=>{
+ let mode='invalid';const f=fixture(t,async(url,options)=>{assert.equal(options.redirect,'error');assert.ok(options.signal instanceof AbortSignal);return mode==='invalid'?new Response('<html>gateway failure</html>'):response({data:'x'.repeat(1024*1024)});});
+ await assert.rejects(f.chat.auth.http('https://api.twitch.tv/helix/users'),/Invalid chat service response/);mode='large';await assert.rejects(f.chat.auth.http('https://api.twitch.tv/helix/users'),/too large/);
+});
+
+test('destination edits retain compatible chat and refresh names; deletion and platform changes clear obsolete chat',t=>{
+ const f=fixture(t,async()=>response({}));
+ const id=f.studio.saveChannel({name:'Original',platform:'YouTube',url:'rtmp://127.0.0.1:9/live',key:'stream'});
+ const c={id,channelId:id,name:'Original',platform:'YouTube',chatId:'room',status:'connected'};f.chat.connections.set(id,c);f.chat.add(c,{remoteId:'first',text:'Hello'});
+ f.studio.store.data.channels.find(item=>item.id===id).name='Renamed';f.chat.syncChannel(id);assert.equal(f.chat.connections.get(id),c);assert.equal(c.name,'Renamed');assert.equal(f.chat.messages[0].channelName,'Renamed');
+ f.studio.store.data.channels.find(item=>item.id===id).platform='Twitch';f.chat.syncChannel(id);assert.equal(f.chat.connections.has(id),false);assert.equal(f.chat.messages.length,0);assert.equal(f.chat.seen.size,0);
+ const second={...c,platform:'Twitch',status:'connected'};f.chat.connections.set(id,second);f.chat.add(second,{remoteId:'second',text:'New room'});f.chat.disconnect(id);f.studio.store.data.channels.find(item=>item.id===id).platform='YouTube';f.chat.syncChannel(id);assert.equal(f.chat.messages.length,0);
+ const third={...c,status:'connected'};f.chat.connections.set(id,third);f.chat.add(third,{remoteId:'third',text:'Final room'});f.studio.store.data.channels=[];f.chat.syncChannel(id);assert.equal(f.chat.connections.has(id),false);assert.equal(f.chat.messages.length,0);assert.equal(f.chat.seen.size,0);
 });

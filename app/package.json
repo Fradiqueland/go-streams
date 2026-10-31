@@ -1,6 +1,6 @@
 {
   "name": "go-streams",
-  "version": "0.18.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Local video playout and RTMP streaming studio",
@@ -17,7 +17,8 @@
     "build:installer": "python scripts/build-windows-installer.py",
     "build:electron": "python scripts/build-electron-windows.py",
     "test:live": "node --test test/live-capture.test.mjs test/optional/live-wire.test.mjs",
-    "test:live:browser": "node scripts/verify-live-browser.mjs"
+    "test:live:browser": "node scripts/verify-live-browser.mjs",
+    "test:review": "node scripts/review-loop.mjs 10"
   },
   "main": "electron/main.cjs"
 }

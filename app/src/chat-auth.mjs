@@ -43,7 +43,7 @@ export class ChatAuth {
   if(provider==='YouTube'?!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(clientId):!/^[a-z0-9]{8,100}$/.test(clientId))throw new AppError('Enter a registered OAuth application client ID.');
   const old=this.data.settings[provider]||{};
   if(old.clientId&&old.clientId!==clientId&&this.data.accounts[provider])throw new AppError('Disconnect the account before changing its application ID.',409);
-  const clientSecret=input.clientSecret===undefined||input.clientSecret===''?old.clientSecret||'':input.clientSecret;
+  const clientSecret=input.clientSecret===undefined||input.clientSecret===''?(old.clientId===clientId?old.clientSecret||'':''):input.clientSecret;
   if(typeof clientSecret!=='string'||clientSecret.length>500||/[\x00-\x20]/.test(clientSecret))throw new AppError('Invalid OAuth application secret.');
   this.cancel(provider);this.versions[provider]++;this.data.settings[provider]={clientId,clientSecret};this.save();return this.state();
  }
@@ -67,7 +67,8 @@ export class ChatAuth {
  }
  scheduleDevice(pending){pending.timer=setTimeout(()=>{void this.pollDevice(pending).catch(()=>{if(this.pending.get('Twitch')===pending)this.pending.delete('Twitch');});},pending.interval).unref();}
  async pollDevice(pending){
-  if(this.pending.get('Twitch')!==pending||Date.now()>pending.expires||this.controller.signal.aborted){this.cancel('Twitch');return;}
+  if(this.pending.get('Twitch')!==pending)return;
+  if(Date.now()>pending.expires||this.controller.signal.aborted){this.cancel('Twitch');return;}
   const {clientId}=this.data.settings.Twitch;
   const result=await this.form('https://id.twitch.tv/oauth2/token',{client_id:clientId,device_code:pending.deviceCode,scopes:TWITCH_SCOPES,grant_type:'urn:ietf:params:oauth:grant-type:device_code'});
   if(this.pending.get('Twitch')!==pending)return;
@@ -98,7 +99,7 @@ export class ChatAuth {
   }
   const old=this.data.accounts[provider];
   if(this.versions[provider]!==version||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
-  this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||old?.refreshToken||'',expires:Date.now()+(Number(tokens.expires_in)||3600)*1000,validated:Date.now()};this.save();
+  this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||(old?.id===id?old.refreshToken||'':''),expires:Date.now()+(Number(tokens.expires_in)||3600)*1000,validated:Date.now()};this.save();
  }
  async token(provider){
   const account=this.data.accounts[provider];if(!account)throw new AppError('Authorize your '+provider+' account first.',401);

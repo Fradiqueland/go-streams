@@ -20,6 +20,13 @@ test('English dashboard and schedule statuses do not retain Portuguese labels',(
  h.run("page='history';draw()");assert.ok(h.element('#content').innerHTML.includes('placeholder="Channel, video or programme…"'));
 });
 
+test('Settings and Help show the running application version instead of a stale release literal',()=>{
+ const h=uiHarness({locale:'en'});h.run("health={version:'7.8.9-review',tools:{}};page='settings';draw()");
+ assert.match(h.element('#content').innerHTML,/Go Streams 7\.8\.9-review/);
+ assert.doesNotMatch(h.element('#content').innerHTML,/Go Streams 0\.17\.0/);
+ h.run("page='help';draw()");assert.match(h.element('#content').innerHTML,/Go Streams 7\.8\.9-review/);
+});
+
 
 test('dashboard labels and triggered statuses follow Spanish, French and Arabic',()=>{
  for(const [locale,channels,started] of [['es','CANALES','Iniciado'],['fr','CHAÎNES','Démarré'],['ar','القنوات','بدأ']]){

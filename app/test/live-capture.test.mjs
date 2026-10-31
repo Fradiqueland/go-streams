@@ -6,6 +6,7 @@ import {EventEmitter} from 'node:events';
 import {PassThrough,Writable,Readable} from 'node:stream';
 import {Store,Vault,Studio} from '../src/core.mjs';
 import {LiveCapture} from '../src/live-capture.mjs';
+import {CaptureFeeds} from '../src/capture-feeds.mjs';
 import {createApplication} from '../src/server.mjs';
 import {dispatch} from './transport.mjs';
 import {LiveUploader} from '../public/live-capture.js';
@@ -60,6 +61,11 @@ test('live capture rejects missing consent, invalid sources, duplicates and stre
  studio.jobs.set('prerecorded',{id:'prerecorded',channelId:ids[0],status:'running',ended:null});
  assert.throws(()=>live.start(input(ids)),/already in use/);studio.jobs.delete('prerecorded');
 });
+
+test('synchronous encoder startup failure releases every destination and removes the abandoned session',t=>{
+ const {live,studio,ids}=fixture(t);studio.spawnProcess=()=>{throw Error('spawn failed');};
+ assert.throws(()=>live.start(input(ids)),/could not be started/);assert.equal(live.sessions.size,0);assert.ok([...studio.jobs.values()].every(job=>job.ended&&job.status==='error'));assert.ok(ids.every(id=>!studio.busyChannel(id)));
+});
 test('ordered uploads reject oversized, concurrent and out-of-order chunks; idle capture shuts down',async t=>{
  const {live,ids,studio}=fixture(t),session=live.start(input(ids));
  await assert.rejects(live.ingest(session.id,'2',chunk()),/in order/);
@@ -91,6 +97,18 @@ test('browser uploads stay ordered, stop on errors and bound retained video byte
  slow.push({size:6});assert.equal(slow.closed,true);assert.equal(errors.length,1);assert.equal(slow.bytes,0);
  const failed=new LiveUploader({fetchChunk:async()=>{throw Error('offline');},stopRemote:async()=>{stops++;},onError:e=>errors.push(e)});
  failed.push({size:1});failed.push({size:1});await failed.pending;assert.equal(failed.closed,true);assert.equal(errors.at(-1).message,'offline');assert.equal(failed.bytes,0);
+});
+
+test('shared capture validates upload sizes before reading and isolates a stalled output',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false});
+ studio.importingProject=true;assert.throws(()=>feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),/busy/);studio.importingProject=false;
+ const {id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id);
+ for(const length of [String(8*1024*1024+1),'invalid']){const req=chunk();req.headers['content-length']=length;await assert.rejects(feeds.ingest(id,'0',req),error=>error.status===413);assert.equal(feed.sequence,0);assert.equal(feed.receiving,false);}
+ const ended=[],good=[],stalled=new Writable({write(data,encoding,done){}});stalled.on('error',()=>{});
+ feeds.attach(id,stalled,error=>ended.push(error));const receiver=new Writable({write(data,encoding,done){good.push(data.length);done();}});feeds.attach(id,receiver,error=>ended.push(error));
+ workers[0].stdout.write(Buffer.alloc(4*1024*1024+1));workers[0].stdout.write(Buffer.from('next'));
+ assert.equal(ended.length,1);assert.match(ended[0],/keep up/);assert.equal(feed.sinks.size,1);assert.deepEqual(good,[4*1024*1024+1,4]);
+ stalled.destroy();await feeds.shutdown();assert.equal(feeds.active.size,0);assert.equal(ended.length,2);
 });
 test('Electron capture permissions require the trusted main frame, consent and a selected source',async()=>{
  const ses={setPermissionCheckHandler(fn){this.check=fn;},setPermissionRequestHandler(fn){this.request=fn;},setDisplayMediaRequestHandler(fn){this.display=fn;}};

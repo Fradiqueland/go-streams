@@ -1,4 +1,4 @@
-# Go Streams live studio scope — 0.18.0
+# Go Streams live studio scope — 1.0.0
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -18,7 +18,7 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
 | Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting | Stored on this computer only; bounded upload buffer, finalized index/duration, interrupted-file recovery |
 | Chat aggregation | YouTube and Twitch messages in one panel with origin labels and filters | Official provider authorization and registered OAuth applications required |
-| Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs; rate limits, moderation and quotas apply |
+| Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs and may relay to linked channels in a Shared Chat session; rate limits, moderation and quotas apply |
 | Featured comments | Show/hide an incoming comment on the captured program | Local canvas overlay; does not automatically post a message |
 | Unsupported platform chat | Clear capability status and existing producer dashboard link | No simulated integration; RTMP streaming support does not imply chat API support |
 | Production shortcuts | Ctrl+Alt+1–4 for layouts; Ctrl+Alt+R for local recording | No shortcut automatically starts a public broadcast |
@@ -54,6 +54,12 @@ The implementation respects `pollingIntervalMillis`, uses the returned page toke
 2. Choose **Sign in**, open the Twitch activation link and authorize the displayed device code. No client secret is needed for the public device flow.
 3. Grant `user:read:chat` and `user:write:chat` and connect the Twitch channel name/URL.
 4. Messages arrive through EventSub WebSocket; replies use the official Send Chat Message API. Public-device refresh tokens are rotated and refresh requests are serialized.
+
+Twitch Shared Chat sessions may relay user-token replies to linked channels. This token type cannot use `for_source_only`; Go Streams sends one request to the selected broadcaster and Twitch determines its distribution.
+
+## Standalone runtime
+
+Windows Electron includes its browser and runtime. The Mac bundle includes Node.js, FFmpeg, FFprobe and yt-dlp and opens a system browser. Built-in Safari 18.4+ supports the WebM recorder format; older Safari versions need an OS/browser update or an already installed compatible browser. Safari media behavior, real cameras and native screen pickers remain manual checks. No development tooling (npm, Python, Playwright) is installed or required on the end-user computer.
 
 Actual account connections, permissions, public platform publication and hardware/screen-picker checks remain user-authorized manual checks. Automated tests use synthetic media, local RTMP receivers and simulated provider responses, never real public messages.
 

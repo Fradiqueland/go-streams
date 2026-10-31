@@ -132,8 +132,8 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(playlistName&&req.method==='PUT')return json(res,studio.renamePlaylist(playlistName[1],body.name));
       if (pathname === '/api/playlists' && req.method === 'POST') return json(res, { id: studio.savePlaylist(body) }, 201);
       const entity = /^\/api\/(channels|playlists|media|schedules)\/([\w-]+)$/.exec(pathname);
-      if (entity && req.method === 'DELETE') { studio.remove(entity[1], entity[2],{detachFromPlaylists:body.detachFromPlaylists===true}); return json(res, { ok: true }); }
-      if (entity && req.method === 'PUT' && entity[1] === 'channels') return json(res, { id: studio.saveChannel(body, entity[2]) });
+      if (entity && req.method === 'DELETE') { studio.remove(entity[1], entity[2],{detachFromPlaylists:body.detachFromPlaylists===true}); if(entity[1]==='channels')chat.syncChannel(entity[2]); return json(res, { ok: true }); }
+      if (entity && req.method === 'PUT' && entity[1] === 'channels') { const id=studio.saveChannel(body, entity[2]);chat.syncChannel(id);return json(res, { id }); }
       if (entity && req.method === 'PUT' && entity[1] === 'playlists') return json(res, { id: studio.savePlaylist(body, entity[2]) });
       if (entity && req.method === 'PUT' && entity[1] === 'media') { studio.renameMedia(entity[2], body.title); return json(res, { ok: true }); }
       if (entity && req.method === 'PUT' && entity[1] === 'schedules') return json(res,studio.schedule(body,entity[2]));
@@ -162,6 +162,11 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/normalize' && req.method === 'POST') return json(res, await studio.normalize(body.mediaId));
       if (pathname === '/api/settings' && req.method === 'PUT') {
         const values = {};
+        const changingTools = ['ffmpeg','ffprobe','ytdlp'].some(key => body[key] !== undefined && body[key] !== (store.data.settings[key] || ''));
+        const guardToolChange = () => {
+          if (changingTools && (feeds.active.size || recordings.active.size || recordings.finalizing.size || [...studio.jobs.values()].some(job => job.sourceType === 'live' && !job.ended))) throw new AppError('Finish live capture and local recordings before changing application tools.',409);
+        };
+        guardToolChange();
         for (const key of ['ffmpeg', 'ffprobe','ytdlp']) {
           if(body[key]===undefined)continue;
           const v = body[key]; if (typeof v !== 'string' || v.length > 3000 || /[\x00-\x1f]/.test(v)) throw new AppError('Caminho inválido.');
@@ -177,12 +182,13 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
           let finish;const pending=new Promise(resolve=>{finish=resolve;});studio.pendingImports.add(pending);
           try{values.overlays=await prepareOverlays(body.overlays,directory,runProcess,()=>toolsFor(store.data.settings).ffprobe,()=>shuttingDown);}finally{studio.pendingImports.delete(pending);finish();}
         }
+        guardToolChange();
         store.update(s => { s.settings = {...s.settings,...values}; }); healthCache = null; return json(res, { ok: true });
       }
       if(pathname==='/api/backups/export'&&req.method==='POST')return json(res,await exportBackup(store,vault,body));
       if(pathname==='/api/backups/restore'&&req.method==='POST'){
         if(body.confirmed!==true)throw new AppError('Confirme o restauro e a substituição dos dados.');
-        const idle=(own)=>!studio.closing&&!studio.importingProject&&![...studio.pendingImports].some(item=>item!==own)&&!studio.pendingPreparations.size&&!studio.pendingOperations.size&&!studio.tickTask&&![...studio.jobs.values()].some(j=>!j.ended)&&!downloads.active.size&&!downloads.manualImports.size&&!recordings.active.size&&!recordings.finalizing.size&&!notifications.processing&&!notifications.testing&&!updates.operation;
+        const idle=(own)=>!studio.closing&&!studio.importingProject&&![...studio.pendingImports].some(item=>item!==own)&&!studio.pendingPreparations.size&&!studio.pendingOperations.size&&!studio.tickTask&&![...studio.jobs.values()].some(j=>!j.ended)&&!downloads.active.size&&!downloads.manualImports.size&&!feeds.active.size&&!recordings.active.size&&!recordings.finalizing.size&&!notifications.processing&&!notifications.testing&&!updates.operation;
         if(!idle())throw new AppError('Pare as transmissões e aguarde as operações em curso antes de restaurar.',409);
         const payload=await decryptBackup(body.backup,body.password);
         if(!idle())throw new AppError('Uma operação começou durante a leitura. Tente novamente.',409);
@@ -198,6 +204,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
           if(shuttingDown)throw new AppError('A aplicação está a encerrar.',503);
           if(!idle(pending))throw new AppError('Uma operação começou durante a leitura. Tente novamente.',409);
           store.update(s=>{for(const key of Object.keys(s))delete s[key];Object.assign(s,restored.data);});
+          for(const id of [...chat.connections.keys()])chat.syncChannel(id);
           if(restored.scope!=='settings'){studio.jobs.clear();studio.contexts.clear();}
           notifications.pending=[];if(restored.scope!=='project'){updates.release=null;updates.status={state:'idle'};updates.startTimer();}healthCache=null;
           return json(res,{ok:true,scope:restored.scope,interface:restored.interface});

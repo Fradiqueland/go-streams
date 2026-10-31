@@ -76,6 +76,7 @@ export class Vault {
   constructor(directory, { portable = process.platform !== 'win32' } = {}) {
     this.file = path.join(directory, portable ? 'vault.key' : 'vault.dpapi');
     const exists = fs.existsSync(this.file);
+    if (!exists && fs.existsSync(path.join(directory, 'chat-accounts.json'))) fail('A chave de proteção local está em falta. Preserve os dados e restaure a cópia de segurança.', 500);
     if (!exists && fs.existsSync(path.join(directory, 'project.json'))) {
       const saved = JSON.parse(fs.readFileSync(path.join(directory, 'project.json'), 'utf8'));
       if (saved.channels?.some(c => c.secret) || saved.notifications?.secret) fail('A chave de proteção local está em falta. Preserve os dados e restaure a cópia de segurança.', 500);
@@ -672,7 +673,7 @@ export class Studio {
   }
   async restart(jobId,confirmed) {
     const job=this.jobs.get(jobId);
-    if(!job||job.preview||job.status==='stopping'||this.restartRequests.has(jobId))fail('Esta sessão não pode ser reiniciada.',409);
+    if(!job||job.preview||job.sourceType==='live'||job.status==='stopping'||this.restartRequests.has(jobId))fail('Esta sessão não pode ser reiniciada.',409);
     if(confirmed!==true)fail('Confirme o reinício da transmissão.');
     const request={cancelled:false};this.restartRequests.set(jobId,request);
     try{

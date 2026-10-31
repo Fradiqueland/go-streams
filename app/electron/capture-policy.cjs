@@ -2,16 +2,20 @@ const {appUrl}=require('./window-policy.cjs');
 
 function wireCapturePermissions(browserSession,{contents,base,confirmMedia,chooseSource,getSources,platform=process.platform}){
  const granted=new Set();
- const trusted=(wc,url)=>wc===contents&&!contents.isDestroyed()&&appUrl(url,base);
- browserSession.setPermissionCheckHandler((wc,permission,origin)=>{
-  return trusted(wc,origin)&&granted.has(permission);
+ const trusted=(wc,url)=>wc===contents&&!contents.isDestroyed()&&appUrl(url,base)&&appUrl(contents.getURL(),base);
+ browserSession.setPermissionCheckHandler((wc,permission,origin,details={})=>{
+  if(!trusted(wc,origin)||details.isMainFrame===false||(details.requestingUrl&&!appUrl(details.requestingUrl,base)))return false;
+  if(permission==='media')return details.mediaType==='audio'||details.mediaType==='video'?granted.has(details.mediaType):granted.has('audio')&&granted.has('video');
+  return false; // A screen or window must be selected for every new capture.
  });
  browserSession.setPermissionRequestHandler((wc,permission,callback,details)=>{
   if(!trusted(wc,details.requestingUrl)||details.isMainFrame===false||!['media','display-capture'].includes(permission))return callback(false);
-  if(permission==='display-capture'){granted.add(permission);return callback(true);} // The source picker supplies explicit consent.
-  Promise.resolve(confirmMedia(details.mediaTypes||[])).then(ok=>{
+  if(permission==='display-capture')return callback(true); // The source picker supplies explicit consent.
+  const types=details.mediaTypes?.length?[...new Set(details.mediaTypes)]:['audio','video'];
+  if(types.some(type=>!['audio','video'].includes(type)))return callback(false);
+  Promise.resolve().then(()=>confirmMedia(types)).then(ok=>{
    const allowed=ok===true&&trusted(wc,details.requestingUrl);
-   if(allowed)granted.add(permission);
+   if(allowed)for(const type of types)granted.add(type);
    callback(allowed);
   },()=>callback(false));
  });

@@ -2,15 +2,15 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **0.18.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.0.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
 
-## Live camera and screen capture (0.18.0)
+## Live camera and screen capture (1.0.0)
 
 Open **Live camera & screen** to preview a camera, a screen/window, or a screen with a camera inset. Choose a microphone, 720p/1080p and landscape/portrait, then select one or more configured RTMP/RTMPS channels and explicitly confirm **Start live broadcast**. Preview alone never starts a broadcast. The original prerecorded single-video, playlist, repeat, schedule, queue and backup options remain available.
 
 Capture uses the browser's media APIs and a bounded in-memory WebM upload queue. The bundled FFmpeg encodes one shared H.264/AAC feed, which is reused by the RTMP destinations and local recording. Destination workers have independent status and failures, share the existing concurrency limit and channel reservations, and appear in the monitor/history. Stop individual destinations in the monitor or stop the live feed from the capture page. Live input cannot be paused, replayed or resumed from a saved position; start a fresh live session after an interruption.
 
-Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. Chromium with WebM MediaRecorder support is required. The optional local recording saves the composed video/audio to this computer; cloud recording is excluded. Live input is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
+Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. WebM MediaRecorder support is required (the included Windows Electron browser, Chrome/Edge, or Safari 18.4+ on Mac). No separate Node.js, FFmpeg, FFprobe or yt-dlp installation is needed. The optional local recording saves the composed video/audio to this computer; cloud recording is excluded. Live input is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
 
 Bandwidth and CPU load grow with the number of destinations. The computer and app must remain running and awake. Check account eligibility, stream keys and receipt in each platform's own dashboard. No public platform broadcast or long-duration 24/7 live capture certification is implied by loopback tests.
 
@@ -18,7 +18,7 @@ Verification: `npm run test:live` exercises consent, API authentication, destina
 
 ## Local production and unified chat
 
-The capture studio includes live layouts, logo/background/colors, presenter titles, banners, a moving ticker, local intro/outro clips, reusable scenes, private notes/teleprompter, snapshots and independent local MP4 recording. YouTube and Twitch chat adapters aggregate messages and allow explicit replies to the selected destination; official OAuth application configuration and account authorization are required. Other platforms are clearly marked unsupported for integrated chat.
+The capture studio includes live layouts, logo/background/colors, presenter titles, banners, a moving ticker, local intro/outro clips, reusable scenes, private notes/teleprompter, snapshots and independent local MP4 recording. YouTube and Twitch chat adapters aggregate messages and allow explicit replies to the selected destination; official OAuth application configuration and account authorization are required. Twitch Shared Chat can relay a reply to linked Twitch channels according to platform rules. Other platforms are clearly marked unsupported for integrated chat.
 
 See [the feature scope and account setup guide](app/STREAMYARD-FEATURE-SCOPE.md) for current capabilities and validation limits. Cloud recording is excluded; no guest/webinar hosting service is deployed.
 

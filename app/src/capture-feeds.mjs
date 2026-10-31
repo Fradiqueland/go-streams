@@ -7,7 +7,7 @@ import {encodingArgs} from './encoding.mjs';
 export class CaptureFeeds {
  constructor(studio,{clock=true}={}){this.studio=studio;this.active=new Map();studio.feeds=this;if(clock)this.timer=setInterval(()=>{for(const feed of this.active.values())if(Date.now()-feed.lastInput>20000)this.stop(feed.id,'Live capture disconnected.');},2000).unref();}
  create(input){
-  if(this.studio.closing)throw new AppError('The studio is closing.',409);
+  if(this.studio.closing||this.studio.importingProject)throw new AppError('The studio is busy or closing.',409);
   if(this.active.size>=2)throw new AppError('Finish the current live capture first.',409);
   if(input.confirmed!==true||!['720p','1080p'].includes(input.quality)||!['16:9','9:16'].includes(input.aspect)||!['camera','screen','screen-camera'].includes(input.source))throw new AppError('Confirm a supported capture source and format.');
   const encoded=encodingArgs({...this.studio.store.data.settings.encoding,copy:false,aspect:input.aspect,fps:30,videoBitrate:input.quality==='1080p'?4500:2500},input.quality,[{audio:{}}]);
@@ -29,6 +29,7 @@ export class CaptureFeeds {
  attach(id,stream,onEnd,onData){const feed=this.get(id),sink={stream,onEnd,onData};feed.sinks.add(sink);return ()=>feed.sinks.delete(sink);}
  async ingest(id,sequence,req){
   const feed=this.get(id);if(feed.receiving||sequence!==String(feed.sequence))throw new AppError('Capture chunks must arrive in order.',409);if(req.headers['content-type']?.split(';')[0]!=='video/webm')throw new AppError('Expected WebM capture data.',415);
+  const declared=req.headers['content-length'];if(declared&&(!/^\d+$/.test(declared)||Number(declared)>8*1024*1024))throw new AppError('Capture chunk too large.',413);
   feed.receiving=true;const deadline=setTimeout(()=>{this.stop(id,'Capture upload timed out.');req.destroy();},20000).unref();
   try{const parts=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>8*1024*1024)throw new AppError('Capture chunk too large.',413);parts.push(Buffer.from(chunk));}if(!size||feed.stopped)throw new AppError('Capture has ended.',410);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new AppError('Capture encoder stopped accepting video.',502)),15000).unref();feed.child.stdin.write(Buffer.concat(parts),error=>{clearTimeout(timer);error?reject(new AppError('Capture encoder disconnected.',502)):resolve();});});feed.sequence++;feed.lastInput=Date.now();return {ok:true,sequence:feed.sequence};}
   catch(error){this.stop(id,'Capture input was interrupted.');throw error;}finally{clearTimeout(deadline);feed.receiving=false;}

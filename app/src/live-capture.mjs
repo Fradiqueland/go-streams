@@ -154,6 +154,7 @@ export class LiveCapture {
     if (!session) return;
     session.stopped = true;
     for (const job of session.jobs) this.stopJob(job, error);
+    if (session.jobs.every(job => job.ended)) this.sessions.delete(id);
   }
   expire(time = Date.now()) {
     for (const session of this.sessions.values()) if (!session.feedId && !session.stopped && time-session.lastInput > this.idleTimeout) this.stop(session.id, 'Live capture disconnected or the capture window was closed.');

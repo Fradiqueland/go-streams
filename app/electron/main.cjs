@@ -51,7 +51,8 @@ async function start(){
  window=new BrowserWindow({width:1440,height:960,minWidth:760,minHeight:520,show:false,title:'Go Streams',icon:path.join(root,'public','icon.ico'),autoHideMenuBar:true,backgroundColor:'#f5f6fa',webPreferences:rendererPreferences(browserSession)});
  wireCapturePermissions(browserSession,{contents:window.webContents,base:backend.base,
   confirmMedia:async types=>{
-   const result=await dialog.showMessageBox(window,{type:'question',title:'Go Streams — Live capture',message:`Allow Go Streams to use your ${types.includes('video')?'camera and microphone':'microphone'} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
+   const devices=types.includes('video')?(types.includes('audio')?'camera and microphone':'camera'):'microphone';
+   const result=await dialog.showMessageBox(window,{type:'question',title:'Go Streams - Live capture',message:`Allow Go Streams to use your ${devices} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
    return result.response===1;
   },
   getSources:()=>desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:0,height:0}}),
