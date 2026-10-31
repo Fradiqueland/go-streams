@@ -217,6 +217,7 @@ def main():
     output=ROOT/'release'/candidate.name
     if output.exists() and not args.replace:raise FileExistsError('Preserve the existing installer or pass --replace: '+str(output))
     if output.is_symlink():raise ValueError('Installer output must be a regular file')
+    output.parent.mkdir(parents=True,exist_ok=True)
     os.replace(candidate,output)
     report.update(file=str(output),bytes=output.stat().st_size,sha256=digest(output),workDirectory=str(work),applicationDirectory=str(application))
     if not args.keep_work:

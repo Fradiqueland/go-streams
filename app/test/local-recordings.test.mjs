@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {Readable} from 'node:stream';
-import {PassThrough} from 'node:stream';
+import {PassThrough,Writable} from 'node:stream';
 import {EventEmitter} from 'node:events';
 import {Store,Vault,Studio,runProcess} from '../src/core.mjs';
 import {LocalRecordings} from '../src/local-recordings.mjs';
@@ -88,4 +88,16 @@ test('legacy raw-WebM recording metadata retains its format and original index',
  const {root,studio}=fixture(t),file=path.join(root,'recordings','index.json'),item={id:'12345678-1234-1234-1234-123456789abc',created:new Date().toISOString(),status:'interrupted',bytes:123};
  const original=JSON.stringify([item]);fs.writeFileSync(file,original);const reopened=new LocalRecordings(studio,{clock:false});
  try{assert.equal(reopened.state()[0].format,'webm');assert.equal(reopened.state()[0].error,'');assert.equal(fs.readFileSync(file,'utf8'),original);}finally{await reopened.shutdown();}
+});
+
+test('a recording upload finishing after Stop does not acknowledge another capture chunk',async t=>{
+ const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true}),record=recordings.active.get(id);
+ await new Promise(resolve=>{record.stream.once('close',resolve);record.stream.end();});
+ fs.writeFileSync(path.join(root,'recordings',id+'.part'),'recoverable-source');
+ let written;record.stream=new Writable({write(data,encoding,done){written=done;}});
+ recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'finalized-output');
+ const req=Readable.from([Buffer.from('last-chunk')]);req.headers={'content-type':'video/webm'};
+ const upload=recordings.ingest(id,'0',req);while(!written)await new Promise(resolve=>setImmediate(resolve));
+ const stopped=recordings.finish(id),rejected=assert.rejects(upload,error=>error.status===410);written();
+ await rejected;await stopped;assert.equal(record.sequence,0);assert.equal(recordings.state()[0].status,'completed');
 });

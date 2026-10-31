@@ -6,6 +6,13 @@ import {atomicWrite,AppError} from './core.mjs';
 const GOOGLE_SCOPE='https://www.googleapis.com/auth/youtube.force-ssl';
 const TWITCH_SCOPES='user:read:chat user:write:chat';
 const ORIGINS=new Set(['https://oauth2.googleapis.com','https://www.googleapis.com','https://id.twitch.tv','https://api.twitch.tv']);
+function readTokens(tokens){
+ if(!tokens||typeof tokens.access_token!=='string'||!tokens.access_token||tokens.access_token.length>10000)throw new AppError('The provider did not return an access token.',502);
+ const lifetime=tokens.expires_in===undefined?3600:tokens.expires_in;
+ if(!Number.isSafeInteger(lifetime)||lifetime<=0||!Number.isSafeInteger(Date.now()+lifetime*1000))throw new AppError('Invalid access token lifetime response.',502);
+ if(tokens.refresh_token!==undefined&&(typeof tokens.refresh_token!=='string'||!tokens.refresh_token||tokens.refresh_token.length>10000))throw new AppError('Invalid refresh token response.',502);
+ return {accessToken:tokens.access_token,refreshToken:tokens.refresh_token,expires:Date.now()+lifetime*1000};
+}
 export class ChatAuth {
  constructor(studio,{base,request=fetch,clock=true,onSessionEnd=()=>{}}={}){
   Object.assign(this,{studio,base,request,clock,onSessionEnd});this.pending=new Map();this.refreshing=new Map();this.operations=new Set();this.controller=new AbortController();this.versions={YouTube:0,Twitch:0};
@@ -22,7 +29,10 @@ export class ChatAuth {
   const task=(async()=>{
    let response;
    try{response=await this.request(url,{...options,redirect:'error',signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(15000)])});}
-   catch{throw new AppError('The chat service could not be reached.',502);}
+   catch{
+    if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);
+    const error=new AppError('The chat service could not be reached.',502);error.retryable=true;throw error;
+   }
    const chunks=[];let size=0;
    if(response.body){for await(const chunk of response.body){size+=chunk.length;if(size>1024*1024)throw new AppError('Chat service response was too large.',502);chunks.push(Buffer.from(chunk));}}
    let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw Error();}catch{throw new AppError('Invalid chat service response.',502);}
@@ -68,12 +78,18 @@ export class ChatAuth {
   const pending={deviceCode:result.value.device_code,userCode:String(result.value.user_code||''),version,url:url.href,expires:Date.now()+Math.min(1800,expires)*1000,interval:Math.max(5,interval)*1000};this.pending.set(provider,pending);
   this.scheduleDevice(pending);return this.state();
  }
- scheduleDevice(pending){pending.timer=setTimeout(()=>{void this.pollDevice(pending).catch(()=>{if(this.pending.get('Twitch')===pending)this.pending.delete('Twitch');});},pending.interval).unref();}
+ scheduleDevice(pending){pending.timer=setTimeout(()=>{void this.pollDevice(pending).catch(()=>{if(this.pending.get('Twitch')===pending)this.pending.delete('Twitch');});},Math.min(pending.interval,Math.max(0,pending.expires-Date.now()))).unref();}
  async pollDevice(pending){
   if(this.pending.get('Twitch')!==pending)return;
-  if(Date.now()>pending.expires||this.controller.signal.aborted){this.cancel('Twitch');return;}
+  if(Date.now()>=pending.expires||this.controller.signal.aborted){this.cancel('Twitch');return;}
   const {clientId}=this.data.settings.Twitch;
-  const result=await this.form('https://id.twitch.tv/oauth2/token',{client_id:clientId,device_code:pending.deviceCode,scopes:TWITCH_SCOPES,grant_type:'urn:ietf:params:oauth:grant-type:device_code'});
+  let result;
+  try{result=await this.form('https://id.twitch.tv/oauth2/token',{client_id:clientId,device_code:pending.deviceCode,scopes:TWITCH_SCOPES,grant_type:'urn:ietf:params:oauth:grant-type:device_code'});}
+  catch(error){
+   if(this.pending.get('Twitch')!==pending||this.controller.signal.aborted)return;
+   if(!error.retryable)throw error;
+   pending.interval=Math.min(1800000,pending.interval*2);this.scheduleDevice(pending);return;
+  }
   if(this.pending.get('Twitch')!==pending)return;
   if(!result.ok){if(result.value.message==='authorization_pending'||result.value.message==='slow_down'){if(result.value.message==='slow_down')pending.interval+=5000;this.scheduleDevice(pending);return;}this.cancel('Twitch');return;}
   await this.accept('Twitch',result.value,pending.version);if(this.pending.get('Twitch')===pending)this.cancel('Twitch');
@@ -90,10 +106,7 @@ export class ChatAuth {
   await this.accept('YouTube',result.value,pending.version);
  }
  async accept(provider,tokens,version=this.versions[provider]){
-  if(!tokens||typeof tokens.access_token!=='string'||!tokens.access_token||tokens.access_token.length>10000)throw new AppError('The provider did not return an access token.',502);
-  const lifetime=tokens.expires_in===undefined?3600:tokens.expires_in;
-  if(!Number.isSafeInteger(lifetime)||lifetime<=0||!Number.isSafeInteger(Date.now()+lifetime*1000))throw new AppError('Invalid access token lifetime response.',502);
-  if(tokens.refresh_token!==undefined&&(typeof tokens.refresh_token!=='string'||!tokens.refresh_token||tokens.refresh_token.length>10000))throw new AppError('Invalid refresh token response.',502);
+  const {accessToken,refreshToken,expires}=readTokens(tokens);
   let id,name;
   if(provider==='Twitch'){
    const checked=await this.http('https://id.twitch.tv/oauth2/validate',{headers:{Authorization:'OAuth '+tokens.access_token}}),v=checked.value;
@@ -106,12 +119,12 @@ export class ChatAuth {
   }
   const old=this.data.accounts[provider];
   if(this.versions[provider]!==version||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
-  this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||(old?.id===id?old.refreshToken||'':''),expires:Date.now()+lifetime*1000,validated:Date.now()};this.save();
+  this.data.accounts[provider]={id,name,accessToken,refreshToken:refreshToken||(old?.id===id?old.refreshToken||'':''),expires,validated:Date.now()};this.save();
   if(old&&old.id!==id){this.versions[provider]++;this.onSessionEnd(provider);}
   if(provider==='Twitch')this.scheduleValidation();
  }
  async token(provider){
-  const account=this.data.accounts[provider];if(!account)throw new AppError('Authorize your '+provider+' account first.',401);
+  let account=this.data.accounts[provider];if(!account)throw new AppError('Authorize your '+provider+' account first.',401);
   if(account.expires>Date.now()+60000&&(provider!=='Twitch'||account.validated>Date.now()-3600000))return account;
   if(this.refreshing.has(provider))return this.refreshing.get(provider);
   const version=this.versions[provider];
@@ -120,6 +133,12 @@ export class ChatAuth {
    if(!account.refreshToken)throw new AppError('Reconnect your '+provider+' account.',401);
    const setup=this.data.settings[provider],result=await this.form(provider==='YouTube'?'https://oauth2.googleapis.com/token':'https://id.twitch.tv/oauth2/token',{client_id:setup.clientId,...(setup.clientSecret?{client_secret:setup.clientSecret}:{}),refresh_token:account.refreshToken,grant_type:'refresh_token'});
    if(!result.ok){const invalid=result.status===400||result.status===401;throw new AppError(invalid?'Reconnect your '+provider+' account.':'Account renewal is temporarily unavailable.',invalid?401:502);}
+   if(provider==='Twitch'){
+    const credentials=readTokens(result.value);
+    if(this.versions[provider]!==version||this.data.accounts[provider]!==account||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
+    // Device-flow refresh tokens are single-use. Keep the rotated pair if validation is temporarily unavailable.
+    account={...account,...credentials,refreshToken:credentials.refreshToken||'',validated:0};this.data.accounts[provider]=account;this.save();
+   }
    await this.accept(provider,result.value,version);return this.data.accounts[provider];
   })();this.refreshing.set(provider,task);try{return await task;}catch(error){if(provider==='Twitch'&&(error.status===401||error.status===403))this.invalidate(provider,account,version);throw error;}finally{this.refreshing.delete(provider);}
  }

@@ -54,6 +54,7 @@ export class LocalRecordings {
    if(!size||record.item.status!=='recording')throw new AppError('Recording ended before this chunk arrived.',409);
    this.checkSpace();if(record.error)throw new AppError(record.error,507);
    await new Promise((resolve,reject)=>record.stream.write(Buffer.concat(chunks),error=>error?reject(new AppError('The recording could not be written.',507)):resolve()));
+   if(record.item.status!=='recording'||this.active.get(id)!==record)throw new AppError('Recording has ended.',410);
    record.item.bytes+=size;record.sequence++;record.lastInput=Date.now();return {ok:true,sequence:record.sequence};
   }finally{clearTimeout(deadline);record.receiving=false;}
  }

@@ -212,6 +212,7 @@ export class Studio {
     const result = { imported: [], errors: [], conversionSuggested: [] }; const tools = toolsFor(this.store.data.settings);
     for (const file of paths) {
       if (this.closing) break;
+      let thumbnail;
       try {
         const meta = await probe(text(file, 'Caminho', 3000), tools.ffprobe);
         if (this.closing) break;
@@ -224,6 +225,7 @@ export class Studio {
         }
         let media = { ...meta, id: id(), title: path.basename(meta.path, path.extname(meta.path)), added: now(), thumbnail: false };
         const thumb = path.join(this.store.directory, 'thumbs', `${media.id}.jpg`);
+        thumbnail={path:thumb,mediaId:media.id};
         try { await this.runMediaProcess(tools.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-ss', String(Math.min(1, meta.duration / 2)), '-i', meta.path, '-frames:v', '1', '-vf', 'scale=480:-2', '-y', thumb]); media.thumbnail = true; } catch { /* Metadata is still useful when thumbnail decoding fails. */ }
         // Thumbnail creation yields: another import may have committed this path meanwhile.
         const committed=this.store.data.media.find(m=>!m.source&&sameLocalFile(m.path,meta.path));
@@ -233,7 +235,10 @@ export class Studio {
         const needsConversion = media.codec !== 'h264' || (media.audio && media.audio.codec !== 'aac') || path.extname(media.path).toLowerCase() !== '.mp4';
         if (convert && needsConversion) { const converted = await this.convertMedia(media.id); result.imported.push(converted.id); }
         else { result.imported.push(media.id); if (needsConversion) result.conversionSuggested.push(media.id); }
-      } catch (e) { result.errors.push({ file, message: e.message }); }
+      } catch (e) {
+        if(thumbnail&&!this.store.data.media.some(m=>m.id===thumbnail.mediaId))try{fs.unlinkSync(thumbnail.path);}catch{}
+        result.errors.push({ file, message: e.message });
+      }
     }
     return result;
   }
@@ -723,7 +728,7 @@ export class Studio {
     if (!schedule) return;
     const source = schedule.mediaId ? this.store.data.media.find(m => m.id === schedule.mediaId) : this.store.data.playlists.find(p => p.id === schedule.playlistId);
     const details = { scheduleId, result: status, playlist: source?.title || source?.name || 'Conteúdo indisponível', channel: (schedule.channelIds || []).map(id => this.store.data.channels.find(c => c.id === id)?.name || 'Canal indisponível').join(', '), at: schedule.at, timeZone: schedule.timeZone || 'UTC', detail: error };
-    this.store.log('error', 'Agendamento: ' + status, {kind:'schedule', ...details});
+    try { this.store.log('error', 'Agendamento: ' + status, {kind:'schedule', ...details}); } catch {}
     try { this.onScheduleStatus?.(details); } catch {}
   }
   async tickSchedules(time) {

@@ -174,6 +174,8 @@ export class RemoteSources {
       if(![200,206,416].includes(upstream.statusCode))throw new AppError('Remote source unavailable. Check the link and your Internet connection.',502);
       const expectedBytes=validatePartial(upstream,requested);
       const type=String(upstream.headers['content-type']||'').split(';')[0].toLowerCase();
+      const encoding=String(upstream.headers['content-encoding']||'identity').trim().toLowerCase();
+      if(upstream.statusCode!==416&&encoding!=='identity')throw new AppError('The video source must return uncompressed MP4 bytes.',415);
       if(upstream.statusCode!==416&&!['video/mp4','application/mp4','application/octet-stream','binary/octet-stream'].includes(type))throw new AppError('The link must return an MP4 video, not a webpage or playlist.',415);
       const headers={'Content-Type':'video/mp4','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
       for(const key of ['content-length','content-range','accept-ranges'])if(upstream.headers[key])headers[key]=upstream.headers[key];

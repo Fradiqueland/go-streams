@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PassThrough,Readable,Writable} from 'node:stream';
 import {EventEmitter} from 'node:events';
+import {gzipSync} from 'node:zlib';
 import {RemoteSources,openRemote} from '../src/remote-sources.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -73,4 +74,14 @@ test('remote request abort releases a connecting request even when its transport
  const controller=new AbortController(),ready=deferred();let destroyed=false;
  const work=openRemote('https://cdn.test/file.mp4',{signal:controller.signal,lookup:async()=>[{address:'8.8.8.8'}],request:()=>{const req=new EventEmitter();req.setTimeout=()=>{};req.end=()=>ready.resolve();req.destroy=error=>{destroyed=true;req.emit('error',error);};return req;}});
  const rejected=assert.rejects(work,/cancelled/);await ready.promise;controller.abort();await rejected;assert.equal(destroyed,true);
+});
+
+for(const status of [200,206])test('encoded '+status+' upstream media is rejected before its compressed bytes are relayed as MP4',async()=>{
+ const body=gzipSync(Buffer.from('MP4 fixture bytes'));
+ const upstream=response(status,{'content-encoding':'gzip',...(status===206?{'content-range':`bytes 0-${body.length-1}/${body.length}`}:{})},body);
+ const sources=remote({open:async()=>upstream}),entry=sources.entry({path:'https://cdn.test/file.mp4'}),destination=sink();
+ try{
+  await assert.rejects(sources.serve(request(status===206?'bytes=0-':undefined),destination,entry),error=>error.status===415);
+  assert.equal(destination.status,undefined);assert.equal(upstream.destroyed,true);assert.equal(sources.requests.size,0);
+ }finally{await sources.shutdown();}
 });

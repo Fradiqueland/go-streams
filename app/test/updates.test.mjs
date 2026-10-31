@@ -78,3 +78,30 @@ test('update directory creation failure is visible and leaves the verified relea
  await assert.rejects(u.download());assert.equal(u.state().state,'error');assert.equal(u.operation,null);assert.equal(u.controller,null);
  assert.equal(u.release.available,true);assert.equal(fs.readFileSync(u.store.file,'utf8'),original);
 });
+
+for(const operation of ['check','download'])test('rejected '+operation+' HTTP response cancels its unread body',async()=>{
+ const u=make(async()=>new Response(JSON.stringify(manifest())));if(operation==='download')await u.check();
+ let cancelled=0;
+ u.fetcher=async()=>new Response(new ReadableStream({cancel(){cancelled++;}}),{status:503});
+ await assert.rejects(u[operation]());
+ assert.equal(cancelled,1,'an unread error response must release its connection');
+ assert.equal(u.operation,null);assert.equal(u.controller,null);
+});
+
+for(const operation of ['check','download'])test('late '+operation+' HTTP response is cancelled after shutdown',async()=>{
+ const u=make(async()=>new Response(JSON.stringify(manifest())));if(operation==='download')await u.check();
+ let release,started,cancelled=0;const gate=new Promise(resolve=>{release=resolve;}),reading=new Promise(resolve=>{started=resolve;});
+ u.fetcher=async()=>{started();await gate;return new Response(new ReadableStream({cancel(){cancelled++;}}));};
+ const outcome=u[operation]().then(value=>({value}),error=>({error}));await reading;
+ const closing=u.shutdown();release();await closing;
+ assert.ok((await outcome).error);assert.equal(cancelled,1);
+});
+
+test('a download that cannot open its partial file cancels the unread package body',async t=>{
+ const u=make(async()=>new Response(JSON.stringify(manifest())));await u.check();let cancelled=0;
+ u.fetcher=async()=>new Response(new ReadableStream({cancel(){cancelled++;}}));
+ const open=fs.openSync.bind(fs);
+ t.mock.method(fs,'openSync',(file,...args)=>{if(String(file).endsWith('.part'))throw Object.assign(Error('Controlled permissions failure'),{code:'EACCES'});return open(file,...args);});
+ await assert.rejects(u.download());assert.equal(cancelled,1);
+ assert.deepEqual(fs.readdirSync(path.join(u.store.directory,'updates')),[]);
+});

@@ -113,6 +113,24 @@ test('playlist addition retains the selected video instead of resetting to the f
  assert.deepEqual(JSON.parse(h.requests[0].body).mediaIds,['second','second']);
 });
 
+for(const startedBeforeSave of [true,false])test('playlist drag '+(startedBeforeSave?'started before':'started during')+' save cannot replace the locked form or submit a duplicate',async()=>{
+ const pending=deferred(),h=ready({fetch:url=>url==='/api/playlists/p'?pending.promise:Promise.resolve(ok(empty()))});
+ const events=[new Map(),new Map()],rows=events.map((handlers,index)=>({dataset:{sequenceIndex:String(index)},addEventListener(type,handler){handlers.set(type,handler);}}));
+ h.element('#dialog').querySelectorAll=selector=>selector==='[data-sequence-index]'?rows:[];
+ h.run("state.playlists[0].mediaIds=['m','m'];playlistForm('p')");
+ const form=h.fields('modal-form',{name:'Programme',quality:'720p',loop:false});
+ const event={preventDefault(){},dataTransfer:{setData(){}}};
+ if(startedBeforeSave)events[0].get('dragstart')(event);
+ const saving=form.onsubmit(event);
+ try{
+  if(!startedBeforeSave)events[0].get('dragstart')(event);
+  events[1].get('drop')(event);
+  assert.equal(h.element('#modal-form'),form,'Saving form was replaced by a drag operation');
+  await form.onsubmit(event);
+  assert.equal(h.requests.filter(request=>request.url==='/api/playlists/p').length,1);
+ }finally{pending.resolve(ok({ok:true}));await saving;}
+});
+
 
 test('background redraw retains keyboard focus on the same monitor action',()=>{
  const h=ready();let focused=false;

@@ -239,3 +239,29 @@ test('a scene save rejected by browser storage preserves the last successfully s
  assert.equal(errors.length,1);assert.match(errors[0],/could not save/);
  await tools.action({dataset:{production:'load-scene'}});assert.equal(tools.values.name,'Saved presenter');
 });
+
+test('closing a preview prevents another recording from starting while live shutdown is pending',async t=>{
+ const stopped=deferred(),calls=[],panel=capturePanel(async route=>{calls.push(route);if(route==='/api/live/active/stop')return stopped.promise;return {id:'unexpected-recording'};});
+ panel.output={getTracks:()=>[]};panel.session={id:'active'};panel.acquireFeed=async()=> 'shared-feed';panel.releaseFeed=async()=>{};
+ panel.update=()=>{};t.mock.method(ProductionTools.prototype,'mount',()=>{});panel.mount({appendChild(){}},{});
+ panel.production.element={querySelector:()=>({})};panel.production.update=()=>{};
+ const closing=panel.release();await new Promise(resolve=>setImmediate(resolve));
+ try{await panel.production.startRecording();assert.equal(panel.production.recordingId,undefined);assert.deepEqual(calls,['/api/live/active/stop']);}
+ finally{stopped.resolve();await closing;}
+ assert.equal(panel.output,null);
+});
+
+test('loading a saved scene clears branding pickers so the previous file can be selected again',async()=>{
+ const tools=new ProductionTools({toast(){}}),inputs={logo:{type:'file',value:'C:/fakepath/logo.png'},backgroundImage:{type:'file',value:'C:/fakepath/background.png'}};
+ tools.scenes.intro={name:'Presenter'};tools.element={querySelector:selector=>selector==='[name=scene]'?{value:'intro'}:inputs[/name="([^"]+)"/.exec(selector)[1]]};tools.update=()=>{};
+ await tools.action({dataset:{production:'load-scene'}});assert.equal(inputs.logo.value,'');assert.equal(inputs.backgroundImage.value,'');
+});
+
+test('an upload failure cancels a pending live start and stops its delayed session response',async t=>{
+ installRecorder(t);const started=deferred(),calls=[],panel=capturePanel(async route=>{calls.push(route);if(route==='/api/live/start')return started.promise;return {id:'shared-feed'};});
+ panel.output={getTracks:()=>[]};panel.config={quality:'720p'};panel.production={async stopRecording(){}};panel.element.querySelectorAll=()=>[{value:'destination'}];
+ const starting=panel.start();await new Promise(resolve=>setImmediate(resolve));
+ panel.feedUploader.fail(Error('Upload disconnected'));await new Promise(resolve=>setImmediate(resolve));
+ started.resolve({id:'late-session'});await starting;
+ assert.equal(panel.session,null);assert.ok(calls.includes('/api/live/late-session/stop'));assert.equal(panel.feedSession,null);
+});

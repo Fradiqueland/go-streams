@@ -83,7 +83,7 @@ export class UnifiedChat {
   const alive=()=>!this.closed&&this.connections.get(c.id)===c&&c.sockets.has(socket);
   const fail=message=>{if(alive()){c.status='error';c.error=message;this.closeTwitch(c);}};
   const deadline=seconds=>{clearTimeout(sessionState.timer);sessionState.timer=setTimeout(()=>fail('Twitch chat connection timed out. Reconnect the chat.'),seconds*1000+5000).unref();};
-  deadline(20);
+  deadline(previous?30:20);
   socket.addEventListener('message',event=>{
    if(!alive())return;
    void(async()=>{
@@ -96,11 +96,11 @@ export class UnifiedChat {
      sessionState.keepalive=Math.min(600,Math.max(10,Number(session.keepalive_timeout_seconds)||sessionState.keepalive));deadline(sessionState.keepalive);
      if(!previous){const account=await this.auth.token('Twitch');if(!alive())return;const subscribed=await this.api('Twitch','eventsub/subscriptions',{method:'POST',validate:()=>{if(!alive())throw new AppError('Chat disconnected.',409);},body:{type:'channel.chat.message',version:'1',condition:{broadcaster_user_id:c.broadcasterId,user_id:account.id},transport:{method:'websocket',session_id:session.id}}});const subscription=subscribed.data?.[0];if(typeof subscription?.id!=='string'||!subscription.id||subscription.status!=='enabled')throw new AppError('Twitch did not enable this chat subscription.',502);}
      if(!alive())return;c.status='connected';c.error='';if(previous)this.closeTwitch(c,previous);
-    }else if(kind==='session_keepalive')deadline(sessionState.keepalive);
-    else if(kind==='session_reconnect'){if(c.socket===socket&&!sessionState.reconnecting){sessionState.reconnecting=true;this.openTwitch(c,session.reconnect_url,socket);}}
+    }else if(kind==='session_keepalive'){if(!sessionState.reconnecting)deadline(sessionState.keepalive);}
+    else if(kind==='session_reconnect'){if(c.socket===socket&&!sessionState.reconnecting){sessionState.reconnecting=true;deadline(30);this.openTwitch(c,session.reconnect_url,socket);}}
     else if(kind==='revocation')fail('Twitch chat permission was revoked. Reconnect the account.');
     else if(kind==='notification'){
-     deadline(sessionState.keepalive);const message=data.payload?.event;
+     if(!sessionState.reconnecting)deadline(sessionState.keepalive);const message=data.payload?.event;
      if(data.payload?.subscription?.type==='channel.chat.message'&&message?.broadcaster_user_id===c.broadcasterId)this.add(c,{remoteId:message.message_id,author:message.chatter_user_name,text:message.message?.text,time:data.metadata.message_timestamp,own:message.chatter_user_id===this.auth.data.accounts.Twitch?.id});
     }
    })().catch(()=>fail('Twitch chat could not be connected. Check account permissions.'));

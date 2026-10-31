@@ -366,3 +366,52 @@ test('a delayed Twitch API 401 cannot revoke credentials refreshed after that re
  await assert.rejects(sending,error=>error.status===401);
  assert.equal(f.chat.auth.data.accounts.Twitch.accessToken,'new-private');assert.equal(f.chat.connections.get(c.id),c);
 });
+
+test('a temporary Twitch validation outage preserves a single-use refresh token rotation across restart',async t=>{
+ let refreshes=0,validations=0;
+ const request=async(url,options)=>{
+  if(url.endsWith('/token')){refreshes++;assert.equal(new URLSearchParams(options.body).get('refresh_token'),'old-refresh');return response({access_token:'rotated-access',refresh_token:'rotated-refresh',expires_in:14400});}
+  assert.equal(options.headers.Authorization,'OAuth rotated-access');
+  if(++validations===1)return response({message:'temporarily unavailable'},503);
+  return response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});
+ };
+ const f=fixture(t,request);f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'old-access',refreshToken:'old-refresh',expires:0,validated:0};
+ await assert.rejects(f.chat.auth.token('Twitch'),error=>error.status===502);
+ assert.equal(f.chat.auth.data.accounts.Twitch.refreshToken,'rotated-refresh');assert.equal(f.chat.auth.data.accounts.Twitch.validated,0);
+ assert.ok(!fs.readFileSync(f.chat.auth.file,'utf8').includes('rotated-refresh'));
+ await f.chat.shutdown();
+ const reloaded=new UnifiedChat(f.studio,{base:'http://127.0.0.1:4317',request,clock:false});t.after(()=>reloaded.shutdown());
+ const account=await reloaded.auth.token('Twitch');assert.equal(account.accessToken,'rotated-access');assert.equal(account.refreshToken,'rotated-refresh');
+ assert.equal(refreshes,1);assert.equal(validations,2);assert.ok(account.validated>0);
+});
+
+test('a Twitch reconnect grants the handoff window even when the previous keepalive deadline is near',async t=>{
+ const f=fixture(t,async url=>response(url.includes('users?')?{data:[{id:'broadcaster'}]}:{data:[{id:'subscription',status:'enabled'}]},url.includes('users?')?200:202));
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
+ t.mock.timers.enable({apis:['setTimeout']});
+ const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://localhost/live',key:'stream'});await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});
+ const emit=(socket,type,payload)=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_type:type},payload})}));
+ const first=f.sockets[0];emit(first,'session_welcome',{session:{id:'first',keepalive_timeout_seconds:10}});await turn();
+ t.mock.timers.tick(9000);emit(first,'session_reconnect',{session:{reconnect_url:'wss://eventsub.wss.twitch.tv/ws?reconnect=handoff'}});await turn();const second=f.sockets[1];
+ emit(first,'notification',{subscription:{type:'channel.chat.message'},event:{broadcaster_user_id:'broadcaster',message_id:'during-handoff',message:{text:'Still receiving the old connection'}}});emit(first,'session_keepalive',{});await turn();
+ t.mock.timers.tick(20000);assert.equal(first.closeCount,0);assert.equal(second.closeCount,0);
+ emit(second,'session_welcome',{session:{id:'second',keepalive_timeout_seconds:null}});await turn();
+ assert.equal(f.chat.connections.get(id).status,'connected');assert.equal(first.closeCount,1);assert.equal(second.closeCount,0);assert.equal(f.chat.messages.length,1);
+});
+
+test('a Twitch device polling timeout backs off and retains the active authorization until approval',async t=>{
+ let polls=0;const f=fixture(t,async url=>{
+  if(url.endsWith('/device'))return response({device_code:'device',user_code:'CODE',verification_uri:'https://www.twitch.tv/activate',expires_in:600,interval:5});
+  if(url.endsWith('/validate'))return response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});
+  if(++polls===1)throw new DOMException('Connection timed out','TimeoutError');
+  if(polls===2)return response({message:'slow_down'},400);
+  return response({access_token:'access',refresh_token:'refresh',expires_in:14400});
+ });
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.begin('Twitch');const pending=f.chat.auth.pending.get('Twitch');
+ t.mock.timers.tick(5000);await turn();assert.equal(polls,1);assert.equal(f.chat.auth.pending.get('Twitch'),pending);assert.equal(pending.interval,10000);
+ t.mock.timers.tick(9999);await turn();assert.equal(polls,1);t.mock.timers.tick(1);await turn();assert.equal(polls,2);assert.equal(pending.interval,15000);
+ t.mock.timers.tick(14999);await turn();assert.equal(polls,2);t.mock.timers.tick(1);await turn();
+ assert.equal(polls,3);assert.equal(f.chat.auth.state().Twitch.authorized,true);assert.equal(f.chat.auth.pending.has('Twitch'),false);
+});

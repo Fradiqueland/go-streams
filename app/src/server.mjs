@@ -28,7 +28,7 @@ function csvCell(value) {
 }
 function json(res, value, status = 200) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); }
 async function readJson(req,limit=1024*1024) {
-  if (!req.headers['content-type']?.startsWith('application/json')) throw new AppError('É necessário enviar JSON.', 415);
+  if (req.headers['content-type']?.split(';',1)[0].trim().toLowerCase() !== 'application/json') throw new AppError('É necessário enviar JSON.', 415);
   const chunks=[];let size=0;for await(const chunk of req){const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=data.length;if(size>limit)throw new AppError('Pedido demasiado grande.',413);chunks.push(data);}
   const body=Buffer.concat(chunks).toString('utf8');
   try { const value = JSON.parse(body || '{}'); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(); return value; } catch { throw new AppError('JSON inválido.'); }

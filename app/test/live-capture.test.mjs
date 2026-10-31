@@ -166,7 +166,7 @@ test('shared outputs detach on stream failure and release their listeners indepe
  const failed=new Writable({write(data,encoding,done){done();}}),good=new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}});
  const detach=feeds.attach(id,failed,error=>errors.push(error));feeds.attach(id,good,()=>{});
  assert.doesNotThrow(()=>failed.emit('error',Error('Disk full')));assert.equal(feed.sinks.size,1);assert.equal(errors.length,1);detach();assert.equal(failed.listenerCount('close'),0);assert.equal(failed.listenerCount('error'),0);
- workers[0].stdout.write(Buffer.from('continues'));assert.equal(Buffer.concat(received).toString(),'continues');await feeds.shutdown();assert.equal(good.listenerCount('close'),0);assert.equal(good.listenerCount('error'),0);
+ workers[0].stdout.write(Buffer.from('continues'));assert.equal(Buffer.concat(received).toString(),'continues');await feeds.shutdown();await new Promise(resolve=>setImmediate(resolve));assert.equal(good.listenerCount('close'),0);assert.equal(good.listenerCount('error'),0);
 });
 
 test('a failed asynchronous sink write remains isolated through its subsequent error event',async t=>{
@@ -182,6 +182,16 @@ for(const ending of ['stop','close'])test('shared capture does not acknowledge a
  const worker=workers[0];worker.stdin.destroy();worker.stdin=new Writable({write(data,encoding,done){written=done;},final(done){done();queueMicrotask(()=>worker.emit('close',0));}});
  const upload=feeds.ingest(id,'0',chunk());while(!written)await new Promise(resolve=>setImmediate(resolve));if(ending==='stop')feeds.stop(id);else worker.emit('close',0);written();
  await assert.rejects(upload,error=>error.status===410);assert.equal(feed.sequence,0);await feed.completion;
+});
+
+test('shared capture keeps a pending sink error handled when the encoder closes first',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id);let written,ended=0;
+ const output=new Writable({write(data,encoding,done){written=done;}}),guard=()=>{};
+ feeds.attach(id,output,()=>{ended++;});workers[0].stdout.write(Buffer.from('last-frame'));assert.equal(typeof written,'function');
+ workers[0].emit('close',0);await feed.completion;
+ try{assert.equal(output.listenerCount('error'),1,'the pending write may still emit its error after encoder completion');}
+ finally{output.on('error',guard);written(Error('Output closed while the last frame was pending'));await new Promise(resolve=>setImmediate(resolve));output.removeListener('error',guard);}
+ assert.equal(ended,1);assert.equal(feed.sinks.size,0);assert.equal(output.listenerCount('error'),0);assert.equal(output.listenerCount('close'),0);
 });
 test('Electron capture permissions require the trusted main frame, consent and a selected source',async()=>{
  const ses={setPermissionCheckHandler(fn){this.check=fn;},setPermissionRequestHandler(fn){this.request=fn;},setDisplayMediaRequestHandler(fn){this.display=fn;}};

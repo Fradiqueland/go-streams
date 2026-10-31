@@ -27,7 +27,7 @@ export class LiveCapturePanel {
  constructor({api,toast,getState}){
   Object.assign(this,{api,toast,getState});this.streams=[];this.session=null;this.preparing=false;this.stopping=false;this.muted=false;this.captureEpoch=0;
  }
- get busy(){return this.preparing||Boolean(this.output)||Boolean(this.session);}
+ get busy(){return this.preparing||Boolean(this.output)||Boolean(this.session)||Boolean(this.releasing);}
  mount(container,state){
   if(!this.element){
    this.element=document.createElement('section');this.element.className='live-capture-studio';
@@ -57,7 +57,7 @@ export class LiveCapturePanel {
     if(this.session)void fetch(`/api/live/${this.session.id}/stop`,{method:'POST',headers:{'Content-Type':'application/json','X-Go-Streams':'1'},body:'{}',keepalive:true}).catch(()=>{});
    });
   }
-  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>{
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.releasing?null:this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>{
    if(!this.canvas||!this.output){this.toast(text('Open a local preview first.','Abra primeiro a pré-visualização local.'),true);return;}
    this.canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},'image/png');
   }});
@@ -67,7 +67,7 @@ export class LiveCapturePanel {
  }
  status(value,error=false){const el=this.element.querySelector('.capture-status');el.textContent=value;el.className='capture-status'+(error?' job-error':'');}
  controls(){
-  const active=Boolean(this.session)||this.preparing||this.stopping;
+  const active=Boolean(this.session)||this.preparing||this.stopping||Boolean(this.releasing);
   for(const input of this.element.querySelectorAll('#capture-form input,#capture-form select'))input.disabled=active||Boolean(this.output);
   this.element.querySelector('[data-capture="preview"]').disabled=active||Boolean(this.output);
   this.element.querySelector('[data-capture="release"]').disabled=!this.output||active;
@@ -193,8 +193,8 @@ export class LiveCapturePanel {
   })();return this.feedClosing;
  }
  async start(){
-  if(!this.output||this.session||this.preparing)return;this.preparing=true;this.controls();
-  const epoch=this.captureEpoch,source=this.output,current=()=>epoch===this.captureEpoch&&this.output===source;
+  if(!this.output||this.session||this.preparing||this.stopping||this.releasing)return;this.preparing=true;this.controls();
+  const epoch=this.captureEpoch,source=this.output,attempt=this.liveStart={},current=()=>epoch===this.captureEpoch&&this.output===source&&this.liveStart===attempt;
   try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);
    if(!channelIds.length||!this.element.querySelector('[data-capture="consent"]').checked)throw Error('Confirm at least one live destination.');
@@ -203,9 +203,10 @@ export class LiveCapturePanel {
    if(!current()){await this.api(`/api/live/${session.id}/stop`,{}).catch(()=>{});throw Error('Live capture was released before broadcasting.');}this.session=session;
    this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
   }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
-  finally{this.preparing=false;this.controls();}
+  finally{if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
  }
  async stop(){
+  this.liveStart=null;
   if(this.stopping)return;this.stopping=true;this.controls();
   let stopped=!this.session;
   try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});stopped=true;this.status(text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'));}
@@ -224,5 +225,11 @@ export class LiveCapturePanel {
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
   if(this.element)this.element.querySelector('.capture-preview').srcObject=null;
  }
- async release(){this.captureEpoch++;await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));this.controls();}
+ async release(){
+  if(this.releasing)return this.releasing;
+  this.captureEpoch++;this.releasing=(async()=>{
+   try{await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));}
+   finally{this.releasing=null;this.controls();}
+  })();this.controls();return this.releasing;
+ }
 }

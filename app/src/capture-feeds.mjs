@@ -47,9 +47,11 @@ export class CaptureFeeds {
    for(const sink of [...feed.sinks]){
     if(sink.stream.destroyed||sink.stream.writableEnded||sink.stream.writableLength>4*1024*1024){endSink(feed,sink,'This output could not keep up with live capture.');continue;}
     const data=sink.waiting?initial:chunk;if(!data)continue;sink.waiting=false;
-    // Writable invokes its failed write callback before emitting 'error'. Keep
-    // the listener through that event, then detach if the stream did not emit it.
-    try{sink.stream.write(data,error=>{if(error)queueMicrotask(()=>endSink(feed,sink,'This output stopped accepting live capture.'));});if(feed.sinks.has(sink))sink.onData?.(data.length);}catch{endSink(feed,sink,'This output stopped accepting live capture.');}
+    // Keep the error handler until every pending write settles, even if the
+    // encoder closes first. A failed callback precedes the stream's error event.
+    sink.pending++;
+    try{sink.stream.write(data,error=>{sink.pending--;if(error)queueMicrotask(()=>{endSink(feed,sink,'This output stopped accepting live capture.');sink.release();});else sink.release();});}catch{sink.pending--;endSink(feed,sink,'This output stopped accepting live capture.');sink.release();continue;}
+    try{if(feed.sinks.has(sink))sink.onData?.(data.length);}catch{endSink(feed,sink,'This output stopped accepting live capture.');}
    }
   });
   child.on('error',()=>this.stop(feed.id,'The capture encoder could not be started.'));
@@ -58,9 +60,10 @@ export class CaptureFeeds {
  }
  get(id){const feed=this.active.get(id);if(!feed||feed.stopped)throw new AppError('The shared live capture has ended.',410);return feed;}
  attach(id,stream,onEnd,onData){
-  const feed=this.get(id),sink={stream,onEnd,onData,waiting:feed.started};
+  const feed=this.get(id),sink={stream,onEnd,onData,waiting:feed.started,pending:0};
   const failed=()=>endSink(feed,sink,'This output stopped accepting live capture.');
-  sink.detach=()=>{feed.sinks.delete(sink);stream.removeListener('error',failed);stream.removeListener('close',failed);};
+  sink.release=()=>{if(!feed.sinks.has(sink)&&!sink.pending)stream.removeListener('error',failed);};
+  sink.detach=()=>{feed.sinks.delete(sink);stream.removeListener('close',failed);sink.release();};
   stream.on('error',failed);stream.on('close',failed);feed.sinks.add(sink);return sink.detach;
  }
  async ingest(id,sequence,req){

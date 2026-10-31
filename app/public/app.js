@@ -194,7 +194,7 @@ function dialog(title, content, onSubmit, options = {}) {
   if(onSubmit){
     const form=$('#modal-form');let submitting=false;
     form.onsubmit=async event=>{
-      event.preventDefault();if(submitting)return;submitting=true;
+      event.preventDefault();if(submitting)return;submitting=true;form.dataset.submitting='true';
       const values=new FormData(form),controls=[...form.elements].map(control=>[control,control.disabled]);
       for(const [control] of controls)control.disabled=true;
       const progress=$('.form-progress',form),box=$('.form-error',form);progress.hidden=false;box.hidden=true;
@@ -206,7 +206,7 @@ function dialog(title, content, onSubmit, options = {}) {
         if(dialogGeneration===generation&&el.open){box.textContent=tr(error.message);box.hidden=false;}else toast(error.message,true);
         // Imports may have committed valid files before reporting another file's error.
         await refresh(false).catch(()=>{});
-      }finally{for(const [control,disabled] of controls)control.disabled=disabled;progress.hidden=true;submitting=false;}
+      }finally{for(const [control,disabled] of controls)control.disabled=disabled;progress.hidden=true;submitting=false;delete form.dataset.submitting;}
     };
   }
   if(!el.open)el.showModal();
@@ -241,11 +241,11 @@ function playlistForm(playlistId) {
     dialog(old ? tr("Editar playlist") : tr("Nova playlist"), `<label>${tr("Nome")}<input name="name" value="${esc(draft.name)}" placeholder="${tr("A minha programação")}" required maxlength="100"></label><div class="form-row"><label>${tr("Qualidade")}<select name="quality"><option ${draft.quality === '720p' ? 'selected' : ''}>720p</option><option ${draft.quality === '1080p' ? 'selected' : ''}>1080p</option></select></label><label class="check"><input type="checkbox" name="loop" ${draft.loop ? 'checked' : ''}> ${tr("Repetir playlist")}</label></div><div class="sequence-label"><strong>${tr("Sequência de reprodução")}</strong><span>${draft.mediaIds.length} ${tr("vídeos")}</span></div><div class="sequence">${draft.mediaIds.map((mid, i) => `<div draggable="true" data-sequence-index="${i}"><span class="sequence-number">${String(i+1).padStart(2,'0')}</span><span class="sequence-name">${esc(state.media.find(m => m.id === mid)?.title)}</span><button type="button" class="icon-button" data-move="${i}" data-dir="-1" aria-label="${tr("Subir vídeo")}" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-button" data-move="${i}" data-dir="1" aria-label="${tr("Descer vídeo")}" ${i === draft.mediaIds.length-1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-button" data-remove="${i}" aria-label="${tr("Retirar vídeo")}">×</button></div>`).join('') || `<p class="muted">${tr("Adicione vídeos à sequência.")}</p>`}</div><label>${tr("Pesquisar vídeos")}<input id="playlist-media-search" type="search" value="${esc(mediaSearch)}" placeholder="${tr("Nome do vídeo")}"></label><div class="form-row add-row"><select id="add-media" aria-label="${tr("Vídeo a adicionar")}">${state.media.map(m => `<option value="${m.id}" ${m.id===selectedMediaId?'selected':''}>${esc(m.title)} · ${fmt(m.duration)}</option>`).join('')}</select><button type="button" class="secondary" id="add-media-button" ${state.media.length ? '' : 'disabled'}>${tr("＋ Adicionar")}</button></div><p class="form-hint">${tr("Pode adicionar o mesmo vídeo várias vezes. Vídeos com formatos diferentes devem ser normalizados em Ferramentas.")}</p>`, async form => { draft.name = form.get('name'); draft.quality = form.get('quality'); draft.loop = form.has('loop'); await api(old ? `/api/playlists/${old.id}` : '/api/playlists', draft, old ? 'PUT' : 'POST'); toast(tr("Playlist guardada.")); });
     const filterMedia=()=>{mediaSearch=$('#playlist-media-search').value;const matches=state.media.filter(m=>m.title.toLocaleLowerCase('pt-PT').includes(mediaSearch.toLocaleLowerCase('pt-PT')));const previous=$('#add-media').value||selectedMediaId;$('#add-media').innerHTML=matches.map(m=>`<option value="${m.id}">${esc(m.title)} · ${fmt(m.duration)}</option>`).join('');selectedMediaId=matches.some(m=>m.id===previous)?previous:matches[0]?.id||'';$('#add-media').value=selectedMediaId;$('#add-media-button').disabled=!matches.length;};
     $('#playlist-media-search').oninput=filterMedia;filterMedia();
-    let dragged=null;
+    const form=$('#modal-form');let dragged=null;
     $('#dialog').querySelectorAll('[data-sequence-index]').forEach(row=>{
-      row.addEventListener('dragstart',event=>{dragged=Number(row.dataset.sequenceIndex);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(dragged));});
+      row.addEventListener('dragstart',event=>{if(form.dataset.submitting==='true'){event.preventDefault();return;}dragged=Number(row.dataset.sequenceIndex);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(dragged));});
       row.addEventListener('dragover',event=>event.preventDefault());
-      row.addEventListener('drop',event=>{event.preventDefault();if(dragged===null)return;capture();const [mid]=draft.mediaIds.splice(dragged,1);draft.mediaIds.splice(Number(row.dataset.sequenceIndex),0,mid);render();});
+      row.addEventListener('drop',event=>{event.preventDefault();if(dragged===null||form.dataset.submitting==='true')return;capture();const [mid]=draft.mediaIds.splice(dragged,1);draft.mediaIds.splice(Number(row.dataset.sequenceIndex),0,mid);render();});
     });
     const capture = () => { selectedMediaId=$('#add-media').value;const f = new FormData($('#modal-form')); draft.name = f.get('name'); draft.quality = f.get('quality'); draft.loop = f.has('loop'); };
     $('#add-media-button').onclick = () => { capture(); if ($('#add-media').value) draft.mediaIds.push($('#add-media').value); render(); };

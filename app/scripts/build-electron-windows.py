@@ -73,6 +73,7 @@ def main():
     candidate=work/output.name
     print(json.dumps({'phase':'compressing','electron':toolchain['electronVersion'],'files':len(files),'application':str(stage)}),flush=True)
     log=compile_installer(stage,candidate,work,args.nsis,version);(work/'nsis-build.log').write_text(log,encoding='utf-8')
+    output.parent.mkdir(parents=True,exist_ok=True)
     os.replace(candidate,output)
     report={'version':version,'electronVersion':toolchain['electronVersion'],'electronArchiveSHA256':toolchain['sha256'],'installer':str(output),'installerSHA256':digest(output),'installerBytes':output.stat().st_size,'application':str(stage),'work':str(work),'files':files,'dataPath':'%LOCALAPPDATA%\\Go Streams\\data','electronSessionPath':'%LOCALAPPDATA%\\Go Streams\\data\\electron-session','appId':toolchain['appId'],'userDataIncluded':False,'codeSigned':False,'nativeInstallationTested':False,'nsisSHA256':digest(args.nsis),'rceditSHA256':digest(args.rcedit)}
     (ROOT/'release'/('GoStreams-'+version+'-Electron-build.json')).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')

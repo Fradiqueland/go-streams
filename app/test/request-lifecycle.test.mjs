@@ -5,6 +5,14 @@ import path from 'node:path';
 import {createApplication} from '../src/server.mjs';
 import {dispatch} from './transport.mjs';
 
+for(const [contentType,status] of [['Application/JSON; charset=UTF-8',200],['application/jsonx',415]])test('JSON request media type is matched exactly and case-insensitively: '+contentType,async t=>{
+ const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const directory=fs.mkdtempSync(path.join(parent,'request-lifecycle-'));
+ const app=await createApplication({directory,listen:false,clock:false,portableVault:true});
+ t.after(async()=>{await app.close();if(!directory.startsWith(parent+path.sep)||!path.basename(directory).startsWith('request-lifecycle-'))throw Error('Unsafe cleanup');fs.rmSync(directory,{recursive:true,force:true});});
+ const before=JSON.stringify(app.store.data),response=await dispatch(app,'/api/settings',{method:'PUT',headers:{Cookie:'go_streams='+app.token,'Content-Type':contentType,'X-Go-Streams':'1'},body:JSON.stringify({operations:{maxConcurrent:2,historyLimit:500,persistSchedules:false}})});
+ assert.equal(response.status,status);if(status===415)assert.equal(JSON.stringify(app.store.data),before);else assert.equal(app.store.data.settings.operations.maxConcurrent,2);
+});
+
 for(const [url,method,body] of [
  ['/api/channels','POST',{name:'Late channel',url:'rtmp://127.0.0.1:9/live',key:'SECRET'}],
  ['/api/settings','PUT',{ffmpeg:''}],
