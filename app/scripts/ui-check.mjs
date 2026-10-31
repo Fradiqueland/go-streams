@@ -42,6 +42,7 @@ try {
 
   await page.goto(app.base + '/');
   await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();
+  await page.waitForFunction(expected=>document.querySelector('.version')?.textContent==='v'+expected,version);checks++;
   assert.equal(await navigation.getAttribute('aria-label'),'Main menu');
   assert.equal(await page.locator('#language-select').inputValue(),'en');
   assert.equal(await page.locator('#language-select option').count(),10);
