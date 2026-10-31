@@ -7,13 +7,14 @@ const GOOGLE_SCOPE='https://www.googleapis.com/auth/youtube.force-ssl';
 const TWITCH_SCOPES='user:read:chat user:write:chat';
 const ORIGINS=new Set(['https://oauth2.googleapis.com','https://www.googleapis.com','https://id.twitch.tv','https://api.twitch.tv']);
 export class ChatAuth {
- constructor(studio,{base,request=fetch}={}){
-  Object.assign(this,{studio,base,request});this.pending=new Map();this.refreshing=new Map();this.operations=new Set();this.controller=new AbortController();this.versions={YouTube:0,Twitch:0};
+ constructor(studio,{base,request=fetch,clock=true,onSessionEnd=()=>{}}={}){
+  Object.assign(this,{studio,base,request,clock,onSessionEnd});this.pending=new Map();this.refreshing=new Map();this.operations=new Set();this.controller=new AbortController();this.versions={YouTube:0,Twitch:0};
   this.file=path.join(studio.store.directory,'chat-accounts.json');this.data={settings:{},accounts:{}};
   if(fs.existsSync(this.file)){
    try{this.data=JSON.parse(studio.vault.decrypt(JSON.parse(fs.readFileSync(this.file,'utf8')).secret));if(!this.data.settings||!this.data.accounts)throw Error();}
    catch{throw new AppError('Chat account storage could not be opened. Existing data was preserved.',500);}
   }
+  if(this.data.accounts.Twitch){this.data.accounts.Twitch.validated=0;this.scheduleValidation(0);}
  }
  save(){if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);atomicWrite(this.file,JSON.stringify({version:1,secret:this.studio.vault.encrypt(JSON.stringify(this.data))}));}
  async http(url,options={}){
@@ -96,7 +97,8 @@ export class ChatAuth {
   let id,name;
   if(provider==='Twitch'){
    const checked=await this.http('https://id.twitch.tv/oauth2/validate',{headers:{Authorization:'OAuth '+tokens.access_token}}),v=checked.value;
-   if(!checked.ok||v.client_id!==this.data.settings.Twitch.clientId||typeof v.user_id!=='string'||!v.user_id||v.user_id.length>1000||!Array.isArray(v.scopes)||!TWITCH_SCOPES.split(' ').every(s=>v.scopes.includes(s)))throw new AppError('Twitch did not grant permission to read and reply to chat.',403);
+   if(!checked.ok)throw new AppError(checked.status===401?'Reconnect your Twitch account.':'Twitch account validation is temporarily unavailable.',checked.status===401?401:502);
+   if(v.client_id!==this.data.settings.Twitch.clientId||typeof v.user_id!=='string'||!v.user_id||v.user_id.length>1000||!Array.isArray(v.scopes)||!TWITCH_SCOPES.split(' ').every(s=>v.scopes.includes(s)))throw new AppError('Twitch did not grant permission to read and reply to chat.',403);
    id=v.user_id;name=typeof v.login==='string'?v.login.slice(0,150):'Twitch';
   }else{
    const checked=await this.http('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+tokens.access_token}}),item=checked.value.items?.[0];
@@ -105,21 +107,47 @@ export class ChatAuth {
   const old=this.data.accounts[provider];
   if(this.versions[provider]!==version||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
   this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||(old?.id===id?old.refreshToken||'':''),expires:Date.now()+lifetime*1000,validated:Date.now()};this.save();
+  if(old&&old.id!==id){this.versions[provider]++;this.onSessionEnd(provider);}
+  if(provider==='Twitch')this.scheduleValidation();
  }
  async token(provider){
   const account=this.data.accounts[provider];if(!account)throw new AppError('Authorize your '+provider+' account first.',401);
   if(account.expires>Date.now()+60000&&(provider!=='Twitch'||account.validated>Date.now()-3600000))return account;
   if(this.refreshing.has(provider))return this.refreshing.get(provider);
+  const version=this.versions[provider];
   const task=(async()=>{
-   const version=this.versions[provider];
    if(provider==='Twitch'&&account.expires>Date.now()+60000){await this.accept(provider,{access_token:account.accessToken,...(account.refreshToken?{refresh_token:account.refreshToken}:{}),expires_in:Math.floor((account.expires-Date.now())/1000)},version);return this.data.accounts[provider];}
    if(!account.refreshToken)throw new AppError('Reconnect your '+provider+' account.',401);
    const setup=this.data.settings[provider],result=await this.form(provider==='YouTube'?'https://oauth2.googleapis.com/token':'https://id.twitch.tv/oauth2/token',{client_id:setup.clientId,...(setup.clientSecret?{client_secret:setup.clientSecret}:{}),refresh_token:account.refreshToken,grant_type:'refresh_token'});
-   if(!result.ok)throw new AppError('Reconnect your '+provider+' account.',401);
+   if(!result.ok){const invalid=result.status===400||result.status===401;throw new AppError(invalid?'Reconnect your '+provider+' account.':'Account renewal is temporarily unavailable.',invalid?401:502);}
    await this.accept(provider,result.value,version);return this.data.accounts[provider];
-  })();this.refreshing.set(provider,task);try{return await task;}finally{this.refreshing.delete(provider);}
+  })();this.refreshing.set(provider,task);try{return await task;}catch(error){if(provider==='Twitch'&&(error.status===401||error.status===403))this.invalidate(provider,account,version);throw error;}finally{this.refreshing.delete(provider);}
+ }
+ invalidate(provider,account,version){
+  if(this.data.accounts[provider]!==account||this.versions[provider]!==version||this.controller.signal.aborted)return;
+  if(provider==='Twitch'){clearTimeout(this.validationTimer);this.validationTimer=null;}
+  delete this.data.accounts[provider];
+  // Keep the one-time state of a replacement sign-in while ending its old session.
+  if(this.pending.get(provider)?.version!==version)this.versions[provider]++;
+  this.save();this.onSessionEnd(provider);
+ }
+ scheduleValidation(delay=3600000){
+  clearTimeout(this.validationTimer);this.validationTimer=null;
+  if(!this.clock||this.controller.signal.aborted||!this.data.accounts.Twitch)return;
+  this.validationTimer=setTimeout(()=>{this.validationTimer=null;this.validationTask=this.validateSession().catch(()=>{}).finally(()=>{this.validationTask=null;});},delay).unref();
+ }
+ async validateSession(){
+  const account=this.data.accounts.Twitch,version=this.versions.Twitch;if(!account||this.controller.signal.aborted)return;
+  let retry=false;
+  try{await this.token('Twitch');}
+  catch(error){
+   if(this.controller.signal.aborted)return;
+   if(error.status===401||error.status===403){this.invalidate('Twitch',account,version);if(!this.data.accounts.Twitch)return;}
+   retry=true;
+  }
+  if(!this.validationTimer)this.scheduleValidation(retry?60000:3600000);
  }
  cancel(provider){const pending=this.pending.get(provider);if(pending?.timer)clearTimeout(pending.timer);this.pending.delete(provider);}
- disconnect(provider){if(!['YouTube','Twitch'].includes(provider))throw new AppError('Unsupported chat provider.');this.cancel(provider);this.versions[provider]++;delete this.data.accounts[provider];this.save();}
- async shutdown(){this.controller.abort();this.cancel('YouTube');this.cancel('Twitch');await Promise.allSettled([...this.operations,...this.refreshing.values()]);}
+ disconnect(provider){if(!['YouTube','Twitch'].includes(provider))throw new AppError('Unsupported chat provider.');this.cancel(provider);if(provider==='Twitch'){clearTimeout(this.validationTimer);this.validationTimer=null;}this.versions[provider]++;delete this.data.accounts[provider];this.save();}
+ async shutdown(){this.controller.abort();clearTimeout(this.validationTimer);this.validationTimer=null;this.cancel('YouTube');this.cancel('Twitch');await Promise.allSettled([...this.operations,...this.refreshing.values(),...(this.validationTask?[this.validationTask]:[])]);}
 }

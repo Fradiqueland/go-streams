@@ -50,13 +50,14 @@ export function prepareBackupRestore(payload,current,vault,directory,{persistAss
   next.channels=data.channels.map(c=>{const {key,secret,...rest}=c;if(secret!==undefined)fail();const valid=validateChannel({...c,key:key||'validation-only'});text(key,1000);return{...rest,...valid,key:undefined,secret:key?vault.encrypt(key):''};});
   next.channels=next.channels.map(({key,...c})=>c);
   next.playlists=data.playlists.map(p=>{text(p.name,100);if(!Array.isArray(p.mediaIds)||p.mediaIds.length>500||p.mediaIds.some(id=>!mediaIds.has(id))||typeof p.loop!=='boolean'||!['720p','1080p'].includes(p.quality))fail();return p;});
+  const nonemptyPlaylist=id=>next.playlists.some(playlist=>playlist.id===id&&playlist.mediaIds.length>0);
   next.schedules=data.schedules.map(s=>{
-   if(Boolean(s.mediaId)===Boolean(s.playlistId)||(s.mediaId&&!mediaIds.has(s.mediaId))||(s.playlistId&&!playlistIds.has(s.playlistId))||!Array.isArray(s.channelIds)||!s.channelIds.length||s.channelIds.some(id=>!channelIds.has(id))||new Set(s.channelIds).size!==s.channelIds.length||!Number.isFinite(Date.parse(s.at))||typeof s.armed!=='boolean'||!['pending','starting','triggered','missed','error','cancelled','interrupted'].includes(s.status))fail();
+   if(Boolean(s.mediaId)===Boolean(s.playlistId)||(s.mediaId&&!mediaIds.has(s.mediaId))||(s.playlistId&&!playlistIds.has(s.playlistId))||(s.playlistId&&['pending','starting'].includes(s.status)&&!nonemptyPlaylist(s.playlistId))||!Array.isArray(s.channelIds)||!s.channelIds.length||s.channelIds.some(id=>!channelIds.has(id))||new Set(s.channelIds).size!==s.channelIds.length||typeof s.at!=='string'||!Number.isFinite(Date.parse(s.at))||typeof s.armed!=='boolean'||!['pending','starting','triggered','missed','error','cancelled','interrupted'].includes(s.status))fail();
    try{new Intl.DateTimeFormat('en',{timeZone:s.timeZone||'UTC'});}catch{fail();}
    return s.status==='starting'?{...s,status:'interrupted',armed:false}:s;
   });
   next.channelPlans={};for(const [cid,p] of Object.entries(data.channelPlans||{})){
-   if(!channelIds.has(cid)||!p||Boolean(p.mediaId)===Boolean(p.playlistId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playlistIds.has(p.playlistId))||!Number.isInteger(p.countdown)||p.countdown<0||p.countdown>120)fail();next.channelPlans[cid]=p;
+   if(!channelIds.has(cid)||!p||Boolean(p.mediaId)===Boolean(p.playlistId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!nonemptyPlaylist(p.playlistId))||!Number.isInteger(p.countdown)||p.countdown<0||p.countdown>120)fail();next.channelPlans[cid]=p;
   }
   ids(data.history||[],50000);next.history=data.history||[];
   ids(data.downloads||[]);next.downloads=(data.downloads||[]).map(d=>{

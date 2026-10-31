@@ -191,3 +191,51 @@ for(const status of ['connecting','connected','error'])test('chat connection fee
  if(status==='connected')assert.equal(notices[0].message,'Chat connected.');
  if(status==='error')assert.equal(notices[0].message,'Platform unavailable');
 });
+
+test('returning to live while a clip loads cancels playback without reporting an error',async t=>{
+ const pending=deferred(),errors=[],audio=[],video={pause(){this.paused=true;},play:()=>pending.promise};
+ replaceGlobal(t,'document',{createElement:()=>video});
+ const tools=new ProductionTools({getStream:()=>({}),toast:message=>errors.push(message),setClipAudio:source=>audio.push(source)});
+ tools.element={querySelector:()=>({files:[new Blob(['clip'],{type:'video/mp4'})]})};tools.update=()=>{};
+ const playing=tools.action({dataset:{production:'play-clip'}});await tools.action({dataset:{production:'stop-clip'}});
+ pending.reject(Error('The play() request was interrupted by a call to pause().'));await playing;
+ assert.equal(tools.clip,null);assert.equal(tools.clipUrl,null);assert.equal(video.paused,true);assert.equal(audio.at(-1),null);assert.deepEqual(errors,[]);
+});
+
+test('a cancelled clip play rejection cannot stop a newer clip or report a playback error',async t=>{
+ const first=deferred(),videos=[],errors=[],audio=[];
+ replaceGlobal(t,'document',{createElement:()=>{const video={pause(){this.paused=true;},play(){return videos.length===1?first.promise:Promise.resolve();}};videos.push(video);return video;}});
+ const tools=new ProductionTools({getStream:()=>({}),toast:message=>errors.push(message),setClipAudio:video=>audio.push(video)});
+ tools.element={querySelector:()=>({files:[new Blob(['clip'],{type:'video/mp4'})]})};tools.update=()=>{};
+ const playing=tools.action({dataset:{production:'play-clip'}});
+ await tools.action({dataset:{production:'stop-clip'}});
+ await tools.action({dataset:{production:'play-clip'}});const current=tools.clip;
+ first.reject(Error('The play() request was interrupted by a call to pause().'));await playing;
+ assert.equal(tools.clip,current);assert.equal(current.paused,undefined);assert.equal(audio.at(-1),current);assert.deepEqual(errors,[]);
+ tools.stopClip();
+});
+
+test('losing the selected chat does not silently redirect an existing draft to another destination',t=>{
+ replaceGlobal(t,'document',{activeElement:null});
+ const panel=new ChatPanel({}),selector={value:'room-a'},draft={value:'For room A only'},controls={
+  '.chat-accounts':{contains:()=>false},'.chat-connect select':{value:''},'.chat-compose select':selector,
+  '[data-chat="filter"]':{value:''},'.chat-connection-status':{},'.chat-compose button':{},'.chat-compose textarea':draft,
+  '[data-chat="cancel-reply"]':{},'.chat-reply-target':{},'.chat-messages':{scrollHeight:0,scrollTop:0,clientHeight:0}
+ };
+ panel.element={querySelector:name=>controls[name],querySelectorAll:()=>[]};
+ const room=(id,status='connected')=>({id,name:id,status,platform:'Twitch'});
+ panel.update({accounts:{},connections:[room('room-a'),room('room-b')],messages:[]},[]);
+ panel.update({accounts:{},connections:[room('room-b')],messages:[]});
+ assert.equal(selector.value,'');assert.equal(draft.value,'For room A only');assert.equal(controls['.chat-compose button'].disabled,true);
+ panel.update({accounts:{},connections:[room('room-b'),room('room-c')],messages:[]});
+ assert.equal(selector.value,'');assert.equal(controls['.chat-compose button'].disabled,true);
+});
+
+test('a scene save rejected by browser storage preserves the last successfully saved scene',async t=>{
+ replaceGlobal(t,'localStorage',{getItem:()=>JSON.stringify({intro:{name:'Saved presenter'}}),setItem(){throw Error('Quota exceeded');}});
+ const errors=[],tools=new ProductionTools({toast:message=>errors.push(message)});tools.update=()=>{};
+ tools.element={querySelector:selector=>selector==='[name=scene]'?{value:'intro'}:{type:'text'}};
+ tools.values.name='Unsaved replacement';await tools.action({dataset:{production:'save-scene'}});
+ assert.equal(errors.length,1);assert.match(errors[0],/could not save/);
+ await tools.action({dataset:{production:'load-scene'}});assert.equal(tools.values.name,'Saved presenter');
+});

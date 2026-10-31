@@ -18,6 +18,26 @@ test('restoring reserved object identifiers fails before changing the existing p
   assert.equal(response.status,400,reserved+' must not be used as a property lookup');assert.equal(JSON.stringify(target.store.data),before);
  }
 });
+
+for(const kind of ['schedule','plan'])test('restore rejects an empty playlist used by a pending '+kind,async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);
+ source.store.update(s=>{s.playlists[0].mediaIds=[];if(kind==='schedule')s.channelPlans={};else s.schedules=[];});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences});const before=JSON.stringify(target.store.data);
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,400);assert.equal(JSON.stringify(target.store.data),before);
+});
+
+test('restore keeps terminal schedule history whose playlist has since been emptied',async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);
+ source.store.update(s=>{s.playlists[0].mediaIds=[];s.channelPlans={};s.schedules[0].status='triggered';s.schedules[0].armed=false;});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences});
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,200);assert.equal(target.store.data.schedules[0].status,'triggered');
+});
+
+test('restore rejects non-string schedule timestamps before corrupting dashboard sorting',async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);source.store.update(s=>{s.schedules[0].at=123;});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences}),before=JSON.stringify(target.store.data);
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,400);assert.equal(JSON.stringify(target.store.data),before);
+});
 test('full encrypted backup restores the same IDs, ordering, duplicates, keys, settings and history into a different vault',async t=>{
  const source=await fixture(t),target=await fixture(t),cid=seed(source);target.studio.saveChannel({name:'Discarded channel',url:'rtmp://localhost/live',key:'OLD'});
  const exported=await request(source,'/api/backups/export',{scope:'all',password:pass,interface:preferences});assert.equal(exported.status,200);const backup=await exported.json(),encoded=JSON.stringify(backup);assert.ok(!encoded.includes('CHANNEL-PRIVATE'));assert.ok(!encoded.includes('SMTP-PRIVATE'));assert.ok(!encoded.includes('Original channel'));

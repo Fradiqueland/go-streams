@@ -5,7 +5,7 @@ import {ChatAuth} from './chat-auth.mjs';
 const supported=['YouTube','Twitch'];
 export class UnifiedChat {
  constructor(studio,options={}){
-  this.studio=studio;this.auth=new ChatAuth(studio,options);this.connections=new Map();this.messages=[];this.seen=new Set();this.sends=new Map();this.socketFactory=options.socketFactory||((url)=>new WebSocket(url));this.closed=false;
+  this.studio=studio;this.auth=new ChatAuth(studio,{...options,onSessionEnd:provider=>{for(const c of this.connections.values())if(c.platform===provider)this.disconnect(c.id);}});this.connections=new Map();this.messages=[];this.seen=new Set();this.sends=new Map();this.socketFactory=options.socketFactory||((url)=>new WebSocket(url));this.closed=false;
  }
  state(){return {accounts:this.auth.state(),connections:[...this.connections.values()].map(({socket,sockets,timer,seen,...c})=>c),messages:this.messages,capabilities:this.studio.store.data.channels.map(c=>({channelId:c.id,platform:c.platform,supported:supported.includes(c.platform)}))};}
  add(connection,item){
@@ -16,12 +16,13 @@ export class UnifiedChat {
   while(this.messages.length>500){const old=this.messages.shift();this.seen.delete(old.connectionId+':'+old.remoteId);}
  }
  async api(provider,path,{method='GET',body,validate}={}){
-  const account=await this.auth.token(provider),origin=provider==='YouTube'?'https://www.googleapis.com/youtube/v3/':'https://api.twitch.tv/helix/';
+  const account=await this.auth.token(provider),authorizationVersion=this.auth.versions[provider],origin=provider==='YouTube'?'https://www.googleapis.com/youtube/v3/':'https://api.twitch.tv/helix/';
   validate?.();
   if(!/^[a-zA-Z]/.test(path))throw new AppError('Invalid chat API path.');
   const headers={Authorization:'Bearer '+account.accessToken,...(provider==='Twitch'?{'Client-Id':this.auth.data.settings.Twitch.clientId}:{}),...(body?{'Content-Type':'application/json'}:{})};
   const response=await this.auth.http(origin+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});
   if(!response.ok){
+   if(provider==='Twitch'&&response.status===401)this.auth.invalidate(provider,account,authorizationVersion);
    const message=response.status===401?'Account authorization expired. Reconnect the account.':response.status===403?'The platform denied chat access. Check permissions, quota and live chat availability.':response.status===429?'Chat rate limit reached. Wait before trying again.':'The platform rejected the chat request ('+response.status+').';
    throw new AppError(message,response.status===429?429:response.status===401?401:502);
   }
@@ -63,10 +64,11 @@ export class UnifiedChat {
  }
  async pollYouTube(c){
   if(this.closed||this.connections.get(c.id)!==c||c.status==='disconnected')return;
+  const authorizationVersion=this.auth.versions.YouTube;
+  const validate=()=>{if(this.closed||this.connections.get(c.id)!==c||c.status==='disconnected'||this.auth.versions.YouTube!==authorizationVersion)throw new AppError('The chat connection or account authorization was cancelled or changed.',409);};
   try{
    const query=new URLSearchParams({part:'snippet,authorDetails',liveChatId:c.chatId,maxResults:'200',...(c.pageToken?{pageToken:c.pageToken}:{})});
-   const result=await this.api('YouTube','liveChat/messages?'+query);
-   if(this.closed||this.connections.get(c.id)!==c||c.status==='disconnected')return;
+   const result=await this.api('YouTube','liveChat/messages?'+query,{validate});validate();
    const interval=result.pollingIntervalMillis===undefined?5000:result.pollingIntervalMillis;
    if(!Number.isSafeInteger(interval)||interval<0||interval>2147483647||result.items!==undefined&&!Array.isArray(result.items))throw new AppError('Invalid YouTube chat polling response.',502);
    for(const message of result.items||[]){if(message.snippet?.displayMessage)this.add(c,{remoteId:message.id,author:message.authorDetails?.displayName,text:message.snippet.displayMessage,time:message.snippet.publishedAt,own:message.authorDetails?.channelId===this.auth.data.accounts.YouTube?.id});}
@@ -88,7 +90,9 @@ export class UnifiedChat {
     if(typeof event.data!=='string'||event.data.length>1024*1024)throw Error();
     const data=JSON.parse(event.data),kind=data.metadata?.message_type,session=data.payload?.session;
     if(kind==='session_welcome'){
-     if(sessionState.welcomed||typeof session?.id!=='string'||!session.id)throw Error();sessionState.welcomed=true;
+     if(typeof session?.id!=='string'||!session.id)throw Error();
+     if(sessionState.welcomed){if(sessionState.sessionId!==session.id)throw Error();return;}
+     sessionState.welcomed=true;sessionState.sessionId=session.id;
      sessionState.keepalive=Math.min(600,Math.max(10,Number(session.keepalive_timeout_seconds)||sessionState.keepalive));deadline(sessionState.keepalive);
      if(!previous){const account=await this.auth.token('Twitch');if(!alive())return;const subscribed=await this.api('Twitch','eventsub/subscriptions',{method:'POST',validate:()=>{if(!alive())throw new AppError('Chat disconnected.',409);},body:{type:'channel.chat.message',version:'1',condition:{broadcaster_user_id:c.broadcasterId,user_id:account.id},transport:{method:'websocket',session_id:session.id}}});const subscription=subscribed.data?.[0];if(typeof subscription?.id!=='string'||!subscription.id||subscription.status!=='enabled')throw new AppError('Twitch did not enable this chat subscription.',502);}
      if(!alive())return;c.status='connected';c.error='';if(previous)this.closeTwitch(c,previous);

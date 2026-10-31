@@ -51,6 +51,10 @@ def main():
     def snapshot():return {str(f.relative_to(data)):hashlib.sha256(f.read_bytes()).hexdigest() for f in data.rglob('*') if f.is_file()}
     original=snapshot()
     apply=run_installer
+    # Silent setup skips the directory page, but must enforce the same boundary.
+    forbidden=work/'UserData'/'empty-application-folder'
+    assert apply(one,forbidden)!=0, 'Silent setup accepted a user-data application folder'
+    assert not forbidden.exists(), 'Rejected silent setup created application files'
     assert not install.parent.exists()
     assert apply(one,install)==0
     assert (install/'revision.txt').read_text()=='first' and (work/'Desktop/Go Streams.lnk').is_file()
@@ -70,7 +74,7 @@ def main():
     while (install/'GoStreams.exe').exists() and time.monotonic()<deadline:time.sleep(.1)
     assert not (install/'GoStreams.exe').exists() and not (work/'Desktop/Go Streams.lnk').exists()
     assert snapshot()==original and (install/'user-added.txt').read_text()=='unknown files must survive uninstall'
-    report={'directoryPageValidation':directory_validation,'createsMissingDestination':True,'install':True,'desktopAndStartMenuShortcuts':True,'runningApplicationUpgradeBlocked':True,'upgradePreservesProfilesAndSessions':True,'downgradeBlocked':True,'foreignDirectoryRejected':True,'uninstallPreservesDataAndUnknownFiles':True,'work':str(work)}
+    report={'directoryPageValidation':directory_validation,'silentDirectoryValidation':True,'createsMissingDestination':True,'install':True,'desktopAndStartMenuShortcuts':True,'runningApplicationUpgradeBlocked':True,'upgradePreservesProfilesAndSessions':True,'downgradeBlocked':True,'foreignDirectoryRejected':True,'uninstallPreservesDataAndUnknownFiles':True,'work':str(work)}
     (ROOT/'release/GoStreams-Electron-installer-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');print(json.dumps(report))
 
 if __name__=='__main__':main()

@@ -60,7 +60,10 @@ export class Store {
     if(JSON.stringify(restored)!==JSON.stringify(this.data))this.update(s=>Object.assign(s,restored));
   }
   update(fn) {
-    const next = clone(this.data); const result = fn(next);
+    let next = clone(this.data); const result = fn(next);
+    // A callback can insert caller-owned objects or retain its draft/result.
+    // Commit an independent snapshot so later mutations cannot bypass saving.
+    next = clone(next);
     refreshManagedPaths(next,this.directory,this.data);
     if (fs.existsSync(this.file)) fs.copyFileSync(this.file, `${this.file}.bak`);
     atomicWrite(this.file, JSON.stringify(next, null, 2)); this.data = next; return result;
@@ -334,15 +337,18 @@ export class Studio {
         return { id: p.id, name: text(p.name, 'Nome da playlist', 100), mediaIds: p.mediaIds, loop: p.loop === true, quality: p.quality === '1080p' ? '1080p' : '720p' };
       });
       const playlistIds = new Set(playlists.map(p => p.id));
+      const playablePlaylistIds = new Set(playlists.filter(p=>p.mediaIds.length).map(p=>p.id));
       const schedules = input.schedules.map(s => {
         if (!(s.mediaId ? mediaIds.has(s.mediaId) && !s.playlistId : playlistIds.has(s.playlistId)) || !Array.isArray(s.channelIds) || !s.channelIds.length || new Set(s.channelIds).size !== s.channelIds.length || s.channelIds.some(cid => !channelIds.has(cid))) fail('O projeto contém um agendamento com referências inválidas.');
+        const historical=['triggered','cancelled','interrupted','error','missed'].includes(s.status);
+        if(!historical&&s.playlistId&&!playablePlaylistIds.has(s.playlistId))fail('O projeto contém um agendamento com uma playlist vazia.');
         const date = new Date(s.at); if (!Number.isFinite(date.getTime())) fail('Data de agendamento inválida.');
         const timeZone = s.timeZone || 'UTC';
         try { if (typeof timeZone !== 'string') throw Error(); new Intl.DateTimeFormat('pt-PT', { timeZone }); } catch { fail('Fuso horário inválido.'); }
-        return { id: s.id, playlistId: s.playlistId || null, mediaId:s.mediaId || null, quality:s.quality==='1080p'?'1080p':'720p', autoRestart:s.autoRestart===undefined?undefined:s.autoRestart===true,pauseOnDisconnect:s.pauseOnDisconnect===true, channelIds: s.channelIds, at: date.toISOString(), timeZone, autoReconnect: s.autoReconnect === true, endOnVideoFailure: s.endOnVideoFailure !== false, status: date.getTime() > Date.now() ? 'pending' : 'missed', armed: false, created: now(), error: '' };
+        return { id: s.id, playlistId: s.playlistId || null, mediaId:s.mediaId || null, quality:s.quality==='1080p'?'1080p':'720p', autoRestart:s.autoRestart===undefined?undefined:s.autoRestart===true,pauseOnDisconnect:s.pauseOnDisconnect===true, channelIds: s.channelIds, at: date.toISOString(), timeZone, autoReconnect: s.autoReconnect === true, endOnVideoFailure: s.endOnVideoFailure !== false, status: historical?s.status:date.getTime() > Date.now() ? 'pending' : 'missed', armed: false, created: now(), error: '' };
       });
       const plans=Object.entries(input.channelPlans||{}).map(([cid,p])=>{
-        if(!p||typeof p!=='object'||!channelIds.has(cid)||Boolean(p.playlistId)===Boolean(p.mediaId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playlistIds.has(p.playlistId)))fail('Preparação de canal inválida no projeto.');
+        if(!p||typeof p!=='object'||!channelIds.has(cid)||Boolean(p.playlistId)===Boolean(p.mediaId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playablePlaylistIds.has(p.playlistId)))fail('Preparação de canal inválida no projeto.');
         const countdown=p.countdown??10;if(!Number.isInteger(countdown)||countdown<0||countdown>120)fail('Contagem inválida no projeto.');
         return[cid,{playlistId:p.playlistId||null,mediaId:p.mediaId||null,quality:p.quality==='1080p'?'1080p':'720p',countdown,endOnVideoFailure:p.endOnVideoFailure!==false,autoRestart:p.autoRestart===undefined?undefined:p.autoRestart===true,autoReconnect:p.autoReconnect===true,pauseOnDisconnect:p.pauseOnDisconnect!==false}];
       });
@@ -519,7 +525,7 @@ export class Studio {
       if (job.status === 'pausing') { job.status = 'paused'; job.secrets = []; this.notify(job,'paused'); return; }
       if (!stopped && code !== 0 && !job.preview && !job.endOnVideoFailure && !this.closing && /Error while decoding|Error opening input|Invalid data found when processing input/i.test(stderr)) {
         const failed = playbackPosition(media,this.playbackElapsed(job),playlist.loop);
-        const remaining = playlist.loop ? media.filter((_,index)=>index!==failed.index) : media.slice(failed.index+1);
+        const remaining = playlist.loop ? [...media.slice(failed.index+1),...media.slice(0,failed.index)] : media.slice(failed.index+1);
         if (remaining.length) {
           job.skippedVideos.push({id:media[failed.index].id,title:media[failed.index].title});
           this.flushVideo(job,'error',message); this.contexts.get(job.id).timelineBase=job.elapsed; job.secrets=[];
@@ -667,7 +673,7 @@ export class Studio {
     const cycles=ctx.playlist.loop?Math.floor(local/oldTotal):0,offset=ctx.playlist.loop?local%oldTotal:local;
     // Recheck after FFmpeg stops: the current video may have advanced while draining.
     const current=playbackPosition(ctx.media,local,ctx.playlist.loop);
-    if(ctx.media.slice(0,current.index+1).some((m,i)=>op.media[i]?.id!==m.id)){
+    if(ctx.media.slice(0,current.index+1).some((m,i)=>op.media[i]?.id!==m.id||Math.abs(op.media[i].duration-m.duration)>0.01)){
       ctx.reconfiguration=null;job.status='paused';job.secrets=[];op.resolve(false);return;
     }
     for(const key of ['autoRestart','endOnVideoFailure','autoReconnect','pauseOnDisconnect'])if(op.input[key]!==undefined)job[key]=op.input[key];

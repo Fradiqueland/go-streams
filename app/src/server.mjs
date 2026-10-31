@@ -239,7 +239,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
   try {
     store = new Store(directory); vault = new Vault(directory, { portable: portableVault }); remoteSources=new RemoteSources({base,settings:()=>store.data.settings,execute:runProcess,...remoteOptions});studio = new Studio(store, vault,{remoteSources});
     feeds=new CaptureFeeds(studio,{clock});new LiveCapture(studio, {clock, ...liveOptions});
-    chat=new UnifiedChat(studio,{base,...chatOptions});
+    chat=new UnifiedChat(studio,{base,clock,...chatOptions});
     studio.chat=chat;
     recordings=new LocalRecordings(studio,{clock});studio.recordings=recordings;
     downloads = new Downloads(studio,downloadOptions); notifications = new Notifications(studio,notificationOptions); updates=new Updates(store,updateOptions);updates.startTimer();

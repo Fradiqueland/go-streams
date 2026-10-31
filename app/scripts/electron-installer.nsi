@@ -141,6 +141,9 @@ FunctionEnd
 Section "Go Streams" Main
  SetShellVarContext current
  SetRegView 64
+ ; Silent setup skips the directory page and its validation callback.
+ ; Enforce the data boundary before inspecting or creating application files.
+ Call .onVerifyInstDir
  ; Never replace a running Electron executable or terminate an active stream.
  IfFileExists "$INSTDIR\GoStreams.exe" 0 check_directory
  ClearErrors

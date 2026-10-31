@@ -11,7 +11,7 @@ export class ChatPanel {
    this.element.addEventListener('click',event=>{const b=event.target.closest('button[data-chat]');if(b&&!b.disabled)void this.action(b);});
    this.element.addEventListener('change',event=>{
     if(event.target.dataset.chat==='filter')this.renderMessages();
-    if(event.target.name==='connectionId'){this.replyTo=null;this.updateComposer();}
+    if(event.target.name==='connectionId'){this.replyTo=null;if(event.target.value)this.destinationLost=false;this.updateComposer();}
    });
   }
   if(this.element.parentNode!==container)container.appendChild(this.element);
@@ -33,7 +33,9 @@ export class ChatPanel {
   const connectionKey=JSON.stringify([this.snapshot.connections.map(c=>[c.id,c.status,c.name,c.platform,c.error]),channels.map(c=>[c.id,c.name,c.platform,c.producerUrl])]);
   if(connectionKey!==this.connectionSignature){
    this.connectionSignature=connectionKey;const selector=this.element.querySelector('.chat-compose select'),selected=selector.value,filter=this.element.querySelector('[data-chat="filter"]'),oldFilter=filter.value;
-   const ready=this.snapshot.connections.filter(c=>c.status==='connected');selector.innerHTML=ready.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} — ${esc(c.platform)}</option>`).join('');selector.value=ready.some(c=>c.id===selected)?selected:ready[0]?.id||'';
+   const ready=this.snapshot.connections.filter(c=>c.status==='connected'),retained=ready.some(c=>c.id===selected);
+   if(selected&&!retained)this.destinationLost=true;
+   selector.innerHTML=`<option value="">${text('Choose a connected chat','Escolha um chat ligado')}</option>`+ready.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} — ${esc(c.platform)}</option>`).join('');selector.value=retained?selected:this.destinationLost?'':ready[0]?.id||'';
    filter.innerHTML=`<option value="">${text('All connected chats','Todos os chats ligados')}</option>`+this.snapshot.connections.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');filter.value=this.snapshot.connections.some(c=>c.id===oldFilter)?oldFilter:'';
    this.element.querySelector('.chat-connection-status').innerHTML=this.snapshot.connections.map(c=>`<p><strong>${esc(c.name)}</strong> — ${esc(c.status)} ${esc(c.error)} <button type="button" class="secondary small" data-chat="disconnect-chat" data-id="${esc(c.id)}">${text('Disconnect','Desligar')}</button></p>`).join('')+channels.filter(c=>!['YouTube','Twitch'].includes(c.platform)).map(c=>`<p>${esc(c.name)} — ${text('Integrated chat unavailable for this platform in this release.','Chat integrado indisponível nesta plataforma nesta versão.')} ${c.producerUrl?`<a href="${esc(c.producerUrl)}" target="_blank" rel="noopener noreferrer">${text('Open producer panel','Abrir painel do produtor')}</a>`:''}</p>`).join('');
   }

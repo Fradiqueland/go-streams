@@ -21,6 +21,14 @@ function bootstrap(feed,chunk){
  return start<0?null:Buffer.concat([...headers,data.subarray(start)]);
 }
 
+function endSink(feed,sink,error){
+ if(!feed.sinks.has(sink))return;
+ sink.detach();
+ // Output cleanup belongs to that output. A failed callback must never
+ // interrupt sibling delivery or prevent the shared encoder from closing.
+ try{sink.onEnd(error);}catch{}
+}
+
 // A single WebM capture is encoded once. Repeated MPEG-TS headers/keyframes let
 // live destinations and local recording attach independently at any time.
 export class CaptureFeeds {
@@ -37,22 +45,29 @@ export class CaptureFeeds {
   child.stdout.on('data',chunk=>{
    const initial=bootstrap(feed,chunk);feed.started=true;
    for(const sink of [...feed.sinks]){
-    if(sink.stream.destroyed||sink.stream.writableEnded||sink.stream.writableLength>4*1024*1024){feed.sinks.delete(sink);sink.onEnd('This output could not keep up with live capture.');continue;}
+    if(sink.stream.destroyed||sink.stream.writableEnded||sink.stream.writableLength>4*1024*1024){endSink(feed,sink,'This output could not keep up with live capture.');continue;}
     const data=sink.waiting?initial:chunk;if(!data)continue;sink.waiting=false;
-    try{sink.stream.write(data,error=>{if(error&&feed.sinks.delete(sink))sink.onEnd('This output stopped accepting live capture.');});sink.onData?.(data.length);}catch{if(feed.sinks.delete(sink))sink.onEnd('This output stopped accepting live capture.');}
+    // Writable invokes its failed write callback before emitting 'error'. Keep
+    // the listener through that event, then detach if the stream did not emit it.
+    try{sink.stream.write(data,error=>{if(error)queueMicrotask(()=>endSink(feed,sink,'This output stopped accepting live capture.'));});if(feed.sinks.has(sink))sink.onData?.(data.length);}catch{endSink(feed,sink,'This output stopped accepting live capture.');}
    }
   });
   child.on('error',()=>this.stop(feed.id,'The capture encoder could not be started.'));
-  child.on('close',()=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])sink.onEnd(feed.error||(!feed.stopped?'Live capture encoder disconnected.':''));feed.sinks.clear();feed.resolve();});
+  child.on('close',()=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])endSink(feed,sink,feed.error||(!feed.stopped?'Live capture encoder disconnected.':''));feed.resolve();});
   return {id:feed.id};
  }
  get(id){const feed=this.active.get(id);if(!feed||feed.stopped)throw new AppError('The shared live capture has ended.',410);return feed;}
- attach(id,stream,onEnd,onData){const feed=this.get(id),sink={stream,onEnd,onData,waiting:feed.started};feed.sinks.add(sink);return ()=>feed.sinks.delete(sink);}
+ attach(id,stream,onEnd,onData){
+  const feed=this.get(id),sink={stream,onEnd,onData,waiting:feed.started};
+  const failed=()=>endSink(feed,sink,'This output stopped accepting live capture.');
+  sink.detach=()=>{feed.sinks.delete(sink);stream.removeListener('error',failed);stream.removeListener('close',failed);};
+  stream.on('error',failed);stream.on('close',failed);feed.sinks.add(sink);return sink.detach;
+ }
  async ingest(id,sequence,req){
   const feed=this.get(id);if(feed.receiving||sequence!==String(feed.sequence))throw new AppError('Capture chunks must arrive in order.',409);if(req.headers['content-type']?.split(';')[0]!=='video/webm')throw new AppError('Expected WebM capture data.',415);
   const declared=req.headers['content-length'];if(declared&&(!/^\d+$/.test(declared)||Number(declared)>8*1024*1024))throw new AppError('Capture chunk too large.',413);
   feed.receiving=true;const deadline=setTimeout(()=>{this.stop(id,'Capture upload timed out.');req.destroy();},20000).unref();
-  try{const parts=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>8*1024*1024)throw new AppError('Capture chunk too large.',413);parts.push(Buffer.from(chunk));}if(!size||feed.stopped)throw new AppError('Capture has ended.',410);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new AppError('Capture encoder stopped accepting video.',502)),15000).unref();feed.child.stdin.write(Buffer.concat(parts),error=>{clearTimeout(timer);error?reject(new AppError('Capture encoder disconnected.',502)):resolve();});});feed.sequence++;feed.lastInput=Date.now();return {ok:true,sequence:feed.sequence};}
+  try{const parts=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>8*1024*1024)throw new AppError('Capture chunk too large.',413);parts.push(Buffer.from(chunk));}if(!size||feed.stopped)throw new AppError('Capture has ended.',410);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new AppError('Capture encoder stopped accepting video.',502)),15000).unref();feed.child.stdin.write(Buffer.concat(parts),error=>{clearTimeout(timer);error?reject(new AppError('Capture encoder disconnected.',502)):resolve();});});if(feed.stopped||this.active.get(id)!==feed)throw new AppError('Capture has ended.',410);feed.sequence++;feed.lastInput=Date.now();return {ok:true,sequence:feed.sequence};}
   catch(error){this.stop(id,'Capture input was interrupted.');throw error;}finally{clearTimeout(deadline);feed.receiving=false;}
  }
  stop(id,error=''){const feed=this.active.get(id);if(!feed||feed.stopped)return;feed.stopped=true;feed.error=error;feed.timer=setTimeout(()=>{try{feed.child.kill();}catch{}},5000).unref();feed.child.stdin.end();}

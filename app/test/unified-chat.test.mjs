@@ -278,3 +278,91 @@ test('OAuth account identity and granted scopes require the documented provider 
   assert.equal(f.chat.auth.data.accounts[provider],undefined);
  }
 });
+
+test('a YouTube poll waiting for credentials cannot read a disconnected chat',async t=>{
+ let release,reads=0;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async()=>{reads++;return response({items:[],pollingIntervalMillis:30000});});
+ f.chat.auth.token=async()=>{await hold;return {id:'host',name:'Host',accessToken:'private'};};
+ const c={id:'chat',chatId:'room',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ const polling=f.chat.pollYouTube(c);f.chat.disconnect(c.id);release();await polling;
+ assert.equal(reads,0);assert.equal(f.chat.connections.has(c.id),false);
+});
+
+test('Twitch welcome redelivery keeps one subscription and preserves an in-flight subscription',async t=>{
+ let release,subscriptions=0;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async url=>{if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});subscriptions++;await hold;return response({data:[{id:'subscription',status:'enabled'}]},202);});
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
+ const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://localhost/live',key:'stream'});
+ await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});const socket=f.sockets[0];
+ const welcome=()=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_id:'same-welcome',message_type:'session_welcome'},payload:{session:{id:'same-session',keepalive_timeout_seconds:60}}})}));
+ welcome();await turn();assert.equal(subscriptions,1);welcome();await turn();
+ try{assert.equal(socket.closeCount,0);assert.equal(f.chat.connections.get(id).status,'connecting');}finally{release();}
+ await turn();assert.equal(f.chat.connections.get(id).status,'connected');
+ welcome();await turn();assert.equal(socket.closeCount,0);assert.equal(subscriptions,1);
+});
+
+test('idle Twitch authorizations validate hourly and end every chat session after revocation',async t=>{
+ let validations=0;const f=fixture(t,async()=>{validations++;return validations===1?response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']}):response({message:'invalid access token'},401);});
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.accept('Twitch',{access_token:'private',expires_in:7200});
+ const c={id:'chat',platform:'Twitch',status:'connected'};f.chat.connections.set(c.id,c);
+ t.mock.timers.tick(3600000);await turn();
+ assert.equal(validations,2);assert.equal(f.chat.auth.state().Twitch.authorized,false);assert.equal(f.chat.connections.has(c.id),false);
+});
+
+test('temporary Twitch validation failures retain authorization and retry without ending sessions',async t=>{
+ let validations=0;const f=fixture(t,async()=>{validations++;return validations===2?response({message:'temporarily unavailable'},503):response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});});
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.accept('Twitch',{access_token:'private',expires_in:7200});
+ const c={id:'chat',platform:'Twitch',status:'connected'};f.chat.connections.set(c.id,c);
+ t.mock.timers.tick(3600000);await turn();assert.equal(validations,2);assert.equal(f.chat.auth.state().Twitch.authorized,true);assert.equal(f.chat.connections.get(c.id),c);
+ t.mock.timers.tick(60000);await turn();assert.equal(validations,3);assert.equal(f.chat.auth.state().Twitch.authorized,true);
+});
+
+test('saved Twitch authorizations are validated on startup and clock false suppresses background checks',async t=>{
+ let validations=0;const request=async()=>{validations++;return response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});};
+ const f=fixture(t,request);t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.accept('Twitch',{access_token:'private',expires_in:7200});await f.chat.shutdown();
+ const inactive=new UnifiedChat(f.studio,{base:'http://127.0.0.1:4317',request,clock:false});t.after(()=>inactive.shutdown());
+ t.mock.timers.tick(0);await turn();assert.equal(validations,1);
+ const reloaded=new UnifiedChat(f.studio,{base:'http://127.0.0.1:4317',request});t.after(()=>reloaded.shutdown());
+ t.mock.timers.tick(0);await turn();assert.equal(validations,2);
+ await reloaded.shutdown();t.mock.timers.tick(3600000);await turn();assert.equal(validations,2);
+});
+
+test('a replacement OAuth identity invalidates replies confirmed during its authorization flow',async t=>{
+ let release,lookups=0,posts=0;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async(url,options)=>{if(options.method==='POST'){posts++;return response({id:'sent'});}return response({items:[{id:'new-owner',snippet:{title:'New host'}}]});});
+ f.chat.auth.configure('YouTube',{clientId:'123-test.apps.googleusercontent.com'});
+ f.chat.auth.data.accounts.YouTube={id:'old-owner',name:'Old host',accessToken:'old-private',expires:Date.now()+3600000};
+ await f.chat.auth.begin('YouTube');const version=f.chat.auth.versions.YouTube;
+ const c={id:'chat',chatId:'room',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ f.chat.auth.token=async()=>{if(++lookups===2)await hold;return f.chat.auth.data.accounts.YouTube;};
+ const sending=f.chat.send({connectionId:c.id,text:'Confirmed while Old host was selected',requestId:crypto.randomUUID(),confirmed:true});await turn();
+ try{await f.chat.auth.accept('YouTube',{access_token:'new-private',expires_in:3600},version);}finally{release();}
+ await assert.rejects(sending,/changed|authorization|account/);
+ assert.equal(posts,0);assert.equal(f.chat.auth.data.accounts.YouTube.id,'new-owner');assert.equal(f.chat.connections.has(c.id),false);
+});
+
+test('an active Twitch API 401 ends current sessions while preserving a pending replacement authorization',async t=>{
+ const f=fixture(t,async url=>url.endsWith('/device')?response({device_code:'device',user_code:'CODE',verification_uri:'https://www.twitch.tv/activate',expires_in:600}):response({message:'invalid access token'},401));
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+7200000,validated:Date.now()};
+ await f.chat.auth.begin('Twitch');const pending=f.chat.auth.pending.get('Twitch');
+ const c={id:'chat',broadcasterId:'broadcaster',platform:'Twitch',status:'connected'};f.chat.connections.set(c.id,c);
+ await assert.rejects(f.chat.send({connectionId:c.id,text:'Reply',requestId:crypto.randomUUID(),confirmed:true}),error=>error.status===401);
+ assert.equal(f.chat.connections.has(c.id),false);assert.equal(f.chat.auth.state().Twitch.authorized,false);assert.equal(f.chat.auth.pending.get('Twitch'),pending);
+});
+
+test('a delayed Twitch API 401 cannot revoke credentials refreshed after that request began',async t=>{
+ let release;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async(url,options)=>{if(url.endsWith('/validate'))return response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});assert.equal(options.headers.Authorization,'Bearer old-private');await hold;return response({message:'invalid access token'},401);});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'old-private',expires:Date.now()+7200000,validated:Date.now()};
+ const c={id:'chat',broadcasterId:'broadcaster',platform:'Twitch',status:'connected'};f.chat.connections.set(c.id,c);
+ const sending=f.chat.send({connectionId:c.id,text:'Reply',requestId:crypto.randomUUID(),confirmed:true});await turn();
+ try{await f.chat.auth.accept('Twitch',{access_token:'new-private',expires_in:7200});}finally{release();}
+ await assert.rejects(sending,error=>error.status===401);
+ assert.equal(f.chat.auth.data.accounts.Twitch.accessToken,'new-private');assert.equal(f.chat.connections.get(c.id),c);
+});

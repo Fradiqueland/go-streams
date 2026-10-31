@@ -134,6 +134,55 @@ test('late outputs start at a complete keyframe with program headers across spli
  workers[0].stdout.write(Buffer.concat([key.subarray(100),audio.subarray(0,50)]));workers[0].stdout.write(audio.subarray(50));
  assert.deepEqual(Buffer.concat(received),Buffer.concat([pat,pmt,key,audio]));assert.equal(feeds.get(id).tables.size,2);assert.ok(feeds.get(id).tail.length<188);await feeds.shutdown();
 });
+
+test('late-output bootstrap preserves every TS byte for all subpacket stdout chunk sizes',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id);
+ const packet=(pid,key=false)=>{const data=Buffer.alloc(188,0xff);data[0]=0x47;data[1]=0x40|(pid>>8);data[2]=pid&255;data[3]=key?0x30:0x10;if(key){data[4]=1;data[5]=0x40;}return data;};
+ const middle=packet(256),source=Buffer.concat([packet(0),packet(4096),packet(256,true),packet(257)]);workers[0].stdout.write(middle);
+ for(let size=1;size<188;size++){
+  feed.tables.clear();const received=[],output=new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}}),detach=feeds.attach(id,output,()=>{});
+  for(let offset=0;offset<source.length;offset+=size)workers[0].stdout.write(source.subarray(offset,offset+size));
+  assert.deepEqual(Buffer.concat(received),source,'stdout chunk size '+size);assert.equal(feed.tail.length,0);detach();output.destroy();
+ }
+ await feeds.shutdown();
+});
+
+test('throwing shared-output callbacks cannot interrupt sibling output or encoder completion',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id),received=[],ended=[];
+ try{
+ const failed=new Writable({write(data,encoding,done){done();}});failed.destroy();
+ feeds.attach(id,failed,()=>{throw Error('Output callback failed');});
+ const callbackFailure=new Writable({write(data,encoding,done){done();}});
+ feeds.attach(id,callbackFailure,()=>{throw Error('Output cleanup failed');},()=>{throw Error('Output accounting failed');});
+ feeds.attach(id,new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}}),error=>ended.push(error));
+ assert.doesNotThrow(()=>workers[0].stdout.write(Buffer.from('first')));assert.equal(Buffer.concat(received).toString(),'first');assert.equal(feed.sinks.size,1);
+ feeds.attach(id,new Writable({write(data,encoding,done){done();}}),()=>{throw Error('Final callback failed');});
+ assert.doesNotThrow(()=>workers[0].emit('close',0));await feed.completion;assert.equal(feed.sinks.size,0);assert.equal(ended.length,1);assert.match(ended[0],/disconnected/);
+ }finally{feed.sinks.clear();feed.resolve();}
+});
+
+test('shared outputs detach on stream failure and release their listeners independently',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id),errors=[],received=[];
+ const failed=new Writable({write(data,encoding,done){done();}}),good=new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}});
+ const detach=feeds.attach(id,failed,error=>errors.push(error));feeds.attach(id,good,()=>{});
+ assert.doesNotThrow(()=>failed.emit('error',Error('Disk full')));assert.equal(feed.sinks.size,1);assert.equal(errors.length,1);detach();assert.equal(failed.listenerCount('close'),0);assert.equal(failed.listenerCount('error'),0);
+ workers[0].stdout.write(Buffer.from('continues'));assert.equal(Buffer.concat(received).toString(),'continues');await feeds.shutdown();assert.equal(good.listenerCount('close'),0);assert.equal(good.listenerCount('error'),0);
+});
+
+test('a failed asynchronous sink write remains isolated through its subsequent error event',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id),received=[];let ended=0;
+ feeds.attach(id,new Writable({write(data,encoding,done){setImmediate(()=>done(Error('Disk full')));}}),()=>{ended++;throw Error('Cleanup failed');});
+ feeds.attach(id,new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}}),()=>{});
+ workers[0].stdout.write(Buffer.from('first'));await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(ended,1);assert.equal(feed.sinks.size,1);workers[0].stdout.write(Buffer.from('second'));assert.equal(Buffer.concat(received).toString(),'firstsecond');await feeds.shutdown();
+});
+
+for(const ending of ['stop','close'])test('shared capture does not acknowledge an upload whose encoder '+ending+' occurs during its write',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id);let written;
+ const worker=workers[0];worker.stdin.destroy();worker.stdin=new Writable({write(data,encoding,done){written=done;},final(done){done();queueMicrotask(()=>worker.emit('close',0));}});
+ const upload=feeds.ingest(id,'0',chunk());while(!written)await new Promise(resolve=>setImmediate(resolve));if(ending==='stop')feeds.stop(id);else worker.emit('close',0);written();
+ await assert.rejects(upload,error=>error.status===410);assert.equal(feed.sequence,0);await feed.completion;
+});
 test('Electron capture permissions require the trusted main frame, consent and a selected source',async()=>{
  const ses={setPermissionCheckHandler(fn){this.check=fn;},setPermissionRequestHandler(fn){this.request=fn;},setDisplayMediaRequestHandler(fn){this.display=fn;}};
  const contents={mainFrame:{},isDestroyed:()=>false,getURL:()=>base+'/'},base='http://127.0.0.1:4317',source={id:'screen:1',name:'Screen'};let allowed=false;
