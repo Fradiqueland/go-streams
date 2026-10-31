@@ -74,7 +74,11 @@ export class LiveCapture {
         }
         if (name === 'fps') job.fps = Number(value) || 0;
         if (name === 'bitrate') job.bitrate = value?.trim() || '';
-        if (name === 'out_time_us') job.elapsed = Math.max(job.elapsed, (Number(value) || 0) / 1000000);
+        if (name === 'out_time_us') {
+          job.elapsed = Math.max(job.elapsed, (Number(value) || 0) / 1000000);
+          // FFmpeg 6 stream-copy workers report output time without frame counts.
+          if(job.elapsed>0&&job.status==='starting'){job.status='running';job.broadcastStarted=new Date().toISOString();this.studio.notify(job,'running');}
+        }
       }
     });
     child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-12000); });

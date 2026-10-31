@@ -133,6 +133,9 @@ export class LiveCapturePanel {
    draw();this.drawTimer=setInterval(draw,1000/30);
    this.audio=new AudioContext();await this.audio.resume();const destination=this.audio.createMediaStreamDestination();
    this.master=this.audio.createGain();this.master.connect(destination);this.analyser=this.audio.createAnalyser();this.master.connect(this.analyser);this.audioInputs=[];
+   // Keep the audio rendering clock active on Windows Chromium without playing
+   // microphone/system sound back through the speakers.
+   const clockSink=this.audio.createGain();clockSink.gain.value=0;this.master.connect(clockSink).connect(this.audio.destination);
    this.silence=this.audio.createOscillator();const silentGain=this.audio.createGain();silentGain.gain.value=0;this.silence.connect(silentGain).connect(this.master);this.silence.start();
    for(const stream of this.streams)if(stream.getAudioTracks().length){const gain=this.audio.createGain(),name=stream===this.screen?'screenVolume':'micVolume';gain.gain.value=Number(this.production.element.querySelector(`[name="${name}"]`).value);this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(gain).connect(this.master);this.audioInputs.push({name,gain});}
    const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length);this.production.element.querySelector('meter').value=Math.min(1,rms*3);},100);
