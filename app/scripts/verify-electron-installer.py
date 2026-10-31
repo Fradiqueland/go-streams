@@ -30,7 +30,7 @@ def verify_directory_validation(work, nsis, builder):
     def check(target, allowed):
         result=run_installer(probe,target,timeout=30)
         assert (result==0)==allowed, f'Directory validation: {target}: {result}'
-    for target in [existing,new,work/'Acentos Jo�o'/'Go Streams Electron']:
+    for target in [existing,new,work/'Acentos João'/'Go Streams Electron']:
         check(target,True)
     assert not new.parent.exists(), 'Validation must not create the destination'
     for target in [Path(work.anchor),os.environ['LOCALAPPDATA'],os.environ['USERPROFILE'],os.environ['WINDIR'],os.environ.get('ProgramFiles(x86)',os.environ['ProgramFiles']),data_root,data_root/'data',data_root/'new',data_root/'other'/'..'/'data']:
