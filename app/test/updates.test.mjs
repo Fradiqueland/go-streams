@@ -55,3 +55,26 @@ for(const operation of ['check','download'])for(const stage of ['partial','end']
  assert.ok((await outcome).error);assert.equal(u.state().state,'error');
  if(operation==='check')assert.equal(u.release,null);else{assert.equal(fs.readFileSync(target,'utf8'),'previously verified');assert.ok(!fs.readdirSync(path.dirname(target)).some(name=>name.endsWith('.part')));}
 });
+
+for(const stage of ['write-zero','flush','close'])test('update '+stage+' disk failure reports an error, cleans partial files and releases cancellation state',async t=>{
+ const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(manifest()):archive));await u.check();
+ const folder=path.join(u.store.directory,'updates');fs.mkdirSync(folder,{recursive:true});
+ const previous=path.join(folder,'GoStreams-99.0.0.zip');fs.writeFileSync(previous,'previously verified');
+ if(stage==='write-zero')t.mock.method(fs,'writeSync',()=>0);
+ if(stage==='flush')t.mock.method(fs,'fsyncSync',()=>{throw Object.assign(Error('Controlled full disk'),{code:'ENOSPC'});});
+ if(stage==='close'){
+  const close=fs.closeSync.bind(fs);let injected=false;
+  t.mock.method(fs,'closeSync',fd=>{const result=close(fd);if(!injected){injected=true;throw Object.assign(Error('Controlled close failure'),{code:'EIO'});}return result;});
+ }
+ await assert.rejects(u.download());
+ assert.equal(u.state().state,'error');assert.equal(u.operation,null);assert.equal(u.controller,null);
+ assert.equal(fs.readFileSync(previous,'utf8'),'previously verified');assert.deepEqual(fs.readdirSync(folder),[path.basename(previous)]);
+});
+
+test('update directory creation failure is visible and leaves the verified release and existing project intact',async t=>{
+ const u=make(async()=>new Response(JSON.stringify(manifest())));await u.check();const original=fs.readFileSync(u.store.file,'utf8');
+ const mkdir=fs.mkdirSync.bind(fs),folder=path.join(u.store.directory,'updates');
+ t.mock.method(fs,'mkdirSync',(target,...args)=>{if(target===folder)throw Object.assign(Error('Controlled permissions failure'),{code:'EACCES'});return mkdir(target,...args);});
+ await assert.rejects(u.download());assert.equal(u.state().state,'error');assert.equal(u.operation,null);assert.equal(u.controller,null);
+ assert.equal(u.release.available,true);assert.equal(fs.readFileSync(u.store.file,'utf8'),original);
+});

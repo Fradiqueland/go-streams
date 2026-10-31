@@ -6,7 +6,11 @@ import {AppError,atomicWrite,runProcess,toolsFor} from './core.mjs';
 export class LocalRecordings {
  constructor(studio,{clock=true,execute=runProcess}={}){
   Object.assign(this,{studio,execute});this.root=path.join(studio.store.directory,'recordings');fs.mkdirSync(this.root,{recursive:true});this.file=path.join(this.root,'index.json');this.active=new Map();this.finalizing=new Map();this.closed=false;
-  try{this.items=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):[];if(!Array.isArray(this.items)||this.items.some(i=>! /^[a-f0-9-]{36}$/i.test(i.id)))throw Error();}catch{throw new AppError('Local recording index could not be read. Files were preserved.',500);}
+  try{
+   this.items=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):[];
+   if(!Array.isArray(this.items)||this.items.some(i=>!i||typeof i!=='object'||! /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(i.id)||typeof i.created!=='string'||!Number.isFinite(Date.parse(i.created))||!['recording','finalizing','interrupted','completed'].includes(i.status)||!['webm','mp4',undefined].includes(i.format)||!Number.isSafeInteger(i.bytes)||i.bytes<0||(i.error!==undefined&&typeof i.error!=='string')||(i.ended!==undefined&&(typeof i.ended!=='string'||!Number.isFinite(Date.parse(i.ended)))))||new Set(this.items.map(i=>i.id)).size!==this.items.length)throw Error();
+   for(const item of this.items){item.format||='webm';item.error||='';}
+  }catch{throw new AppError('Local recording index could not be read. Files were preserved.',500);}
   for(const item of this.items)if(['recording','finalizing'].includes(item.status))item.status='interrupted';
   if(clock)this.timer=setInterval(()=>{for(const record of this.active.values())if(Date.now()-record.lastInput>20000)void this.finish(record.item.id).catch(()=>{});},2000).unref();
  }
@@ -17,14 +21,25 @@ export class LocalRecordings {
   if(this.closed||this.studio.closing||this.studio.importingProject||this.active.size>=2)throw new AppError('Close or finish the current recording first.',409);
   if(feedId)this.studio.feeds.get(feedId);
   this.checkSpace();const id=crypto.randomUUID(),item={id,created:new Date().toISOString(),status:'recording',format:feedId?'mp4':'webm',bytes:0,error:''};
-  const child=feedId?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-f','matroska','-y',path.join(this.root,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
-  const stream=child?child.stdin:fs.createWriteStream(path.join(this.root,id+'.part'),{flags:'wx',mode:0o600});
-  const record={item,stream,sequence:0,receiving:false,lastInput:Date.now(),error:null};stream.on('error',()=>{record.error='The local recording could not be written. Check free disk space.';});
+  // Persist ownership before opening a writer. ENOSPC must not leave an
+  // untracked process writing after the start request has failed.
+  this.items.unshift(item);try{this.save();}catch{this.items.shift();throw new AppError('The local recording index could not be saved. Check free disk space.',507);}
+  let child,stream,record;
+  try{
+  child=feedId?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-f','matroska','-y',path.join(this.root,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
+  stream=child?child.stdin:fs.createWriteStream(path.join(this.root,id+'.part'),{flags:'wx',mode:0o600});
+  record={item,stream,sequence:0,receiving:false,lastInput:Date.now(),error:null};stream.on('error',()=>{record.error='The local recording could not be written. Check free disk space.';if(item.status==='recording'&&this.active.get(id)===record)void this.finish(id).catch(()=>{});});
+  this.active.set(id,record);
   if(child){
-   record.child=child;record.childDone=new Promise(resolve=>child.once('close',code=>{record.exitCode=code;if(code!==0&&!record.error)record.error='The local recording encoder stopped unexpectedly. Original local data was preserved.';resolve(code);if(item.status==='recording')void this.finish(id).catch(()=>{});}));child.stderr.on('data',()=>{});child.on('error',()=>{record.error='The local recording encoder could not be started.';});
+   record.child=child;record.childDone=new Promise(resolve=>child.once('close',code=>{record.exitCode=code;if((code!==0||item.status==='recording')&&!record.error)record.error='The local recording encoder stopped unexpectedly. Original local data was preserved.';resolve(code);if(item.status==='recording')void this.finish(id).catch(()=>{});}));child.stderr.on('data',()=>{});child.on('error',()=>{record.error='The local recording encoder could not be started.';});
    record.detach=this.studio.feeds.attach(feedId,stream,error=>{if(error)record.error=error;void this.finish(id).catch(()=>{});},bytes=>{item.bytes+=bytes;record.lastInput=Date.now();});
   }
-  this.items.unshift(item);this.active.set(id,record);this.save();return {id};
+  return {id};
+  }catch{
+   this.active.delete(id);item.status='interrupted';record?.detach?.();stream?.destroy();try{child?.kill();}catch{}
+   this.items=this.items.filter(entry=>entry!==item);try{this.save();}catch{}
+   throw new AppError('The local recording could not be started. Files were preserved.',500);
+  }
  }
  checkSpace(){if(fs.statfsSync(this.root).bavail*fs.statfsSync(this.root).bsize<64*1024*1024)throw new AppError('Not enough free space for a local recording.',507);}
  async ingest(id,sequence,req){
@@ -47,23 +62,28 @@ export class LocalRecordings {
   const item=this.items.find(i=>i.id===id);if(!item)throw new AppError('Recording not found.',404);if(item.status==='completed')return {ok:true,id};
   const record=this.active.get(id),part=path.join(this.root,id+'.part'),output=path.join(this.root,id+(item.format==='mp4'?'.mp4':'.webm'));
   if(!record&&!fs.existsSync(part))throw new AppError('Recording data is unavailable.',404);
-  item.status='finalizing';this.save();
+  item.status='finalizing';
   const task=(async()=>{
    await Promise.resolve();
    try{
+    let indexFailure;try{this.save();}catch(error){indexFailure=error;}
     if(record){
      record.detach?.();
      if(record.child){const timer=setTimeout(()=>record.child.kill(),10000).unref();record.stream.end();await record.childDone;clearTimeout(timer);}
      else await new Promise(resolve=>{if(record.stream.closed)return resolve();record.stream.once('close',resolve);record.stream.end();});
      this.active.delete(id);
     }
+    if(indexFailure)throw indexFailure;
     if(record?.error)throw Error(record.error);
     if(!fs.statSync(part).size)throw Error('Empty recording');
     // Rewrites the WebM index and duration so the completed recording can be sought.
     await this.execute(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-protocol_whitelist','file,pipe','-f',item.format==='mp4'?'matroska':'webm','-i',part,'-map','0:v:0','-map','0:a:0?','-c','copy',...(item.format==='mp4'?['-movflags','+faststart']:[]),'-f',item.format==='mp4'?'mp4':'webm','-y',output],{timeout:120000});
-    item.bytes=fs.statSync(output).size;item.status='completed';item.error='';item.ended=new Date().toISOString();fs.unlinkSync(part);return {ok:true,id};
-   }catch{item.status='interrupted';item.error='Recording could not be finalized. Original local data was preserved for recovery.';throw new AppError(item.error,500);}
-   finally{this.active.delete(id);this.finalizing.delete(id);this.save();}
+    item.bytes=fs.statSync(output).size;item.status='completed';item.error='';item.ended=new Date().toISOString();
+    // Commit the downloadable metadata before removing the recovery source.
+    // If persisting completion fails, retry still has the original .part file.
+    this.save();try{fs.unlinkSync(part);}catch{}return {ok:true,id};
+   }catch{item.status='interrupted';item.error='Recording could not be finalized. Original local data was preserved for recovery.';try{this.save();}catch{}throw new AppError(item.error,500);}
+   finally{this.active.delete(id);this.finalizing.delete(id);}
   })();this.finalizing.set(id,task);return task;
  }
  media(id){const item=this.items.find(i=>i.id===id);if(!item||item.status!=='completed')throw new AppError('Finish the recording before downloading it.',409);return path.join(this.root,id+(item.format==='mp4'?'.mp4':'.webm'));}

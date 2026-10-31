@@ -45,7 +45,7 @@ test('YouTube chat merges messages, respects polling interval, sends only to its
 });
 test('Twitch chat subscribes with the authorized sender and supports threaded responses; rejected sends are not reported delivered',async t=>{
  const requests=[];let deliver=true;
- const f=fixture(t,async(url,options)=>{requests.push({url,options});if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});if(url.includes('subscriptions'))return response({data:[{id:'subscription'}]},202);return response({data:[{is_sent:deliver,message_id:'reply-id'}]});});
+ const f=fixture(t,async(url,options)=>{requests.push({url,options});if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});if(url.includes('subscriptions'))return response({data:[{id:'subscription',status:'enabled'}]},202);return response({data:[{is_sent:deliver,message_id:'reply-id'}]});});
  f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'presenter',name:'Host',accessToken:'PRIVATE',expires:Date.now()+3600000,validated:Date.now()};
  const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://127.0.0.1:9/live',key:'stream'});await f.chat.connect({channelId:id,resource:'my_channel',confirmed:true});
  const socket=f.sockets[0],message=value=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(value)}));
@@ -117,7 +117,7 @@ test('reply destination is checked again after API credential lookup',async t=>{
 });
 
 test('Twitch reconnect retains old-socket events until welcome and closes every socket on disconnect',async t=>{
- let subscriptions=0;const f=fixture(t,async(url)=>{if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});subscriptions++;return response({data:[{id:'subscription'}]},202);});
+ let subscriptions=0;const f=fixture(t,async(url)=>{if(url.includes('users?'))return response({data:[{id:'broadcaster'}]});subscriptions++;return response({data:[{id:'subscription',status:'enabled'}]},202);});
  f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
  const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://127.0.0.1:9/live',key:'key'});await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});
  const emit=(socket,type,payload)=>socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_type:type},payload})}));
@@ -132,7 +132,7 @@ test('Twitch reconnect retains old-socket events until welcome and closes every 
 });
 
 test('Twitch honors a negotiated keepalive window throughout reconnects',async t=>{
- const f=fixture(t,async(url)=>response(url.includes('users?')?{data:[{id:'broadcaster'}]}:{data:[{id:'subscription'}]},url.includes('users?')?200:202));
+ const f=fixture(t,async(url)=>response(url.includes('users?')?{data:[{id:'broadcaster'}]}:{data:[{id:'subscription',status:'enabled'}]},url.includes('users?')?200:202));
  f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
  t.mock.timers.enable({apis:['setTimeout']});
  const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://127.0.0.1:9/live',key:'key'});await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});
@@ -156,4 +156,125 @@ test('destination edits retain compatible chat and refresh names; deletion and p
  f.studio.store.data.channels.find(item=>item.id===id).platform='Twitch';f.chat.syncChannel(id);assert.equal(f.chat.connections.has(id),false);assert.equal(f.chat.messages.length,0);assert.equal(f.chat.seen.size,0);
  const second={...c,platform:'Twitch',status:'connected'};f.chat.connections.set(id,second);f.chat.add(second,{remoteId:'second',text:'New room'});f.chat.disconnect(id);f.studio.store.data.channels.find(item=>item.id===id).platform='YouTube';f.chat.syncChannel(id);assert.equal(f.chat.messages.length,0);
  const third={...c,status:'connected'};f.chat.connections.set(id,third);f.chat.add(third,{remoteId:'third',text:'Final room'});f.studio.store.data.channels=[];f.chat.syncChannel(id);assert.equal(f.chat.connections.has(id),false);assert.equal(f.chat.messages.length,0);assert.equal(f.chat.seen.size,0);
+});
+
+test('a pending reply cannot switch account authorization while retaining the same room',async t=>{
+ let posts=0,lookups=0;const f=fixture(t,async()=>{posts++;return response({id:'sent'});});
+ const c={id:'chat',chatId:'room',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ f.chat.auth.token=async()=>{if(++lookups===2)f.chat.auth.versions.YouTube++;return {id:lookups===1?'old-owner':'new-owner',name:'Host',accessToken:'private'};};
+ await assert.rejects(f.chat.send({connectionId:c.id,text:'Confirmed under the old authorization',requestId:crypto.randomUUID(),confirmed:true}),/authorization|account|changed/);
+ assert.equal(posts,0);assert.equal(c.sending,false);
+});
+
+test('malformed platform acknowledgements never become a confirmed outgoing message',async t=>{
+ let value;const f=fixture(t,async()=>response(value));
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+ f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});
+ for(const [platform,payload]of [['YouTube',{id:123}],['Twitch',{data:[{is_sent:'false',message_id:'message'}]}],['Twitch',{data:[{is_sent:true,message_id:{invalid:true}}]}]]){
+  value=payload;const c={id:'chat',chatId:'room',broadcasterId:'broadcaster',platform,status:'connected'};f.chat.connections.set(c.id,c);
+  await assert.rejects(f.chat.send({connectionId:c.id,text:'Require a valid acknowledgement',requestId:crypto.randomUUID(),confirmed:true}),/did not send|confirm delivery/);
+  assert.equal(f.chat.messages.length,0);assert.equal(c.lastSent,undefined);
+ }
+});
+
+test('an invalid YouTube polling interval cannot overflow a timer into rapid requests',async t=>{
+ const f=fixture(t,async url=>response(url.includes('/videos?')?{items:[{liveStreamingDetails:{activeLiveChatId:'room'}}]}:{items:[],pollingIntervalMillis:'Infinity'}));
+ f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});
+ const id=f.studio.saveChannel({name:'YouTube',platform:'YouTube',url:'rtmp://localhost/live',key:'stream'});
+ await assert.rejects(f.chat.connect({channelId:id,resource:'abcdefghijk',confirmed:true}),/polling|response/);const c=f.chat.connections.get(id);
+ assert.equal(c.status,'error');assert.match(c.error,/polling|response/);assert.equal(c.timer,undefined);
+});
+
+test('Twitch does not report a chat connected without an enabled subscription acknowledgement',async t=>{
+ const f=fixture(t,async url=>response(url.includes('users?')?{data:[{id:'broadcaster'}]}:{data:[]},url.includes('users?')?200:202));
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+3600000,validated:Date.now()};
+ const id=f.studio.saveChannel({name:'Twitch',platform:'Twitch',url:'rtmp://localhost/live',key:'stream'});
+ await f.chat.connect({channelId:id,resource:'host_channel',confirmed:true});const socket=f.sockets[0];
+ socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({metadata:{message_type:'session_welcome'},payload:{session:{id:'session',keepalive_timeout_seconds:60}}})}));await turn();
+ assert.equal(f.chat.connections.get(id).status,'error');assert.equal(socket.closeCount,1);
+});
+
+test('invalid Twitch device timing cannot overflow timers or expose a credential-bearing activation URL',async t=>{
+ let overrides;const f=fixture(t,async()=>response({device_code:'device',user_code:'CODE',verification_uri:'https://www.twitch.tv/activate',interval:5,expires_in:600,...overrides}));
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});
+ for(overrides of [{interval:1e30},{expires_in:-1},{verification_uri:'https://unexpected:credentials@www.twitch.tv/activate'}]){
+  await assert.rejects(f.chat.auth.begin('Twitch'),/response|timing|address/);
+  assert.equal(f.chat.auth.pending.has('Twitch'),false);
+ }
+});
+
+test('invalid token lifetimes and refresh token types are rejected before account validation',async t=>{
+ let calls=0;const f=fixture(t,async()=>{calls++;return response({items:[{id:'owner',snippet:{title:'Host'}}]});});
+ for(const extra of [{expires_in:1e30},{expires_in:-1},{refresh_token:{invalid:true}}]){
+  await assert.rejects(f.chat.auth.accept('YouTube',{access_token:'access',...extra}),/token|lifetime|response/);
+  assert.equal(f.chat.auth.data.accounts.YouTube,undefined);
+ }
+ assert.equal(calls,0);
+});
+
+test('chat response objects and message IDs are validated before entering retained state',async t=>{
+ let value;const f=fixture(t,async()=>response(value));
+ for(value of [null,[],false,42,'unexpected'])await assert.rejects(f.chat.auth.http('https://api.twitch.tv/helix/users'),/Invalid chat service response/);
+ const c={id:'chat',platform:'YouTube',status:'connected'};f.chat.connections.set(c.id,c);
+ for(const remoteId of [null,{},42,'','x'.repeat(1001)])f.chat.add(c,{remoteId,text:'Invalid ID'});
+ assert.equal(f.chat.messages.length,0);assert.equal(f.chat.seen.size,0);
+});
+
+test('hourly Twitch validation still works when an optional refresh token is absent',async t=>{
+ const f=fixture(t,async()=>response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']}));
+ f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+ f.chat.auth.data.accounts.Twitch={id:'host',name:'Host',accessToken:'private',expires:Date.now()+7200000,validated:0};
+ const account=await f.chat.auth.token('Twitch');assert.equal(account.id,'host');assert.equal(account.refreshToken,'');assert.ok(account.validated>0);
+});
+
+test('disconnected provider lookups reject stale connect completions instead of reporting success',async t=>{
+ for(const platform of ['YouTube','Twitch']){
+  let release,calls=0;const hold=new Promise(resolve=>{release=resolve;});
+  const f=fixture(t,async()=>{calls++;await hold;return response(platform==='YouTube'?{items:[{liveStreamingDetails:{activeLiveChatId:'room'}}]}:{data:[{id:'broadcaster'}]});});
+  f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+  const id=f.studio.saveChannel({name:platform,platform,url:'rtmp://localhost/live',key:'stream'});
+  const connecting=f.chat.connect({channelId:id,resource:platform==='YouTube'?'abcdefghijk':'host_channel',confirmed:true});await turn();f.chat.disconnect(id);release();
+  await assert.rejects(connecting,error=>error.status===409);assert.equal(f.chat.connections.has(id),false);assert.equal(calls,1);assert.equal(f.sockets.length,0);
+ }
+});
+
+test('an old provider lookup cannot report success over a replacement room',async t=>{
+ let release,reads=0;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async url=>{if(url.includes('/videos?')){const read=++reads;if(read===1)await hold;return response({items:[{liveStreamingDetails:{activeLiveChatId:read===1?'old-room':'new-room'}}]});}return response({items:[],pollingIntervalMillis:30000});});
+ f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});
+ const id=f.studio.saveChannel({name:'YouTube',platform:'YouTube',url:'rtmp://localhost/live',key:'stream'});
+ const old=f.chat.connect({channelId:id,resource:'abcdefghijk',confirmed:true});await turn();
+ await f.chat.connect({channelId:id,resource:'ZYXWVUTSRQP',confirmed:true});const current=f.chat.connections.get(id);release();
+ await assert.rejects(old,error=>error.status===409);assert.equal(f.chat.connections.get(id),current);assert.equal(current.chatId,'new-room');assert.equal(current.status,'connected');
+});
+
+test('initial YouTube polling failure rejects connect and preserves the visible error state',async t=>{
+ const f=fixture(t,async url=>url.includes('/videos?')?response({items:[{liveStreamingDetails:{activeLiveChatId:'room'}}]}):response({error:'quota denied'},403));
+ f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});
+ const id=f.studio.saveChannel({name:'YouTube',platform:'YouTube',url:'rtmp://localhost/live',key:'stream'});
+ await assert.rejects(f.chat.connect({channelId:id,resource:'abcdefghijk',confirmed:true}),/denied chat access/);
+ const c=f.chat.connections.get(id);assert.equal(c.status,'error');assert.match(c.error,/denied chat access/);assert.equal(c.timer,undefined);
+});
+
+test('disconnect during the first YouTube poll cancels the original connect completion',async t=>{
+ let release;const hold=new Promise(resolve=>{release=resolve;});
+ const f=fixture(t,async url=>{if(url.includes('/videos?'))return response({items:[{liveStreamingDetails:{activeLiveChatId:'room'}}]});await hold;return response({items:[],pollingIntervalMillis:30000});});
+ f.chat.auth.token=async()=>({id:'host',name:'Host',accessToken:'private'});
+ const id=f.studio.saveChannel({name:'YouTube',platform:'YouTube',url:'rtmp://localhost/live',key:'stream'});
+ const connecting=f.chat.connect({channelId:id,resource:'abcdefghijk',confirmed:true});await turn();f.chat.disconnect(id);release();
+ await assert.rejects(connecting,error=>error.status===409);assert.equal(f.chat.connections.has(id),false);
+});
+
+test('OAuth account identity and granted scopes require the documented provider types',async t=>{
+ let value;const f=fixture(t,async()=>response(value));f.chat.auth.data.settings.Twitch={clientId:'abcdefgh123'};
+ for(const [provider,payload]of [
+  ['Twitch',{client_id:'abcdefgh123',user_id:123,login:'Host',scopes:['user:read:chat','user:write:chat']}],
+  ['Twitch',{client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:'user:read:chat user:write:chat'}],
+  ['YouTube',{items:[{id:123,snippet:{title:'Host'}}]}],
+  ['YouTube',{items:[{id:{invalid:true},snippet:{title:'Host'}}]}]
+ ]){
+  value=payload;await assert.rejects(f.chat.auth.accept(provider,{access_token:'private',expires_in:3600}),/permission|authorized|response/);
+  assert.equal(f.chat.auth.data.accounts[provider],undefined);
+ }
 });

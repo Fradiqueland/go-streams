@@ -51,3 +51,28 @@ test('a failed exit request leaves the interface usable and allows retry',async(
  let count=0;const h=uiHarness({fetch:async()=>({ok:++count>1,json:async()=>({error:'Controlled failure'})})});
  await h.element('#exit').onclick();assert.equal(h.element('#exit').disabled,false);await h.element('#exit').onclick();assert.equal(count,2);assert.equal(h.element('#exit').disabled,true);
 });
+
+test('navigating back during a save keeps the replacement saving form locked and other drafts editable',async()=>{
+ let release;const gate=new Promise(resolve=>{release=resolve;});
+ const value={media:[],channels:[],playlists:[],schedules:[],jobs:[],history:[],settings:{}};
+ const h=uiHarness({fetch:async(url,init)=>{if(url==='/api/settings'&&init?.method==='PUT')await gate;return {ok:true,json:async()=>url==='/api/state'?value:url==='/api/health'?{version:'1.0.0',tools:{}}:{ok:true}};}});
+ const original=h.fields('settings-form',{ffmpeg:'D:/ffmpeg.exe'}),saving=h.emit('submit',original);
+ assert.equal(original.elements[0].disabled,true);
+ h.run("page='channels';draw()");
+ let html='',replacement,other;
+ Object.defineProperty(h.element('#content'),'innerHTML',{configurable:true,get:()=>html,set:value=>{html=value;if(value.includes('id="settings-form"')){replacement=h.fields('settings-form',{ffmpeg:'D:/ffmpeg.exe'});other=h.fields('notification-form',{host:'smtp.example.test'});}}});
+ try{
+  h.run("page='settings';draw()");
+  assert.equal(replacement.elements[0].disabled,true);
+  assert.equal(other.elements[0].disabled,false);
+ }finally{release();await saving;}
+ assert.equal(h.element('#settings-form').elements[0].disabled,false);
+});
+
+for(const page of ['settings','help'])test('reconnect redraws '+page+' with newly available health and version',async()=>{
+ const state={media:[],channels:[],playlists:[],schedules:[],jobs:[],history:[],settings:{}};
+ const h=uiHarness({fetch:async url=>({ok:true,json:async()=>url==='/api/health'?{version:'9.1.2',tools:{ffmpeg:{available:true},ffprobe:{available:true}},secureStorage:'Private vault',dataDirectory:'D:/saved-data'}:state})});
+ h.run("page='"+page+"';draw()");await h.click('reconnect');
+ assert.match(h.element('#content').innerHTML,/Go Streams 9\.1\.2/);
+ if(page==='settings')assert.match(h.element('#content').innerHTML,/Private vault/);
+});

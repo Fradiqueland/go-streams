@@ -87,7 +87,7 @@ export class LiveCapture {
       this.subscriptions.get(job.id)?.();this.subscriptions.delete(job.id);
       if (job.ended) return;
       const stopped = job.status === 'stopping';
-      let error = job.captureError || (!stopped && code !== 0 ? stderr.slice(-2500) || 'The live destination disconnected.' : '');
+      let error = job.captureError || (!stopped ? stderr.slice(-2500) || 'The live destination disconnected.' : '');
       for (const secret of [...job.secrets].sort((a,b) => b.length-a.length)) if (secret) error = error.split(secret).join('[hidden]');
       error = error.replace(/rtmps?:\/\/\S+/gi, '[destination hidden]');
       this.studio.finish(job, error ? 'error' : stopped ? 'stopped' : 'completed', error);

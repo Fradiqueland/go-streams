@@ -61,6 +61,25 @@ test('Electron isolates its renderer and sends only HTTPS links to the system br
  const preferences=policy.rendererPreferences({});for(const key of ['nodeIntegration','nodeIntegrationInWorker','nodeIntegrationInSubFrames','webviewTag','allowRunningInsecureContent'])assert.equal(preferences[key],false);
  for(const key of ['sandbox','contextIsolation','webSecurity'])assert.equal(preferences[key],true);
 });
+
+test('Electron permits only explicitly saved HTTP destination dashboards and checks the current list',()=>{
+ const contents=new EventEmitter(),opened=[];contents.setWindowOpenHandler=handler=>contents.popup=handler;
+ let saved=['http://127.0.0.1:8080/producer'];
+ policy.wireNavigation(contents,{base:'http://127.0.0.1:4317',openExternal:url=>opened.push(url),httpUrls:()=>saved});
+ contents.popup({url:'http://127.0.0.1:8080/producer'});
+ assert.deepEqual(opened,['http://127.0.0.1:8080/producer']);
+ for(const url of ['http://127.0.0.1:8080/other','http://example.com/','http://user:secret@127.0.0.1:8080/producer','file:///C:/Windows/cmd.exe'])contents.popup({url});
+ assert.equal(opened.length,1);
+ saved=[];contents.popup({url:'http://127.0.0.1:8080/producer'});assert.equal(opened.length,1);
+ assert.equal(policy.externalUrl('http://example.com/'),null);
+});
+
+test('an unavailable system browser cannot throw through Electron navigation handlers',()=>{
+ const contents=new EventEmitter();contents.setWindowOpenHandler=handler=>contents.popup=handler;
+ policy.wireNavigation(contents,{base:'http://127.0.0.1:4317',openExternal(){throw Error('System browser unavailable');}});
+ assert.deepEqual(contents.popup({url:'https://example.test/producer'}),{action:'deny'});
+ let prevented=false;assert.doesNotThrow(()=>contents.emit('will-navigate',{preventDefault(){prevented=true;}},'https://example.test/producer'));assert.equal(prevented,true);
+});
 function backend(){return {studio:{jobs:new Map(),pendingImports:new Set(),pendingPreparations:new Set(),pendingOperations:new Set()},downloads:{active:new Map()},async close(){}};}
 test('explicit Electron activation restores and raises the window without keeping it on top',()=>{
  for(const minimized of [false,true]){

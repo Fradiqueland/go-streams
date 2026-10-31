@@ -29,12 +29,14 @@ export class ProductionTools {
  }
  async loadImage(name,file){
   if(!file)return;
+  const token={};this.imageLoads ||= {};this.imageLoads[name]=token;
   try{
    if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024)throw Error(t('Choose a PNG, JPEG or WebP image up to 2 MB.','Escolha uma imagem PNG, JPEG ou WebP até 2 MB.'));
    const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
-   const image=new Image();image.src=data;await image.decode();const canvas=document.createElement('canvas'),max=name==='logo'?600:1600,ratio=Math.min(1,max/Math.max(image.width,image.height));canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+   if(this.imageLoads[name]!==token)return;
+   const image=new Image();image.src=data;await image.decode();if(this.imageLoads[name]!==token)return;const canvas=document.createElement('canvas'),max=name==='logo'?600:1600,ratio=Math.min(1,max/Math.max(image.width,image.height));canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
    this.values[name]=canvas.toDataURL(name==='logo'?'image/png':'image/jpeg',.85);this.images[name]=image;
-  }catch(error){this.toast(error.message||'Image could not be opened.',true);}
+  }catch(error){if(this.imageLoads[name]===token)this.toast(error.message||'Image could not be opened.',true);}
  }
  draw(ctx,w,h,camera,screen,fit){
   const v=this.values;ctx.fillStyle=v.background;ctx.fillRect(0,0,w,h);if(this.images.backgroundImage)ctx.drawImage(this.images.backgroundImage,0,0,w,h);
@@ -82,7 +84,7 @@ export class ProductionTools {
    const action=button.dataset.production;
    if(action==='record')await this.startRecording();if(action==='stop-record')await this.stopRecording();
    if(action==='recover'){button.disabled=true;await this.api(`/api/recordings/${button.dataset.id}/finish`,{});this.toast(t('Recording recovered.','Gravação recuperada.'));}
-   if(action==='clear-images'){this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}
+   if(action==='clear-images'){this.imageLoads={};this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}
    if(action==='snapshot')this.snapshot();
    if(action==='stop-clip')this.stopClip();
    if(action==='play-clip'){
@@ -91,7 +93,7 @@ export class ProductionTools {
     this.stopClip();this.clipUrl=URL.createObjectURL(file);this.clip=document.createElement('video');this.clip.playsInline=true;this.clip.src=this.clipUrl;this.clip.onended=()=>this.stopClip();this.clip.onerror=()=>{this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};try{this.setClipAudio(this.clip);await this.clip.play();}catch(error){this.stopClip();throw error;}
    }
    if(action==='save-scene'){this.scenes[this.element.querySelector('[name=scene]').value]={...this.values};try{localStorage.setItem('go-streams-scenes',JSON.stringify(this.scenes));this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}}
-   if(action==='load-scene'){const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.values={...defaults,...values};for(const [name,value]of Object.entries(this.values)){const el=this.element.querySelector(`[name="${name}"]`);if(el&&el.type!=='file'){if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};for(const name of ['logo','backgroundImage'])if(/^data:image\/(png|jpeg|webp);base64,/.test(this.values[name])){const image=new Image();image.src=this.values[name];await image.decode();this.images[name]=image;}}
+   if(action==='load-scene'){const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.values={...defaults,...values};const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el&&el.type!=='file'){if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
    if(action==='teleprompter'){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}else this.scrollTimer=setInterval(()=>{const el=this.element.querySelector('.teleprompter');el.scrollTop+=1;},50);}
   }catch(error){this.toast(error.message,true);}finally{button.disabled=false;this.update();}
  }

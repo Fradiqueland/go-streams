@@ -45,15 +45,20 @@ export class Notifications {
   async deliver(message) {
     const saved=this.store.data.notifications;
     if(!saved?.enabled)throw new AppError('Ative e guarde as notificações antes de enviar.');
+    let delivered=false;
     try {
       const password=saved.secret?this.studio.vault.decrypt(saved.secret):'';
       await this.send({...saved,secret:undefined,password},message,this.controller.signal);
-      this.store.update(s=>{s.notificationStatus={status:'sent',at:new Date().toISOString(),error:''};});
-      return {ok:true};
-    } catch {
-      this.store.update(s=>{s.notificationStatus={status:'error',at:new Date().toISOString(),error:'Falha no envio. Verifique o servidor SMTP, o modo TLS, as credenciais e a ligação.'};});
-      return {ok:false,error:'Não foi possível enviar o email.'};
+      delivered=true;
+    } catch { /* A failed delivery is recorded separately from a failed local status write. */ }
+    const status={status:delivered?'sent':'error',at:new Date().toISOString(),error:delivered?'':'Falha no envio. Verifique o servidor SMTP, o modo TLS, as credenciais e a ligação.'};
+    try{this.store.update(s=>{s.notificationStatus=status;});}
+    catch{
+      const error=delivered?'O email foi enviado, mas não foi possível guardar o estado local. Verifique o espaço e as permissões da pasta de dados.':'O email não foi enviado e não foi possível guardar o estado local. Verifique o SMTP, o espaço e as permissões da pasta de dados.';
+      this.store.data.notificationStatus={...status,status:'error',deliveryStatus:status.status,persistenceError:true,error};
+      return {ok:false,delivered,persistenceError:true,error};
     }
+    return delivered?{ok:true}:{ok:false,error:'Não foi possível enviar o email.'};
   }
   async test(confirmed) {
     if(confirmed!==true)throw new AppError('Confirme o envio do email de teste.');
@@ -61,5 +66,5 @@ export class Notifications {
     this.testing=this.deliver({subject:'Go Streams — teste de notificações',body:'As notificações do Go Streams estão configuradas.'});
     try{return await this.testing;}finally{this.testing=null;}
   }
-  async shutdown(){this.closing=true;this.pending=[];this.controller.abort();await Promise.all([this.processing,this.testing]);}
+  async shutdown(){this.closing=true;this.pending=[];this.controller.abort();await Promise.allSettled([this.processing,this.testing]);}
 }

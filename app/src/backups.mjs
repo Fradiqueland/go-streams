@@ -17,7 +17,7 @@ function fail(message='Cópia de segurança inválida.'){throw new AppError(mess
 function password(value){if(typeof value!=='string'||value.length<10||value.length>1024)fail('Use uma palavra-passe com pelo menos 10 caracteres.');return value;}
 function scope(value){if(!['all','project','settings'].includes(value))fail();return value;}
 function text(value,max=3000){if(typeof value!=='string'||value.length>max||/[\x00-\x1f]/.test(value))fail();return value;}
-function ids(items,max=Infinity){if(!Array.isArray(items)||items.length>max)fail();const seen=new Set();for(const item of items){if(!item||typeof item.id!=='string'||!/^[\w-]{1,100}$/.test(item.id)||seen.has(item.id))fail();seen.add(item.id);}return seen;}
+function ids(items,max=Infinity){if(!Array.isArray(items)||items.length>max)fail();const seen=new Set();for(const item of items){if(!item||typeof item.id!=='string'||!/^[\w-]{1,100}$/.test(item.id)||Object.hasOwn(Object.prototype,item.id)||seen.has(item.id))fail();seen.add(item.id);}return seen;}
 function prefs(input){if(!input||!['en','es','fr','hi','ar','zh','bn','ru','id','pt-PT'].includes(input.language)||!['list','grid'].includes(input.layout)||typeof input.compact!=='boolean')fail('Preferências da interface inválidas.');return{language:input.language,layout:input.layout,compact:input.compact};}
 export async function exportBackup(store,vault,input){
  const selected=scope(input.scope),snapshot=structuredClone(store.data),data={};

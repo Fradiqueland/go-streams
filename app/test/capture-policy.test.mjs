@@ -45,3 +45,16 @@ test('screen permission is never cached to bypass a fresh source selection',asyn
  assert.equal(await new Promise(resolve=>f.session.request(f.contents,'display-capture',resolve,{requestingUrl:f.base+'/',isMainFrame:true})),true);
  assert.equal(f.session.check(f.contents,'display-capture',f.base,{isMainFrame:true}),false);
 });
+
+test('screen picker settles a destroyed-frame callback once without retrying it',async()=>{
+ const source={id:'screen:1',name:'Screen'},f=fixture({getSources:async()=>[source],chooseSource:async()=>source});
+ const calls=[];f.session.display({frame:f.contents.mainFrame,securityOrigin:f.base,userGesture:true,videoRequested:true,audioRequested:false},value=>{calls.push(value);if(calls.length===1)throw Error('Frame was destroyed');});
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);
+});
+
+test('closing while screen sources are enumerated does not open a stale picker',async()=>{
+ let release,picked=0;const pending=new Promise(resolve=>{release=resolve;}),f=fixture({getSources:()=>pending,chooseSource:async()=>{picked++;return null;}});
+ const answer=new Promise(resolve=>f.session.display({frame:f.contents.mainFrame,securityOrigin:f.base,userGesture:true,videoRequested:true,audioRequested:false},resolve));
+ f.contents.isDestroyed=()=>true;release([{id:'screen:1',name:'Screen'}]);
+ assert.equal(await answer,null);assert.equal(picked,0);
+});

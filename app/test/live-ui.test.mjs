@@ -5,6 +5,19 @@ import {ProductionTools} from '../public/live-production.js';
 import {ChatPanel} from '../public/unified-chat.js';
 
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+function replaceGlobal(t,name,value){const previous=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{value,writable:true,configurable:true});t.after(()=>{if(previous)Object.defineProperty(globalThis,name,previous);else delete globalThis[name];});}
+function previewEnvironment(t,source,mediaDevices){
+ class Track extends EventTarget{constructor(kind='video'){super();this.kind=kind;this.readyState='live';}stop(){this.stopped=true;this.readyState='ended';}}
+ class Stream{constructor(tracks=[]){this.tracks=tracks;}getTracks(){return this.tracks;}getAudioTracks(){return this.tracks.filter(t=>t.kind==='audio');}getVideoTracks(){return this.tracks.filter(t=>t.kind==='video');}}
+ const node=()=>({gain:{value:1},connect(target){return target;},disconnect(){},start(){}});
+ replaceGlobal(t,'navigator',{mediaDevices});replaceGlobal(t,'window',{MediaRecorder:{}});replaceGlobal(t,'MediaStream',Stream);
+ replaceGlobal(t,'FormData',class{get(name){return {source,quality:'720p',aspect:'16:9'}[name]||'';}has(){return true;}});
+ replaceGlobal(t,'document',{createElement:tag=>tag==='video'?{videoWidth:640,videoHeight:360,async play(){},pause(){}}:{getContext:()=>({}),captureStream:()=>new Stream([new Track()])}});
+ replaceGlobal(t,'AudioContext',class{destination=node();async resume(){}async close(){}createMediaStreamDestination(){return {stream:new Stream([new Track('audio')])};}createGain(){return node();}createAnalyser(){return {...node(),fftSize:32};}createOscillator(){return node();}createMediaStreamSource(){return node();}});
+ replaceGlobal(t,'setInterval',()=>1);replaceGlobal(t,'clearInterval',()=>{});
+ const panel=capturePanel(async()=>{});panel.production={draw(){},update(){},element:{querySelector:()=>({value:'1'})},async stopRecording(){},stopClip(){}};panel.listDevices=async()=>{};
+ return {panel,Track,Stream};
+}
 function capturePanel(api){
  const panel=new LiveCapturePanel({api,toast(){},getState(){return {};}});
  panel.controls=()=>{};panel.status=(value,error=false)=>{panel.lastStatus={value,error};};
@@ -104,4 +117,77 @@ test('recording finalization failures keep the active recording available for a 
  const status={};tools.element={querySelector:()=>status};tools.update=()=>{};tools.recordingId='active-recording';
  await tools.stopRecording();assert.equal(tools.recordingId,'active-recording');assert.deepEqual(released,[]);assert.equal(status.textContent,'offline');assert.equal(tools.finishing,null);
  fail=false;await tools.stopRecording();assert.equal(tools.recordingId,null);assert.deepEqual(released,['recording']);assert.match(status.textContent,/saved locally/);
+});
+
+test('permission results arriving after device release cannot revive a cancelled preview',async t=>{
+ const pending=deferred(),{panel,Track,Stream}=previewEnvironment(t,'camera',{getUserMedia:()=>pending.promise}),track=new Track(),stream=new Stream([track]);
+ const preview=panel.preview();panel.releaseDevices();pending.resolve(stream);await preview;
+ assert.equal(track.stopped,true);assert.equal(panel.output,null);assert.equal(panel.streams.length,0);assert.equal(panel.preparing,false);
+});
+
+test('ending screen sharing during microphone permission cancels the pending camera acquisition',async t=>{
+ const pending=deferred();let screen;const {panel,Track,Stream}=previewEnvironment(t,'screen-camera',{getDisplayMedia:async()=>screen,getUserMedia:()=>pending.promise});
+ const screenTrack=new Track(),cameraTrack=new Track(),camera=new Stream([cameraTrack]);screen=new Stream([screenTrack]);
+ const preview=panel.preview();await new Promise(resolve=>setImmediate(resolve));
+ screenTrack.readyState='ended';screenTrack.dispatchEvent(new Event('ended'));pending.resolve(camera);await preview;await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(screenTrack.stopped,true);assert.equal(cameraTrack.stopped,true);assert.equal(panel.output,null);assert.equal(panel.streams.length,0);
+});
+
+test('a live start response arriving after preview release is stopped instead of reviving a broadcast',async()=>{
+ const pending=deferred(),calls=[],panel=capturePanel(async route=>{calls.push(route);if(route==='/api/live/start')return pending.promise;return {ok:true};});
+ panel.output={getTracks:()=>[]};panel.config={source:'camera',quality:'720p',aspect:'16:9'};panel.acquireFeed=async()=> 'shared-feed';panel.releaseFeed=async()=>{};
+ panel.element.querySelectorAll=()=>[{value:'destination'}];
+ const starting=panel.start();await new Promise(resolve=>setImmediate(resolve));await panel.release();pending.resolve({id:'late-session'});await starting;
+ assert.ok(calls.includes('/api/live/late-session/stop'));assert.equal(panel.session,null);assert.equal(panel.output,null);assert.equal(panel.preparing,false);
+});
+
+test('chat origin labels rerender when a destination is renamed without replacing its messages',()=>{
+ const panel=new ChatPanel({}),log={scrollHeight:10,scrollTop:0,clientHeight:10};
+ panel.element={querySelector:selector=>selector==='.chat-messages'?log:{value:''}};
+ const message={id:'retained',connectionId:'room',platform:'YouTube',channelName:'Old channel',author:'Viewer',text:'Hello'};
+ panel.snapshot={messages:[message]};panel.renderMessages();assert.match(log.innerHTML,/Old channel/);
+ message.channelName='New channel';panel.renderMessages();assert.match(log.innerHTML,/New channel/);assert.doesNotMatch(log.innerHTML,/Old channel/);
+});
+
+test('clearing branding cancels an image decode already in flight',async t=>{
+ const decoded=deferred();replaceGlobal(t,'FileReader',class{readAsDataURL(){this.result='data:image/png;base64,synthetic';this.onload();}});
+ replaceGlobal(t,'Image',class{width=20;height=20;decode(){return decoded.promise;}});
+ replaceGlobal(t,'document',{createElement:()=>({getContext:()=>({drawImage(){}}),toDataURL:()=> 'data:image/png;base64,resized'})});
+ const tools=new ProductionTools({toast(){}});tools.element={querySelector:()=>({value:'selected.png'})};tools.update=()=>{};
+ const loading=tools.loadImage('logo',{type:'image/png',size:20});await Promise.resolve();await tools.action({dataset:{production:'clear-images'}});decoded.resolve();await loading;
+ assert.equal(tools.values.logo,'');assert.deepEqual(tools.images,{});
+});
+
+test('chat explains Twitch Shared Chat platform forwarding before sending',t=>{
+ let section;replaceGlobal(t,'document',{createElement:()=>section={addEventListener(){}}});
+ const panel=new ChatPanel({});panel.update=()=>{};panel.mount({appendChild(){}},{},[]);
+ assert.match(section.innerHTML,/Shared Chat/);
+});
+
+test('scene image decoding cannot restore images after branding is cleared',async t=>{
+ const decoded=deferred();replaceGlobal(t,'Image',class{decode(){return decoded.promise;}});
+ const tools=new ProductionTools({toast(){}});tools.scenes.intro={logo:'data:image/png;base64,scene'};tools.update=()=>{};
+ tools.element={querySelector:selector=>selector==='[name=scene]'?{value:'intro'}:{type:'file',value:''}};
+ const loading=tools.action({dataset:{production:'load-scene'}});await Promise.resolve();await tools.action({dataset:{production:'clear-images'}});decoded.resolve();await loading;
+ assert.equal(tools.values.logo,'');assert.deepEqual(tools.images,{});
+});
+
+test('replying to disconnected history leaves the active destination intact and explains the unavailable chat',async()=>{
+ const errors=[],panel=new ChatPanel({toast:message=>errors.push(message)}),selector={value:'active'},oldButton={dataset:{id:'old'}},activeButton={dataset:{id:'new'}};
+ const controls={'.chat-compose select':selector,'.chat-compose button':{},'.chat-compose textarea':{},'[data-chat="cancel-reply"]':{},'.chat-reply-target':{}};
+ panel.element={querySelector:selector=>controls[selector],querySelectorAll:()=>[oldButton,activeButton]};
+ panel.snapshot={connections:[{id:'active',status:'connected',platform:'YouTube'}],messages:[{id:'old',connectionId:'disconnected'},{id:'new',connectionId:'active'}]};
+ panel.updateComposer();assert.equal(oldButton.disabled,true);assert.equal(activeButton.disabled,false);
+ await panel.action({dataset:{chat:'reply',id:'old'}});assert.equal(selector.value,'active');assert.equal(panel.replyTo,null);assert.match(errors[0],/Connect this chat/);
+});
+
+for(const status of ['connecting','connected','error'])test('chat connection feedback reflects the returned '+status+' status',async t=>{
+ replaceGlobal(t,'FormData',class{get(name){return {channelId:'room',resource:'channel'}[name];}has(){return true;}});
+ const notices=[],button={},response={accounts:{},connections:[{id:'room',channelId:'room',status,error:status==='error'?'Platform unavailable':''}],messages:[]};
+ const panel=new ChatPanel({api:async()=>response,toast:(message,error=false)=>notices.push({message,error})});panel.update=state=>{panel.snapshot=state;};panel.updateComposer=()=>{};
+ const form={classList:{contains:value=>value==='chat-connect'},querySelector:()=>button};await panel.submit(form);
+ assert.equal(notices.length,1);assert.equal(notices[0].error,status==='error');assert.equal(button.disabled,false);
+ if(status==='connecting'){assert.match(notices[0].message,/requested.*Waiting/);assert.doesNotMatch(notices[0].message,/Chat connected\./);}
+ if(status==='connected')assert.equal(notices[0].message,'Chat connected.');
+ if(status==='error')assert.equal(notices[0].message,'Platform unavailable');
 });

@@ -43,7 +43,7 @@ export class CaptureFeeds {
    }
   });
   child.on('error',()=>this.stop(feed.id,'The capture encoder could not be started.'));
-  child.on('close',code=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])sink.onEnd(feed.error||(!feed.stopped&&code!==0?'Live capture encoder disconnected.':''));feed.sinks.clear();feed.resolve();});
+  child.on('close',()=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])sink.onEnd(feed.error||(!feed.stopped?'Live capture encoder disconnected.':''));feed.sinks.clear();feed.resolve();});
   return {id:feed.id};
  }
  get(id){const feed=this.active.get(id);if(!feed||feed.stopped)throw new AppError('The shared live capture has ended.',410);return feed;}

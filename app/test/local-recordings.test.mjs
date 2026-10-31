@@ -33,11 +33,11 @@ test('recording rejects oversized uploads before consuming them and cannot start
  const {id}=recordings.start({confirmed:true});for(const length of [String(8*1024*1024+1),'invalid']){const req=Readable.from([Buffer.from('unread')]);req.headers={'content-type':'video/webm','content-length':length};await assert.rejects(recordings.ingest(id,'0',req),error=>error.status===413);assert.equal(recordings.active.get(id).sequence,0);assert.equal(recordings.active.get(id).receiving,false);}
 });
 
-test('a failed recording worker becomes interrupted and never reports a recovered partial file as complete',async t=>{
+for(const exitCode of [0,1])test('an unexpected recording worker exit '+exitCode+' becomes interrupted without reporting a partial file as complete',async t=>{
  const {root,studio,recordings}=fixture(t),child=new EventEmitter();child.stdin=new PassThrough();child.stderr=new PassThrough();child.kill=()=>child.emit('close',1);studio.spawnProcess=()=>child;
  let detached=0,remuxed=0;studio.feeds={get:()=>({}),attach:()=>()=>{detached++;},shutdown:async()=>{}};recordings.execute=async()=>{remuxed++;};
  const {id}=recordings.start({confirmed:true,feedId:'test'}),record=recordings.active.get(id),part=path.join(root,'recordings',id+'.part');fs.writeFileSync(part,'partial-matroska');
- child.emit('close',1);await record.childDone;const finalization=recordings.finalizing.get(id);assert.ok(finalization);await assert.rejects(finalization,/preserved/);
+ child.emit('close',exitCode);await record.childDone;const finalization=recordings.finalizing.get(id);assert.ok(finalization);await assert.rejects(finalization,/preserved/);
  assert.equal(detached,1);assert.equal(remuxed,0);assert.equal(recordings.active.size,0);assert.equal(recordings.finalizing.size,0);assert.equal(recordings.state()[0].status,'interrupted');assert.equal(fs.readFileSync(part,'utf8'),'partial-matroska');assert.throws(()=>recordings.media(id),/Finish/);
 });
 
@@ -48,4 +48,44 @@ test('a recording interrupted by application restart can be recovered from its o
  const record=recordings.active.get(id);await new Promise(resolve=>{record.stream.once('close',resolve);record.stream.end();});recordings.active.delete(id);recordings.save();
  const reopened=new LocalRecordings(studio,{clock:false});t.after(()=>reopened.shutdown());assert.equal(reopened.state()[0].status,'interrupted');await reopened.finish(id);
  assert.equal(reopened.state()[0].status,'completed');const {stdout}=await runProcess('ffprobe',['-v','error','-show_format','-of','json',reopened.media(id)]);assert.ok(Number(JSON.parse(stdout).format.duration)>=1);assert.ok(!fs.existsSync(path.join(root,'recordings',id+'.part')));
+});
+
+for(const shared of [false,true])test('an index write failure cannot start an untracked '+(shared?'shared worker':'file writer'),t=>{
+ const {studio,recordings}=fixture(t);let launches=0;studio.feeds={get:()=>({}),shutdown:async()=>{}};studio.spawnProcess=()=>{launches++;throw Error('Worker must not start');};
+ const save=recordings.save.bind(recordings);recordings.save=()=>{throw Error('ENOSPC index');};
+ try{assert.throws(()=>recordings.start({confirmed:true,...(shared?{feedId:'test'}:{})}));assert.equal(launches,0);assert.equal(recordings.active.size,0);assert.equal(recordings.items.length,0);}finally{recordings.save=save;}
+});
+
+test('a synchronous capture-attachment failure closes its recording worker and rolls back the index',t=>{
+ const {root,studio,recordings}=fixture(t),child=new EventEmitter();child.stdin=new PassThrough();child.stderr=new PassThrough();let killed=0;child.kill=()=>{killed++;child.emit('close',1);};studio.spawnProcess=()=>child;
+ studio.feeds={get:()=>({}),attach:()=>{throw Error('Feed stopped before attachment');},shutdown:async()=>{}};
+ assert.throws(()=>recordings.start({confirmed:true,feedId:'test'}),/could not be started/);assert.equal(killed,1);assert.equal(child.stdin.destroyed,true);assert.equal(recordings.active.size,0);assert.equal(recordings.items.length,0);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'recordings','index.json'),'utf8')),[]);
+});
+
+test('index failure while stopping still closes the writer and preserves recoverable source data',async t=>{
+ const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true}),record=recordings.active.get(id),part=path.join(root,'recordings',id+'.part');
+ const req=Readable.from([Buffer.from('source-data')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);
+ const save=recordings.save.bind(recordings);recordings.save=()=>{throw Error('ENOSPC index');};
+ try{await assert.rejects(recordings.finish(id));assert.equal(record.stream.closed,true);assert.equal(recordings.active.size,0);assert.equal(recordings.finalizing.size,0);assert.equal(recordings.state()[0].status,'interrupted');assert.equal(fs.readFileSync(part,'utf8'),'source-data');}finally{recordings.save=save;}
+});
+
+test('failure saving completed metadata preserves the source for retry instead of orphaning a valid output',async t=>{
+ const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true}),req=Readable.from([Buffer.from('recoverable-source')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);
+ const save=recordings.save.bind(recordings);recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'finalized-output');
+ recordings.save=()=>{if(recordings.items[0].status==='completed')throw Error('ENOSPC completed index');return save();};
+ try{await assert.rejects(recordings.finish(id));assert.equal(recordings.state()[0].status,'interrupted');assert.equal(fs.readFileSync(path.join(root,'recordings',id+'.part'),'utf8'),'recoverable-source');assert.equal(recordings.active.size,0);assert.equal(recordings.finalizing.size,0);}finally{recordings.save=save;}
+ await recordings.finish(id);assert.equal(recordings.state()[0].status,'completed');assert.equal(fs.readFileSync(recordings.media(id),'utf8'),'finalized-output');
+});
+
+test('malformed recording metadata fails closed before it can break the application state panel',t=>{
+ const {root,studio}=fixture(t),file=path.join(root,'recordings','index.json'),id='12345678-1234-1234-1234-123456789abc';
+ for(const item of [{id},{id,created:null,status:'completed',format:'mp4',bytes:3,error:''},{id,created:new Date().toISOString(),status:'completed',format:'unknown',bytes:3,error:''}]){
+  const original=JSON.stringify([item]);fs.writeFileSync(file,original);assert.throws(()=>new LocalRecordings(studio,{clock:false}),/index could not be read/);assert.equal(fs.readFileSync(file,'utf8'),original);
+ }
+});
+
+test('legacy raw-WebM recording metadata retains its format and original index',async t=>{
+ const {root,studio}=fixture(t),file=path.join(root,'recordings','index.json'),item={id:'12345678-1234-1234-1234-123456789abc',created:new Date().toISOString(),status:'interrupted',bytes:123};
+ const original=JSON.stringify([item]);fs.writeFileSync(file,original);const reopened=new LocalRecordings(studio,{clock:false});
+ try{assert.equal(reopened.state()[0].format,'webm');assert.equal(reopened.state()[0].error,'');assert.equal(fs.readFileSync(file,'utf8'),original);}finally{await reopened.shutdown();}
 });

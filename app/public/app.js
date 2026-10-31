@@ -16,7 +16,7 @@ function mountChat(container){chatPanel ||= new ChatPanel({api,toast,onFeature:m
 let interfaceClosing=false,exitPending=false;
 let downloadsQuery='';
 const pendingActions=new Set(), settingsDrafts=new Map();
-let refreshRequested=0, refreshApplied=0, dialogGeneration=0, settingsSaving=false;
+let refreshRequested=0, refreshApplied=0, dialogGeneration=0, settingsSaving=false, settingsSavingForm='';
 function pageRows(rows,key){const result=paginate(rows,paging[key]||{});paging[key]={page:result.page,size:result.size};return result;}
 const searchBar=(label)=>`<div class="toolbar"><input id="search" class="search" placeholder="${tr("Pesquisar…")}" aria-label="${label}" value="${esc(query)}"></div>`;
 let mediaLayout='list';try{const saved=localStorage.getItem('media-layout');if(['list','grid'].includes(saved))mediaLayout=saved;}catch{}
@@ -61,6 +61,7 @@ function rememberSettings(event){
 function restoreSettings(){
  for(const [id,fields] of settingsDrafts){const form=document.getElementById(id);if(!form)continue;for(const field of fields){const el=form.elements.namedItem(field.name);if(el){el.value=field.value;if(el.type==='checkbox')el.checked=field.checked;}}if(id==='update-form')form.closest('details').open=true;}
  document.querySelectorAll('#content form button').forEach(b=>{if(settingsSaving)b.disabled=true;});
+ if(settingsSavingForm){const saving=document.getElementById(settingsSavingForm);if(saving)for(const control of saving.elements)control.disabled=true;}
  syncEncodingControls();
 }
 function syncEncodingControls(){
@@ -328,7 +329,7 @@ document.addEventListener('click', async event => {
     else if (action === 'schedule-edit') liveForm(true,id);
     else if (action === 'clear-schedules') { if(confirm(tr("Remover todos os agendamentos? As transmissões já em curso continuam."))) {await api('/api/schedules',{},'DELETE');await refresh();} }
     else if (action === 'go-tools') navigate('tools');
-    else if(action==='reconnect'){await refresh();health=await api('/api/health');showHealth();}
+    else if(action==='reconnect'){await refresh();health=await api('/api/health');showHealth();if(['settings','help'].includes(page))draw();}
     else if(action==='test-media'){await api('/api/start',{mediaId:id,preview:true});navigate('dashboard');toast(tr("Teste local em execução."));}
     else if (action === 'preview-playlist') await previewPlaylist(id);
     else if (action === 'tool-preview') await previewPlaylist($('#preview-select').value);
@@ -409,7 +410,7 @@ document.addEventListener('submit',async event=>{
  event.preventDefault();if(settingsSaving)return;
  const data=new FormData(form), controls=[...form.elements].map(el=>[el,el.disabled]);
  const encoding=form.id==='encoding-form'?Object.fromEntries(['videoBitrate','audioBitrate','fps','aspect'].map(name=>[name,form.elements.namedItem(name).value])):null;
- settingsSaving=true;
+ settingsSaving=true;settingsSavingForm=form.id;
  for(const [el] of controls)el.disabled=true;
  try{
   if(form.id==='settings-form')await api('/api/settings',Object.fromEntries(data),'PUT');
@@ -421,7 +422,7 @@ document.addEventListener('submit',async event=>{
   if(form.id==='settings-form'){health=await api('/api/health');showHealth();}
   await refresh(false);toast(tr("Definições guardadas."));
  }catch(error){toast(error.message,true);}
- finally{settingsSaving=false;for(const [el,disabled]of controls)el.disabled=disabled;draw();}
+ finally{settingsSaving=false;settingsSavingForm='';for(const [el,disabled]of controls)el.disabled=disabled;draw();}
 });
 $('#dialog').addEventListener('close', () => { if(!$('#dialog').open){dialogGeneration++;$('#dialog-content').innerHTML='';} });
 $('#exit').onclick = async () => { if(exitPending||interfaceClosing)return; if (!confirm(tr("Encerrar o Go Streams? As transmissões ativas serão paradas."))) return; exitPending=true;$('#exit').disabled=true;try { if(capturePanel?.busy)await capturePanel.release();await api('/api/shutdown', {});interfaceClosing=true; $('#content').innerHTML = empty('✓', tr("A encerrar o estúdio"), tr("As operações estão a terminar. Pode fechar esta janela; volte a abrir pelo iniciador Go Streams.")); clearInterval(poll); } catch(e) {exitPending=false;$('#exit').disabled=false; toast(e.message, true); } };

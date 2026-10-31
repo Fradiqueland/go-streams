@@ -25,7 +25,7 @@ export class LiveUploader {
 
 export class LiveCapturePanel {
  constructor({api,toast,getState}){
-  Object.assign(this,{api,toast,getState});this.streams=[];this.session=null;this.preparing=false;this.stopping=false;this.muted=false;
+  Object.assign(this,{api,toast,getState});this.streams=[];this.session=null;this.preparing=false;this.stopping=false;this.muted=false;this.captureEpoch=0;
  }
  get busy(){return this.preparing||Boolean(this.output)||Boolean(this.session);}
  mount(container,state){
@@ -97,6 +97,16 @@ export class LiveCapturePanel {
  async preview(){
   if(this.busy)return;
   const form=new FormData(this.element.querySelector('form'));
+  const epoch=this.captureEpoch;
+  const current=()=>epoch===this.captureEpoch;
+  const retain=stream=>{
+   if(!current()){for(const track of stream.getTracks())track.stop();throw Error('Local preview was cancelled.');}
+   this.streams.push(stream);
+   for(const track of stream.getTracks())track.addEventListener('ended',()=>{if(current())void this.release();},{once:true});
+   if(stream.getTracks().some(track=>track.readyState==='ended')){void this.release();throw Error('The selected capture source has ended.');}
+   return stream;
+  };
+  const check=()=>{if(!current())throw Error('Local preview was cancelled.');};
   this.preparing=true;this.controls();
   try{
    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw Error(text('Live capture requires Chrome, Edge, Safari 18.4+ or the Electron edition, with media permissions enabled.','A captação requer Chrome, Edge, Safari 18.4+ ou a edição Electron, com permissões de multimédia.'));
@@ -104,14 +114,14 @@ export class LiveCapturePanel {
    const device=value=>value?{deviceId:{exact:value}}:true;
    if(this.config.source!=='camera'){
     if(!navigator.mediaDevices.getDisplayMedia)throw Error('Screen sharing is unavailable in this browser.');
-    this.screen=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:form.has('systemAudio')});this.streams.push(this.screen);
+    this.screen=retain(await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:form.has('systemAudio')}));
    }
    if(this.config.source!=='screen'||form.has('useMic')){
     const stream=await navigator.mediaDevices.getUserMedia({video:this.config.source==='screen'?false:device(form.get('camera')),audio:form.has('useMic')?device(form.get('microphone')):false});
-    this.streams.push(stream);this.mic=stream.getAudioTracks()[0];
+    retain(stream);this.mic=stream.getAudioTracks()[0];
     if(stream.getVideoTracks().length)this.camera=stream;
    }
-   const video=async stream=>{if(!stream)return null;const el=document.createElement('video');el.muted=true;el.playsInline=true;el.srcObject=stream;await el.play();return el;};
+   const video=async stream=>{if(!stream)return null;const el=document.createElement('video');el.muted=true;el.playsInline=true;el.srcObject=stream;try{await el.play();check();return el;}catch(error){el.pause();el.srcObject=null;throw error;}};
    this.screenVideo=await video(this.screen);this.cameraVideo=await video(this.camera);
    this.canvas=document.createElement('canvas');
    const height=this.config.quality==='1080p'?1080:720;
@@ -127,7 +137,7 @@ export class LiveCapturePanel {
     }
    };
    draw();this.drawTimer=setInterval(draw,1000/30);
-   this.audio=new AudioContext();await this.audio.resume();const destination=this.audio.createMediaStreamDestination();
+   this.audio=new AudioContext();await this.audio.resume();check();const destination=this.audio.createMediaStreamDestination();
    this.master=this.audio.createGain();this.master.connect(destination);this.analyser=this.audio.createAnalyser();this.master.connect(this.analyser);this.audioInputs=[];
    // Keep the audio rendering clock active on Windows Chromium without playing
    // microphone/system sound back through the speakers.
@@ -138,13 +148,12 @@ export class LiveCapturePanel {
    this.output=new MediaStream([...this.canvas.captureStream(30).getVideoTracks(),...destination.stream.getAudioTracks()]);
    this.element.querySelector('.capture-preview').srcObject=this.output;
    this.muted=false;this.element.querySelector('[data-capture="mute"]').textContent=text('Mute microphone','Silenciar microfone');
-   for(const stream of this.streams)for(const track of stream.getTracks())track.addEventListener('ended',()=>{if(this.output)void this.release();},{once:true});
-   await this.listDevices();this.status(text('Local preview only — nothing is being broadcast.','Apenas pré-visualização local — nada está a ser transmitido.'));
-  }catch(error){this.releaseDevices();this.status(error.message,true);this.toast(error.message,true);}
+   await this.listDevices(epoch);check();this.status(text('Local preview only - nothing is being broadcast.','Apenas pré-visualização local - nada está a ser transmitido.'));
+  }catch(error){if(current()){this.releaseDevices();this.status(error.message,true);this.toast(error.message,true);}}
   finally{this.preparing=false;this.controls();}
  }
- async listDevices(){
-  try{const devices=await navigator.mediaDevices.enumerateDevices();for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const select=this.element.querySelector(`[name="${name}"]`),previous=select.value;select.innerHTML='<option value="">'+text('Default device','Dispositivo predefinido')+'</option>'+devices.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||`${kind} ${i+1}`)}</option>`).join('');select.value=previous;}}catch{}
+ async listDevices(epoch=this.captureEpoch){
+  try{const devices=await navigator.mediaDevices.enumerateDevices();if(epoch!==this.captureEpoch)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const select=this.element.querySelector(`[name="${name}"]`),previous=select.value;select.innerHTML='<option value="">'+text('Default device','Dispositivo predefinido')+'</option>'+devices.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||`${kind} ${i+1}`)}</option>`).join('');select.value=previous;}}catch{}
  }
  toggleMute(){if(!this.mic)return;this.muted=!this.muted;this.mic.enabled=!this.muted;this.element.querySelector('[data-capture="mute"]').textContent=this.muted?text('Unmute microphone','Ativar microfone'):text('Mute microphone','Silenciar microfone');}
  setInputVolume(name,value){for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=this.clipAudio?0:value;}
@@ -185,12 +194,15 @@ export class LiveCapturePanel {
  }
  async start(){
   if(!this.output||this.session||this.preparing)return;this.preparing=true;this.controls();
+  const epoch=this.captureEpoch,source=this.output,current=()=>epoch===this.captureEpoch&&this.output===source;
   try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);
    if(!channelIds.length||!this.element.querySelector('[data-capture="consent"]').checked)throw Error('Confirm at least one live destination.');
-   const feedId=await this.acquireFeed('live');this.session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
+   const feedId=await this.acquireFeed('live');if(!current())throw Error('Live capture was released before broadcasting.');
+   const session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
+   if(!current()){await this.api(`/api/live/${session.id}/stop`,{}).catch(()=>{});throw Error('Live capture was released before broadcasting.');}this.session=session;
    this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
-  }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});this.status(error.message,true);this.toast(error.message,true);}
+  }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
   finally{this.preparing=false;this.controls();}
  }
  async stop(){
@@ -201,6 +213,7 @@ export class LiveCapturePanel {
   finally{try{await this.releaseFeed('live');}catch(error){this.status(error.message,true);}if(stopped)this.session=null;this.stopping=false;this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();}
  }
  releaseDevices(){
+  this.captureEpoch++;
   clearInterval(this.drawTimer);
   clearInterval(this.meterTimer);this.audioInputs=[];
   this.clipAudio?.disconnect();this.clipAudio=null;
@@ -211,5 +224,5 @@ export class LiveCapturePanel {
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
   if(this.element)this.element.querySelector('.capture-preview').srcObject=null;
  }
- async release(){await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));this.controls();}
+ async release(){this.captureEpoch++;await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));this.controls();}
 }

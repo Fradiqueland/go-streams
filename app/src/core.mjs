@@ -309,7 +309,7 @@ export class Studio {
     for (const key of ['media', 'channels', 'playlists', 'schedules']) {
       if (!Array.isArray(input[key]) || input[key].length > 1000) fail(`Lista ${key} inválida ou demasiado grande.`);
       const ids = input[key].map(x => x?.id);
-      if (ids.some(x => typeof x !== 'string' || !/^[\w-]{1,100}$/.test(x)) || new Set(ids).size !== ids.length) fail(`Identificadores inválidos em ${key}.`);
+      if (ids.some(x => typeof x !== 'string' || !/^[\w-]{1,100}$/.test(x) || Object.hasOwn(Object.prototype,x)) || new Set(ids).size !== ids.length) fail(`Identificadores inválidos em ${key}.`);
     }
     this.importingProject = true;
     let finishImport;const done=new Promise(resolve=>{finishImport=resolve;});this.pendingImports.add(done);
@@ -781,24 +781,28 @@ export class Studio {
       const addedId = result.imported[0]; if (!addedId) fail(result.errors[0]?.message || 'Falha ao importar vídeo normalizado.');
       this.store.update(s => { s.media.find(m => m.id === addedId).title = `${media.title} · ${normalize?'720p':'MP4'}`; });
       return { id: addedId };
-    } catch (e) { try { fs.unlinkSync(output); } catch {} throw e; }
+    } catch (e) {
+      // Import can commit the file before a later label write fails. Keep that
+      // usable library video; only discard output that was never incorporated.
+      if(!this.store.data.media.some(item=>!item.source&&sameLocalFile(item.path,output)))try { fs.unlinkSync(output); } catch {}
+      throw e;
+    }
     finally { this.pendingOperations.delete(mediaId); operation.resolve(); }
   }
-  async shutdown() {
+  shutdown() {
+    if(this.shutdownTask)return this.shutdownTask;
     this.closing = true;
-    const chatShutdown=this.chat?.shutdown();
-    const recordingShutdown=this.recordings?.shutdown();
-    const feedShutdown=this.feeds?.shutdown();
-    const liveShutdown=this.liveCapture?.shutdown();
-    const remoteShutdown=this.remoteSources?.shutdown();
-    const operations = [...this.pendingOperations.values()];
-    for (const op of operations) op.controller.abort();
-    for (const job of this.jobs.values()) this.stop(job.id);
-    await remoteShutdown;
-    await liveShutdown;
-    await chatShutdown;
-    await recordingShutdown;
-    await feedShutdown;
-    await Promise.all([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
+    this.shutdownTask=Promise.resolve().then(async()=>{
+      // Observe every shutdown immediately, including synchronous throws. A
+      // failed sibling must not leave streams running or recordings undrained.
+      const services=Promise.allSettled([this.chat,this.recordings,this.feeds,this.liveCapture,this.remoteSources].filter(Boolean).map(service=>Promise.resolve().then(()=>service.shutdown())));
+      const operations = [...this.pendingOperations.values()];
+      for (const op of operations) op.controller.abort();
+      for (const job of this.jobs.values()) this.stop(job.id);
+      const work=Promise.allSettled([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
+      const results=[...await services,...await work],errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
+      if(errors.length)throw new AggregateError(errors,'O encerramento do estúdio terminou com falhas.');
+    });
+    return this.shutdownTask;
   }
 }

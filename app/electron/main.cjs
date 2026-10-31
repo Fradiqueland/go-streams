@@ -64,7 +64,7 @@ async function start(){
   }
  });
  Menu.setApplicationMenu(null);
- wireNavigation(window.webContents,{base:backend.base,openExternal:url=>shell.openExternal(url)});
+ wireNavigation(window.webContents,{base:backend.base,openExternal:url=>shell.openExternal(url),httpUrls:()=>backend.store.data.channels.flatMap(channel=>[channel.channelUrl,channel.producerUrl]).filter(Boolean)});
  browserSession.on('will-download',(event,item)=>{
   const url=item.getURL();if(!(url.startsWith(backend.base+'/')||url.startsWith('blob:'+backend.base+'/')))event.preventDefault();
  });

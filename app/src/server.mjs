@@ -246,7 +246,15 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
     studio.onStatus = (job,status) => notifications.enqueue(job,status);
     studio.onScheduleStatus = details => notifications.enqueueSchedule(details);
     if (listen) atomicWrite(sessionFile, `${base}/?launch=${token}`);
-  } catch (error) { if (server.listening) server.close(); throw error; }
+  } catch (error) {
+    // Initialization can fail after services have created timers and resources.
+    // Drain every initialized service, preserving the original startup failure.
+    const cleanup=await Promise.allSettled([updates,notifications,downloads,studio].filter(Boolean).map(service=>Promise.resolve().then(()=>service.shutdown())));
+    if(server.listening)await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});
+    const failures=cleanup.filter(result=>result.status==='rejected').map(result=>result.reason);
+    if(failures.length)throw new AggregateError([error,...failures],error instanceof Error?error.message:'Application startup failed.',{cause:error});
+    throw error;
+  }
   const timer = clock ? setInterval(() => {if(!restoring)studio.tick().catch(() => {});}, 1000) : null;
   let closeTask;
   function close() {

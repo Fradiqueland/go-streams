@@ -1,5 +1,9 @@
-function externalUrl(value){
- try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:null;}catch{return null;}
+function externalUrl(value,{httpUrls=[]}={}){
+ try{
+  const url=new URL(value);
+  const savedHttp=url.protocol==='http:'&&httpUrls.some(saved=>{try{return new URL(saved).href===url.href;}catch{return false;}});
+  return (url.protocol==='https:'||savedHttp)&&!url.username&&!url.password?url.href:null;
+ }catch{return null;}
 }
 function appUrl(value,base){
  try{const u=new URL(value);return u.origin===base&&u.pathname==='/'&&!u.username&&!u.password;}catch{return false;}
@@ -10,8 +14,8 @@ function activateWindow(window){
  if(window.isMinimized())window.restore();
  window.show();window.moveTop();window.focus();
 }
-function wireNavigation(contents,{base,openExternal}){
- const external=value=>{const safe=externalUrl(value);if(safe)Promise.resolve(openExternal(safe)).catch(()=>{});};
+function wireNavigation(contents,{base,openExternal,httpUrls=()=>[]}){
+ const external=value=>{const safe=externalUrl(value,{httpUrls:httpUrls()});if(safe)try{Promise.resolve(openExternal(safe)).catch(()=>{});}catch{}};
  contents.setWindowOpenHandler(({url})=>{external(url);return {action:'deny'};});
  contents.on('will-navigate',(event,url)=>{if(!appUrl(url,base)){event.preventDefault();external(url);}});
  contents.on('will-attach-webview',event=>event.preventDefault());

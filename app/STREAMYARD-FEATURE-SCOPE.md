@@ -1,4 +1,4 @@
-# Go Streams live studio scope — 1.0.0
+# Go Streams live studio scope — 1.0.1
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -52,7 +52,7 @@ The implementation respects `pollingIntervalMillis`, uses the returned page toke
 
 1. Register a **public** Twitch OAuth application and configure its client ID in the chat setup.
 2. Choose **Sign in**, open the Twitch activation link and authorize the displayed device code. No client secret is needed for the public device flow.
-3. Grant `user:read:chat` and `user:write:chat` and connect the Twitch channel name/URL.
+3. Grant `user:read:chat` and `user:write:chat` and connect the Twitch channel name/URL. The current adapter uses one EventSub WebSocket per destination; Twitch limits a client-ID/user pair to three enabled WebSocket connections. A fourth room reports a provider error; socket pooling is outside this patch.
 4. Messages arrive through EventSub WebSocket; replies use the official Send Chat Message API. Public-device refresh tokens are rotated and refresh requests are serialized.
 
 Twitch Shared Chat sessions may relay user-token replies to linked channels. This token type cannot use `for_source_only`; Go Streams sends one request to the selected broadcaster and Twitch determines its distribution.
@@ -74,3 +74,5 @@ Actual account connections, permissions, public platform publication and hardwar
 - https://developers.google.com/identity/protocols/oauth2/resources/loopback-migration
 - https://dev.twitch.tv/docs/chat/authenticating/
 - https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/
+
+- https://dev.twitch.tv/docs/eventsub/handling-websocket-events/

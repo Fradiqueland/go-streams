@@ -108,6 +108,22 @@ test('conversion cannot be cancelled after library incorporation starts',async t
  hold.resolve();const result=await pending;assert.ok(f.store.data.media.some(m=>m.id===result.id));assert.ok(fs.existsSync(video));
 });
 
+test('a failed label save never deletes a converted video already committed to the library',async t=>{
+ let output;
+ const f=fixture(t,{runTransformProcess:async(command,args)=>{output=args.at(-1);fs.copyFileSync(video,output);}});
+ const update=f.store.update.bind(f.store);
+ f.store.update=fn=>{
+  if(output&&f.store.data.media.some(item=>item.path===output))throw Error('Controlled converted title write failure');
+  return update(fn);
+ };
+ try{
+  await assert.rejects(f.studio.normalize('m'),/Controlled converted title write failure/);
+  assert.ok(f.store.data.media.some(item=>item.path===output),'the successful import is already persisted');
+  assert.ok(fs.existsSync(output),'a committed video must survive a later title-write error');
+  assert.ok(fs.existsSync(video));assert.equal(f.studio.pendingOperations.size,0);
+ }finally{f.store.update=update;}
+});
+
 
 test('actual FFmpeg conversion cancels through its AbortSignal without adding partial media',async t=>{
  let started=false,output;

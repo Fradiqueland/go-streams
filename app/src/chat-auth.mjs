@@ -24,7 +24,7 @@ export class ChatAuth {
    catch{throw new AppError('The chat service could not be reached.',502);}
    const chunks=[];let size=0;
    if(response.body){for await(const chunk of response.body){size+=chunk.length;if(size>1024*1024)throw new AppError('Chat service response was too large.',502);chunks.push(Buffer.from(chunk));}}
-   let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');}catch{throw new AppError('Invalid chat service response.',502);}
+   let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw Error();}catch{throw new AppError('Invalid chat service response.',502);}
    if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);
    return {ok:response.ok,status:response.status,value};
   })();
@@ -59,10 +59,12 @@ export class ChatAuth {
   if(provider!=='Twitch')throw new AppError('Unsupported chat provider.');
   const result=await this.form('https://id.twitch.tv/oauth2/device',{client_id:setup.clientId,scopes:TWITCH_SCOPES});
   if(!result.ok||!result.value.device_code)throw new AppError('Twitch authorization could not be started. Check the public application ID.',502);
-  const url=new URL(result.value.verification_uri);
-  if(url.origin!=='https://www.twitch.tv'||url.pathname!=='/activate')throw new AppError('Twitch authorization address rejected.',502);
+  let url;try{url=new URL(result.value.verification_uri);}catch{throw new AppError('Twitch authorization address rejected.',502);}
+  if(url.origin!=='https://www.twitch.tv'||url.pathname!=='/activate'||url.username||url.password||url.port)throw new AppError('Twitch authorization address rejected.',502);
+  const expires=result.value.expires_in===undefined?600:result.value.expires_in,interval=result.value.interval===undefined?5:result.value.interval;
+  if(!Number.isSafeInteger(expires)||expires<=0||!Number.isSafeInteger(interval)||interval<=0||interval>1800)throw new AppError('Invalid Twitch authorization timing response.',502);
   if(this.versions[provider]!==version)throw new AppError('Authorization was cancelled.',409);
-  const pending={deviceCode:result.value.device_code,userCode:String(result.value.user_code||''),version,url:url.href,expires:Date.now()+Math.min(1800,Number(result.value.expires_in)||600)*1000,interval:Math.max(5,Number(result.value.interval)||5)*1000};this.pending.set(provider,pending);
+  const pending={deviceCode:result.value.device_code,userCode:String(result.value.user_code||''),version,url:url.href,expires:Date.now()+Math.min(1800,expires)*1000,interval:Math.max(5,interval)*1000};this.pending.set(provider,pending);
   this.scheduleDevice(pending);return this.state();
  }
  scheduleDevice(pending){pending.timer=setTimeout(()=>{void this.pollDevice(pending).catch(()=>{if(this.pending.get('Twitch')===pending)this.pending.delete('Twitch');});},pending.interval).unref();}
@@ -87,19 +89,22 @@ export class ChatAuth {
   await this.accept('YouTube',result.value,pending.version);
  }
  async accept(provider,tokens,version=this.versions[provider]){
-  if(typeof tokens.access_token!=='string'||!tokens.access_token||tokens.access_token.length>10000)throw new AppError('The provider did not return an access token.',502);
+  if(!tokens||typeof tokens.access_token!=='string'||!tokens.access_token||tokens.access_token.length>10000)throw new AppError('The provider did not return an access token.',502);
+  const lifetime=tokens.expires_in===undefined?3600:tokens.expires_in;
+  if(!Number.isSafeInteger(lifetime)||lifetime<=0||!Number.isSafeInteger(Date.now()+lifetime*1000))throw new AppError('Invalid access token lifetime response.',502);
+  if(tokens.refresh_token!==undefined&&(typeof tokens.refresh_token!=='string'||!tokens.refresh_token||tokens.refresh_token.length>10000))throw new AppError('Invalid refresh token response.',502);
   let id,name;
   if(provider==='Twitch'){
    const checked=await this.http('https://id.twitch.tv/oauth2/validate',{headers:{Authorization:'OAuth '+tokens.access_token}}),v=checked.value;
-   if(!checked.ok||v.client_id!==this.data.settings.Twitch.clientId||!v.user_id||!TWITCH_SCOPES.split(' ').every(s=>v.scopes?.includes(s)))throw new AppError('Twitch did not grant permission to read and reply to chat.',403);
-   id=v.user_id;name=v.login;
+   if(!checked.ok||v.client_id!==this.data.settings.Twitch.clientId||typeof v.user_id!=='string'||!v.user_id||v.user_id.length>1000||!Array.isArray(v.scopes)||!TWITCH_SCOPES.split(' ').every(s=>v.scopes.includes(s)))throw new AppError('Twitch did not grant permission to read and reply to chat.',403);
+   id=v.user_id;name=typeof v.login==='string'?v.login.slice(0,150):'Twitch';
   }else{
    const checked=await this.http('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',{headers:{Authorization:'Bearer '+tokens.access_token}}),item=checked.value.items?.[0];
-   if(!checked.ok||!item?.id)throw new AppError('No authorized YouTube channel was found.',403);id=item.id;name=item.snippet?.title||'YouTube';
+   if(!checked.ok||typeof item?.id!=='string'||!item.id||item.id.length>1000)throw new AppError('No authorized YouTube channel was found.',403);id=item.id;name=typeof item.snippet?.title==='string'?item.snippet.title.slice(0,150):'YouTube';
   }
   const old=this.data.accounts[provider];
   if(this.versions[provider]!==version||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
-  this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||(old?.id===id?old.refreshToken||'':''),expires:Date.now()+(Number(tokens.expires_in)||3600)*1000,validated:Date.now()};this.save();
+  this.data.accounts[provider]={id,name,accessToken:tokens.access_token,refreshToken:tokens.refresh_token||(old?.id===id?old.refreshToken||'':''),expires:Date.now()+lifetime*1000,validated:Date.now()};this.save();
  }
  async token(provider){
   const account=this.data.accounts[provider];if(!account)throw new AppError('Authorize your '+provider+' account first.',401);
@@ -107,7 +112,7 @@ export class ChatAuth {
   if(this.refreshing.has(provider))return this.refreshing.get(provider);
   const task=(async()=>{
    const version=this.versions[provider];
-   if(provider==='Twitch'&&account.expires>Date.now()+60000){await this.accept(provider,{access_token:account.accessToken,refresh_token:account.refreshToken,expires_in:Math.floor((account.expires-Date.now())/1000)},version);return this.data.accounts[provider];}
+   if(provider==='Twitch'&&account.expires>Date.now()+60000){await this.accept(provider,{access_token:account.accessToken,...(account.refreshToken?{refresh_token:account.refreshToken}:{}),expires_in:Math.floor((account.expires-Date.now())/1000)},version);return this.data.accounts[provider];}
    if(!account.refreshToken)throw new AppError('Reconnect your '+provider+' account.',401);
    const setup=this.data.settings[provider],result=await this.form(provider==='YouTube'?'https://oauth2.googleapis.com/token':'https://id.twitch.tv/oauth2/token',{client_id:setup.clientId,...(setup.clientSecret?{client_secret:setup.clientSecret}:{}),refresh_token:account.refreshToken,grant_type:'refresh_token'});
    if(!result.ok)throw new AppError('Reconnect your '+provider+' account.',401);

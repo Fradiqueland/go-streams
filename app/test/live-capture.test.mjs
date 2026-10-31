@@ -66,6 +66,18 @@ test('synchronous encoder startup failure releases every destination and removes
  const {live,studio,ids}=fixture(t);studio.spawnProcess=()=>{throw Error('spawn failed');};
  assert.throws(()=>live.start(input(ids)),/could not be started/);assert.equal(live.sessions.size,0);assert.ok([...studio.jobs.values()].every(job=>job.ended&&job.status==='error'));assert.ok(ids.every(id=>!studio.busyChannel(id)));
 });
+
+test('an unexpected clean live-worker exit reports a disconnected destination while other outputs continue',async t=>{
+ const {live,studio,ids,workers}=fixture(t),session=live.start(input(ids));workers[0].emit('close',0);
+ assert.equal(studio.jobs.get(session.jobs[0].id).status,'error');assert.match(studio.jobs.get(session.jobs[0].id).error,/disconnected/);assert.equal(studio.busyChannel(ids[0]),false);
+ await live.ingest(session.id,'0',chunk());assert.equal(workers[1].input.length,1);assert.equal(studio.jobs.get(session.jobs[1].id).ended,null);
+});
+
+test('an unexpected clean shared-encoder exit reports interruption to every attached output',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'}),feed=feeds.get(id),errors=[];
+ for(let i=0;i<2;i++)feeds.attach(id,new Writable({write(data,encoding,done){done();}}),error=>errors.push(error));
+ workers[0].emit('close',0);await feed.completion;assert.equal(feeds.active.size,0);assert.equal(errors.length,2);assert.ok(errors.every(error=>/disconnected/.test(error)));
+});
 test('ordered uploads reject oversized, concurrent and out-of-order chunks; idle capture shuts down',async t=>{
  const {live,ids,studio}=fixture(t),session=live.start(input(ids));
  await assert.rejects(live.ingest(session.id,'2',chunk()),/in order/);
