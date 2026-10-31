@@ -1,6 +1,16 @@
-# Go Streams 0.17.0
+# Go Streams 0.18.0
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Versão Windows compilada e pacote macOS experimental, ainda sem execução validada num Mac. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
+
+## Captação ao vivo 0.18.0
+
+A nova área **Câmara e ecrã ao vivo / Live camera & screen** permite pré-visualizar uma câmara, um ecrã/janela ou o ecrã com câmara sobreposta. Inclui microfone selecionável, silenciamento, orientação horizontal/vertical e 720p/1080p. A pré-visualização não transmite: selecione os canais RTMP/RTMPS configurados e confirme o início. As funções anteriores de vídeos gravados, playlists, repetição, agendamentos e cópias de segurança continuam disponíveis.
+
+Cada destino tem um codificador e estado próprios; o limite simultâneo e as reservas dos canais são partilhados com as emissões de vídeos. Pode parar um destino no monitor ou todos os destinos ao vivo na área de captação. A origem ao vivo não permite pausa/retoma nem reprodução desde uma posição guardada: após uma interrupção, inicie um direto novo. Não é guardada uma gravação. Recarregar/fechar a janela de captação interrompe a origem; a navegação interna mantém a pré-visualização. Use **Fechar pré-visualização e libertar dispositivos** quando terminar.
+
+Requer permissões de câmara/microfone/ecrã e um navegador Chromium com MediaRecorder WebM. O áudio do ecrã/separador depende do sistema e da origem escolhida. No Mac, as permissões são pedidas pelo navegador que apresenta a interface. O upload e a carga de CPU aumentam com cada destino. Confirme a receção nos painéis das plataformas; os ensaios locais RTMP não certificam publicação externa ou operação prolongada 24/7.
+
+Verificação: `npm run test:live` e `npm run test:live:browser` (este último utiliza câmara/microfone sintéticos). A validação de dispositivos reais e dos seletores nativos de ecrã é manual.
 
 ## Edição Electron 0.17.0
 

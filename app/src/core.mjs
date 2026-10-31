@@ -590,6 +590,7 @@ export class Studio {
     const job = this.jobs.get(jobId); if (!job) fail('Sessão não encontrada.', 404);
     if (!occupied(job)) return;
     if (job.status === 'stopping') return;
+    if (job.sourceType === 'live') return this.liveCapture.stopJob(job);
     job.status = 'stopping';
     if (job.child) this.interrupt(job);
     else this.finish(job, 'stopped');
@@ -778,11 +779,13 @@ export class Studio {
   }
   async shutdown() {
     this.closing = true;
+    const liveShutdown=this.liveCapture?.shutdown();
     const remoteShutdown=this.remoteSources?.shutdown();
     const operations = [...this.pendingOperations.values()];
     for (const op of operations) op.controller.abort();
     for (const job of this.jobs.values()) this.stop(job.id);
     await remoteShutdown;
+    await liveShutdown;
     await Promise.all([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
   }
 }

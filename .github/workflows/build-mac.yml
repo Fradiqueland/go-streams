@@ -38,6 +38,8 @@ jobs:
         run: |
           node scripts/check.mjs
           npm test
+          npm run test:live
+          npm run test:live:browser
       - name: Build and exercise the native Mac application
         run: |
           node scripts/build.mjs --platform=darwin

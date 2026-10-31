@@ -2,7 +2,19 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **0.17.0**. Windows now also has an Electron desktop edition and setup EXE. The existing Mac portable delivery remains at **0.15.5** until rebuilt.
+Current source version: **0.18.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Live camera and screen capture (0.18.0)
+
+Open **Live camera & screen** to preview a camera, a screen/window, or a screen with a camera inset. Choose a microphone, 720p/1080p and landscape/portrait, then select one or more configured RTMP/RTMPS channels and explicitly confirm **Start live broadcast**. Preview alone never starts a broadcast. The original prerecorded single-video, playlist, repeat, schedule, queue and backup options remain available.
+
+Capture uses the browser's media APIs and a bounded in-memory WebM upload queue. The bundled FFmpeg converts the feed to H.264/AAC for each destination. Destination workers have independent status and failures, share the existing concurrency limit and channel reservations, and appear in the monitor/history. Stop individual destinations in the monitor or stop the live feed from the capture page. Live input cannot be paused, replayed or resumed from a saved position; start a fresh live session after an interruption.
+
+Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. Chromium with WebM MediaRecorder support is required. Live output is not saved as a recording, and is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
+
+Bandwidth and CPU load grow with the number of destinations. The computer and app must remain running and awake. Check account eligibility, stream keys and receipt in each platform's own dashboard. No public platform broadcast or long-duration 24/7 live capture certification is implied by loopback tests.
+
+Verification: `npm run test:live` exercises consent, API authentication, destination isolation, bounded uploads, timeout/stop behavior and two native RTMP loopback receivers. `npm run test:live:browser` exercises the real browser with synthetic camera/microphone, without accessing real devices or publishing externally. Actual hardware and native screen picker checks remain manual.
 
 ## Electron Windows edition
 

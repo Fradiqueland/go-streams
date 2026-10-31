@@ -76,3 +76,10 @@ html[lang^="id"] .view-toggle button[data-action=media-list]::after{content:"Daf
 @media(min-width:951px){html[data-compact-nav="true"] .creator-social-links{gap:4px}html[data-compact-nav="true"] .creator-social-links a{flex-basis:26px;width:26px;height:32px;border-radius:6px}html[data-compact-nav="true"] .creator-social-links svg{width:18px;height:18px}}
 
 .overlay-shortcut{display:flex;justify-content:flex-end;margin-bottom:14px}.overlay-editor fieldset{border:1px solid var(--border);border-radius:8px;margin:18px 0;padding:16px;min-width:0}.overlay-editor legend{font-weight:700;padding:0 8px}.overlay-preview{position:relative;aspect-ratio:16/9;width:100%;background:linear-gradient(135deg,#263449,#526783);overflow:hidden;border-radius:8px;container-type:inline-size}.overlay-preview>img{position:absolute;height:auto}.overlay-bar{position:absolute;left:0;width:100%;overflow:hidden;display:flex;align-items:center}.overlay-bar.top{top:0}.overlay-bar.bottom{bottom:0}.overlay-bar>span{position:absolute;left:0;white-space:pre;font-family:Arial,"Apple Color Emoji","Segoe UI Emoji",sans-serif;font-weight:bold;animation:overlay-scroll linear infinite}@keyframes overlay-scroll{from{transform:translateX(100cqw)}to{transform:translateX(-100%)}}@media(prefers-reduced-motion:reduce){.overlay-bar>span{animation:none;position:relative;padding-left:8px}}
+/* The capture panel is retained while other pages and stream status refresh. */
+.capture-layout{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.7fr);gap:20px;margin-bottom:20px}
+.capture-preview{display:block;width:100%;max-height:520px;min-height:180px;background:#111;object-fit:contain;border-radius:8px}
+.capture-destinations{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:16px 0}
+.capture-status{min-height:44px;margin:14px 0}
+.live-capture-studio>.panel{margin-bottom:20px}
+@media(max-width:1000px){.capture-layout{grid-template-columns:1fr}}

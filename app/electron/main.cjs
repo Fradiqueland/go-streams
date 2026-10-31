@@ -1,4 +1,4 @@
-const {app,BrowserWindow,session,dialog,shell,Menu}=require('electron');
+const {app,BrowserWindow,session,dialog,shell,Menu,desktopCapturer}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
@@ -6,6 +6,7 @@ const {execFileSync}=require('node:child_process');
 const net=require('node:net');
 const {userPaths,migrateData,migratePreferences,discoverLegacy}=require('./data-policy.cjs');
 const {rendererPreferences,activateWindow,wireNavigation,shutdownCoordinator}=require('./window-policy.cjs');
+const {wireCapturePermissions}=require('./capture-policy.cjs');
 
 app.setName('Go Streams');
 app.setAppUserModelId('net.antoniofradique.gostreams');
@@ -47,9 +48,20 @@ async function start(){
  }});
  // The loopback origin stays fixed so user preferences survive every upgrade.
  const profile=migratePreferences(paths.data),browserSession=session.fromPath(profile);
- browserSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
- browserSession.setPermissionCheckHandler(()=>false);
  window=new BrowserWindow({width:1440,height:960,minWidth:760,minHeight:520,show:false,title:'Go Streams',icon:path.join(root,'public','icon.ico'),autoHideMenuBar:true,backgroundColor:'#f5f6fa',webPreferences:rendererPreferences(browserSession)});
+ wireCapturePermissions(browserSession,{contents:window.webContents,base:backend.base,
+  confirmMedia:async types=>{
+   const result=await dialog.showMessageBox(window,{type:'question',title:'Go Streams — Live capture',message:`Allow Go Streams to use your ${types.includes('video')?'camera and microphone':'microphone'} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
+   return result.response===1;
+  },
+  getSources:()=>desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:0,height:0}}),
+  chooseSource:async(sources,{systemAudio})=>{
+   if(!sources.length)return null;
+   const options=sources.slice(0,20);
+   const result=await dialog.showMessageBox(window,{type:'question',title:'Go Streams — Share screen or window',message:'Choose what to share',detail:systemAudio?'System audio will also be captured. Your microphone is controlled separately.':'Only the selected screen or window will be captured.',buttons:['Cancel',...options.map(s=>s.name.slice(0,100))],defaultId:0,cancelId:0});
+   return result.response>0?options[result.response-1]:null;
+  }
+ });
  Menu.setApplicationMenu(null);
  wireNavigation(window.webContents,{base:backend.base,openExternal:url=>shell.openExternal(url)});
  browserSession.on('will-download',(event,item)=>{

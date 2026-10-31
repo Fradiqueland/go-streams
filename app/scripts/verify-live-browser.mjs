@@ -1,0 +1,70 @@
+// Native Chromium test with synthetic camera/microphone and loopback-only RTMP.
+// Uses the browser's debugging protocol; does not access a real camera or publish externally.
+import fs from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createApplication} from '../src/server.mjs';
+import {toolsFor,runProcess} from '../src/core.mjs';
+
+const candidates=process.platform==='darwin'?['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge']:['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Google/Chrome/Application/chrome.exe'];
+const binary=process.env.GO_STREAMS_BROWSER||candidates.find(p=>fs.existsSync(p));
+if(!binary)throw Error('Set GO_STREAMS_BROWSER to an installed Chromium browser.');
+const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const directory=fs.mkdtempSync(path.join(parent,'live-browser-'));
+let app,browser,socket;const receivers=[],pagesErrors=[];let passed=false;
+async function freePort(){const s=net.createServer();await new Promise((resolve,reject)=>{s.once('error',reject);s.listen(0,'127.0.0.1',resolve);});const port=s.address().port;await new Promise(resolve=>s.close(resolve));return port;}
+try{
+ app=await createApplication({directory:path.join(directory,'data'),port:0,portableVault:true});
+ const {ffmpeg,ffprobe}=toolsFor(app.store.data.settings);
+ for(let i=0;i<2;i++){
+  const port=await freePort(),url=`rtmp://127.0.0.1:${port}/live`,key=`test-${i}`,output=path.join(directory,`destination-${i}.flv`);
+  const child=spawn(ffmpeg,['-hide_banner','-loglevel','warning','-listen','1','-timeout','30','-i',`${url}/${key}`,'-c','copy','-f','flv','-y',output],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+  let stderr='';child.stderr.on('data',data=>{stderr=(stderr+data).slice(-3000);});
+  const done=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>resolve({code,stderr}));});
+  receivers.push({child,done,output});app.studio.saveChannel({name:`Loopback ${i+1}`,url,key});
+ }
+ browser=spawn(binary,['--headless=new','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${path.join(directory,'browser')}`,'--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required','--no-first-run','--no-default-browser-check','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+ const endpoint=await new Promise((resolve,reject)=>{
+  let buffer='';const timer=setTimeout(()=>reject(Error('Browser debugging endpoint did not open.')),20000);
+  browser.once('error',reject);browser.once('exit',code=>reject(Error(`Browser exited before the test: ${code}`)));
+  browser.stderr.on('data',chunk=>{buffer=(buffer+chunk).slice(-5000);const found=/DevTools listening on (ws:\/\/[^\s]+)/.exec(buffer);if(found){clearTimeout(timer);resolve(found[1]);}});
+ });
+ socket=new WebSocket(endpoint);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
+ let sequence=0;const pending=new Map();
+ socket.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.id){const p=pending.get(message.id);if(!p)return;pending.delete(message.id);clearTimeout(p.timer);message.error?p.reject(Error(message.error.message)):p.resolve(message.result);}else if(message.method==='Runtime.exceptionThrown')pagesErrors.push(message.params.exceptionDetails.text+': '+(message.params.exceptionDetails.exception?.description||''));});
+ const command=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error(`Browser command timed out: ${method}`));},20000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
+ const {targetId}=await command('Target.createTarget',{url:app.url+'#capture'}),{sessionId}=await command('Target.attachToTarget',{targetId,flatten:true});
+ await command('Runtime.enable',{},sessionId);
+ const evaluate=async expression=>{
+  const result=await command('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true},sessionId);
+  if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);
+  return result.result.value;
+ };
+ const waitFor=async(expression,timeout=20000)=>{const start=Date.now();while(!await evaluate(expression)){if(Date.now()-start>timeout)throw Error('Browser condition timed out: '+expression);await delay(100);}};
+ await waitFor("Boolean(document.querySelector('[data-capture=preview]'))");
+ await evaluate("document.querySelector('[data-capture=preview]').click()");
+ await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");
+ assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject.getVideoTracks().length"),1);
+ assert.equal(app.studio.jobs.size,0,'Preview must not create a broadcast');
+ await evaluate("document.querySelectorAll('.capture-destinations input').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});const consent=document.querySelector('[data-capture=consent]');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-capture=start]').click();");
+ const started=Date.now();while(![...app.studio.jobs.values()].filter(j=>j.status==='running').length||[...app.studio.jobs.values()].some(j=>j.frame<10)){if(Date.now()-started>20000)throw Error('Live destinations did not receive frames: '+JSON.stringify(app.studio.state().jobs));await delay(200);}
+ assert.equal(app.studio.jobs.size,2);
+ await evaluate("location.hash='live'");await waitFor("document.querySelectorAll('.job').length===2");
+ assert.equal(await evaluate("document.querySelectorAll('[data-action=pause-job],[data-action=restart-job],[data-action=job-settings]').length"),0);
+ await evaluate("location.hash='capture'");await waitFor("Boolean(document.querySelector('.capture-preview')?.srcObject)");
+ await evaluate("document.querySelector('[data-capture=stop]').click()");
+ await waitFor("!document.querySelector('[data-capture=release]').disabled");
+ await Promise.all([...app.studio.jobs.values()].map(j=>j.completion));
+ assert.ok([...app.studio.jobs.values()].every(j=>j.status==='stopped'));
+ await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
+ for(const receiver of receivers){await receiver.done;const {stdout}=await runProcess(ffprobe,['-v','error','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');}
+ assert.deepEqual(pagesErrors,[]);passed=true;
+ console.log(JSON.stringify({passed:true,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,realHardwareVerified:false,nativeScreenPickerVerified:false}));
+ await command('Browser.close').catch(()=>{});
+}finally{
+ socket?.close();if(browser&&browser.exitCode===null)browser.kill();
+ await app?.close();for(const r of receivers)if(r.child.exitCode===null)r.child.kill();await Promise.allSettled(receivers.map(r=>r.done));
+ if(!passed)console.error('Browser test evidence directory: '+directory);
+}

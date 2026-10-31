@@ -42,6 +42,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:live
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:live:browser
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare Electron and installer compiler
         run: |
           $toolchain = Get-Content electron/toolchain.json -Raw | ConvertFrom-Json

@@ -1,6 +1,7 @@
 import {prepareOverlays,assetFile} from './overlays.mjs';
 import {exportBackup,decryptBackup,prepareBackupRestore} from './backups.mjs';
 import {RemoteSources} from './remote-sources.mjs';
+import {LiveCapture} from './live-capture.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,12 +46,13 @@ function serveFile(req, res, file, contentType) {
   if (req.method === 'HEAD' || !stat.size) return res.end();
   const stream = fs.createReadStream(file, { start, end }); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions } = {}) {
+export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions } = {}) {
   let store, vault, studio, downloads, notifications, updates, remoteSources;
   const token = crypto.randomBytes(32).toString('hex'); let base = '', shuttingDown = false, restoring = false, healthCache;
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), display-capture=(self)');
     try {
       if (req.headers.host !== new URL(base).host) throw new AppError('Host recusado.', 403);
       if (req.headers.origin && req.headers.origin !== base) throw new AppError('Origem recusada.', 403);
@@ -64,10 +66,15 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-go-streams'] !== '1') throw new AppError('Pedido recusado.', 403);
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
+      const liveChunk = /^\/api\/live\/([\w-]+)\/chunks$/.exec(pathname);
+      if (liveChunk && req.method === 'POST') return json(res, await studio.liveCapture.ingest(liveChunk[1], url.searchParams.get('sequence'), req));
       const body = !['GET', 'HEAD'].includes(req.method) ? await readJson(req,pathname==='/api/backups/restore'?24*1024*1024:pathname==='/api/settings'?6*1024*1024:1024*1024) : {};
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
       if (pathname === '/api/ready' && req.method === 'GET') { res.setHeader('X-Go-Streams-Ready', '1'); return json(res, { ready: true }); }
+      if (pathname === '/api/live/start' && req.method === 'POST') return json(res, studio.liveCapture.start(body), 201);
+      const liveStop = /^\/api\/live\/([\w-]+)\/stop$/.exec(pathname);
+      if (liveStop && req.method === 'POST') { studio.liveCapture.stop(liveStop[1]); return json(res, {ok:true}); }
       if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state()});
       if (pathname === '/api/health' && req.method === 'GET') {
         if (!healthCache) healthCache = Promise.all(['ffmpeg', 'ffprobe','ytdlp'].map(async key => { try { const command = toolsFor(store.data.settings)[key]; const r = await runProcess(command, [key==='ytdlp'?'--version':'-version'], { timeout: 10000 }); return [key, { available: true, version: r.stdout.split(/\r?\n/)[0] }]; } catch (e) { return [key, { available: false, error: e.message }]; } })).then(results => ({ tools: Object.fromEntries(results), version: APP_VERSION, platform: os.platform(), secureStorage: process.platform === 'win32' && !portableVault ? 'Windows DPAPI' : 'Chave local privada', dataDirectory: directory }));
@@ -188,7 +195,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
         return serveFile(req, res, asset[1] === 'thumb' ? path.join(directory, 'thumbs', `${media.id}.jpg`) : media.path);
       }
       if (pathname === '/api/shutdown' && req.method === 'POST') { json(res, { ok: true }); setImmediate(() => close().catch(()=>{console.error('O encerramento terminou com falhas.');process.exitCode=1;})); return; }
-      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
+      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/live-capture.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
       throw new AppError('Não encontrado.', 404);
     } catch (e) { if (!res.headersSent) json(res, { error: e instanceof AppError ? e.message : 'Ocorreu um erro interno. Os dados existentes foram preservados.' }, e.status || 500); else res.destroy(); }
   };
@@ -199,6 +206,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
   const sessionFile = path.join(directory, 'session.url');
   try {
     store = new Store(directory); vault = new Vault(directory, { portable: portableVault }); remoteSources=new RemoteSources({base,settings:()=>store.data.settings,execute:runProcess,...remoteOptions});studio = new Studio(store, vault,{remoteSources});
+    new LiveCapture(studio, {clock, ...liveOptions});
     downloads = new Downloads(studio,downloadOptions); notifications = new Notifications(studio,notificationOptions); updates=new Updates(store,updateOptions);updates.startTimer();
     studio.onStatus = (job,status) => notifications.enqueue(job,status);
     studio.onScheduleStatus = details => notifications.enqueueSchedule(details);
