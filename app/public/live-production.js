@@ -59,11 +59,12 @@ export class ProductionTools {
   this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
   try{
    const mimeType=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'].find(x=>MediaRecorder.isTypeSupported(x));if(!mimeType)throw Error('Use a Chromium browser with WebM recording support.');
-   const recorder=new MediaRecorder(this.getStream(),{mimeType,videoBitsPerSecond:6000000,audioBitsPerSecond:192000});
+   this.recordStream=this.getStream().clone();
+   const recorder=new MediaRecorder(this.recordStream,{mimeType,videoBitsPerSecond:6000000,audioBitsPerSecond:192000});
    const {id}=await this.api('/api/recordings/start',{confirmed:true});this.recordingId=id;
    this.upload=new this.uploaderClass({stopRemote:()=>this.api(`/api/recordings/${id}/finish`,{}),onError:error=>{this.toast(error.message,true);void this.stopRecording();},fetchChunk:async(blob,sequence)=>{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Local recording upload failed. Previous data was preserved.');}});
    this.recorder=recorder;recorder.ondataavailable=e=>this.upload?.push(e.data);recorder.onerror=()=>{void this.stopRecording();};recorder.start(1000);this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.');
-  }catch(error){if(this.recordingId)await this.api(`/api/recordings/${this.recordingId}/finish`,{}).catch(()=>{});this.recordingId=null;this.toast(error.message,true);}finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
+  }catch(error){if(this.recordingId)await this.api(`/api/recordings/${this.recordingId}/finish`,{}).catch(()=>{});this.recordingId=null;for(const track of this.recordStream?.getTracks()||[])track.stop();this.recordStream=null;this.toast(error.message,true);}finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
  }
  async stopRecording(){
   if(this.startDone)await this.startDone;
@@ -72,7 +73,7 @@ export class ProductionTools {
    this.element.querySelector('.recording-status').textContent=t('Finalizing local recording…','A finalizar gravação local…');
    try{if(this.recorder?.state!=='inactive'){const recorder=this.recorder;await new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});recorder.stop();});}await this.upload.finish();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
    catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
-   finally{this.recordingId=null;this.recorder=null;this.upload=null;this.finishing=null;this.update();}
+   finally{for(const track of this.recordStream?.getTracks()||[])track.stop();this.recordStream=null;this.recordingId=null;this.recorder=null;this.upload=null;this.finishing=null;this.update();}
   })();this.update();return this.finishing;
  }
  async action(button){

@@ -48,6 +48,7 @@ def main():
         for file in (ROOT/folder).rglob('*'):
             if file.is_file():expect(file,'Contents/Resources/app/'+file.relative_to(ROOT).as_posix())
     for name in ['package.json','README.md']:expect(ROOT/name,'Contents/Resources/app/'+name)
+    if (ROOT/'STREAMYARD-FEATURE-SCOPE.md').is_file():expect(ROOT/'STREAMYARD-FEATURE-SCOPE.md','Contents/Resources/app/STREAMYARD-FEATURE-SCOPE.md')
     for target in ['darwin-x64','darwin-arm64']:
         directory=ROOT/'vendor/runtime'/target
         manifest=json.loads((directory/'manifest.json').read_text(encoding='utf-8'))

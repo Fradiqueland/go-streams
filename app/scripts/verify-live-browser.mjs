@@ -42,7 +42,10 @@ try{
  let sequence=0;const pending=new Map();
  socket.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.id){const p=pending.get(message.id);if(!p)return;pending.delete(message.id);clearTimeout(p.timer);message.error?p.reject(Error(message.error.message)):p.resolve(message.result);}else if(message.method==='Runtime.exceptionThrown')pagesErrors.push(message.params.exceptionDetails.text+': '+(message.params.exceptionDetails.exception?.description||''));});
  const command=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error(`Browser command timed out: ${method}`));},20000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
- const {targetId}=await command('Target.createTarget',{url:app.url+'#capture'}),{sessionId}=await command('Target.attachToTarget',{targetId,flatten:true});
+ const {targetId}=await command('Target.createTarget',{url:'about:blank'}),{sessionId}=await command('Target.attachToTarget',{targetId,flatten:true});
+ await command('Page.enable',{},sessionId);
+ await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__captureTest=[];const NativeRecorder=window.MediaRecorder;window.MediaRecorder=class extends NativeRecorder{constructor(...args){super(...args);const stats={mime:this.mimeType,chunks:0,bytes:0,errors:[]};window.__captureTest.push(stats);this.addEventListener('dataavailable',e=>{stats.chunks++;stats.bytes+=e.data.size;});this.addEventListener('error',e=>stats.errors.push(String(e.error)));}};`},sessionId);
+ await command('Page.navigate',{url:app.url+'#capture'},sessionId);
  await command('Runtime.enable',{},sessionId);
  const evaluate=async expression=>{
   const result=await command('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true},sessionId);
@@ -63,7 +66,9 @@ try{
  await evaluate("const name=document.querySelector('.production-tools [name=name]');name.value='Test presenter';name.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-production=record]').click();");
  await waitFor("!document.querySelector('[data-production=stop-record]').disabled");
  await evaluate("document.querySelectorAll('.capture-destinations input').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});const consent=document.querySelector('[data-capture=consent]');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-capture=start]').click();");
- const started=Date.now();while(![...app.studio.jobs.values()].filter(j=>j.status==='running').length||[...app.studio.jobs.values()].some(j=>j.frame<10)){if(Date.now()-started>20000)throw Error('Live destinations did not receive frames: '+JSON.stringify(app.studio.state().jobs));await delay(200);}
+ const started=Date.now();while(![...app.studio.jobs.values()].filter(j=>j.status==='running').length||[...app.studio.jobs.values()].some(j=>j.frame<10)){
+  if(Date.now()-started>30000){const diagnostics={jobs:app.studio.state().jobs,renderer:await evaluate('window.__captureTest'),pageErrors:pagesErrors,liveInputs:[...app.studio.liveCapture.sessions.values()].map(s=>({sequence:s.sequence,age:Date.now()-s.lastInput})),recordings:app.recordings.state()};throw Error('Live destinations did not receive frames: '+JSON.stringify(diagnostics));}await delay(200);
+ }
  assert.equal(app.studio.jobs.size,2);
  await evaluate("location.hash='live'");await waitFor("document.querySelectorAll('.job').length===2");
  assert.equal(await evaluate("document.querySelectorAll('[data-action=pause-job],[data-action=restart-job],[data-action=job-settings]').length"),0);
