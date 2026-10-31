@@ -35,21 +35,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/build.mjs --platform=win32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test application and data preservation
+      - name: Check application syntax
         run: |
           $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           node scripts/check.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native media and late destination joining
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           npm run test:live
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:wire
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/soak-check.mjs --seconds 30 --streams 7
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify synthetic live browser and independent recording
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           npm run test:live:browser
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify interface controls and responsive layouts
+        timeout-minutes: 5
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           $qa = Join-Path $env:RUNNER_TEMP 'gostreams-ui-qa'
           npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:GO_STREAMS_PLAYWRIGHT_PACKAGE = Join-Path $qa 'package.json'
           npm run test:ui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Complete ten regression review cycles
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           npm run test:review
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare Electron and installer compiler
@@ -98,6 +115,7 @@ jobs:
             app/release/*review*-verification.json
             app/.tmp/review-loop/*.log
             app/.tmp/ui-check/result.json
+            app/.tmp/soak-result.json
             app/.tmp/ui-check/*.png
           if-no-files-found: error
           retention-days: 30

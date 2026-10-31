@@ -110,6 +110,18 @@ test('shared capture validates upload sizes before reading and isolates a stalle
  assert.equal(ended.length,1);assert.match(ended[0],/keep up/);assert.equal(feed.sinks.size,1);assert.deepEqual(good,[4*1024*1024+1,4]);
  stalled.destroy();await feeds.shutdown();assert.equal(feeds.active.size,0);assert.equal(ended.length,2);
 });
+
+test('late outputs start at a complete keyframe with program headers across split stdout chunks',async t=>{
+ const {studio,workers}=fixture(t),feeds=new CaptureFeeds(studio,{clock:false}),{id}=feeds.create({confirmed:true,source:'camera',quality:'720p',aspect:'16:9'});
+ const packet=(pid,key=false)=>{const value=Buffer.alloc(188,0xff);value[0]=0x47;value[1]=0x40|(pid>>8);value[2]=pid&255;value[3]=key?0x30:0x10;if(key){value[4]=1;value[5]=0x40;}return value;};
+ const pat=packet(0),pmt=packet(4096),first=packet(256,true),middle=packet(256),key=packet(256,true),audio=packet(257),received=[];
+ workers[0].stdout.write(Buffer.concat([pat,pmt,first,middle]));
+ const output=new Writable({write(data,encoding,done){received.push(Buffer.from(data));done();}});feeds.attach(id,output,()=>{});
+ workers[0].stdout.write(middle.subarray(0,70));workers[0].stdout.write(middle.subarray(70));assert.equal(received.length,0);
+ workers[0].stdout.write(Buffer.concat([pat,pmt,key.subarray(0,100)]));assert.equal(received.length,0);
+ workers[0].stdout.write(Buffer.concat([key.subarray(100),audio.subarray(0,50)]));workers[0].stdout.write(audio.subarray(50));
+ assert.deepEqual(Buffer.concat(received),Buffer.concat([pat,pmt,key,audio]));assert.equal(feeds.get(id).tables.size,2);assert.ok(feeds.get(id).tail.length<188);await feeds.shutdown();
+});
 test('Electron capture permissions require the trusted main frame, consent and a selected source',async()=>{
  const ses={setPermissionCheckHandler(fn){this.check=fn;},setPermissionRequestHandler(fn){this.request=fn;},setDisplayMediaRequestHandler(fn){this.display=fn;}};
  const contents={mainFrame:{},isDestroyed:()=>false,getURL:()=>base+'/'},base='http://127.0.0.1:4317',source={id:'screen:1',name:'Screen'};let allowed=false;

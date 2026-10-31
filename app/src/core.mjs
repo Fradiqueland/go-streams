@@ -494,7 +494,13 @@ export class Studio {
         if (key === 'frame') { job.frame = Number(value) || 0; if (job.frame > 0 && job.status === 'starting') { job.status = 'running'; this.notify(job,'running'); } }
         if (key === 'fps') job.fps = Number(value) || 0;
         if (key === 'bitrate') job.bitrate = value?.trim() || '';
-        if (key === 'out_time_us' && Number.isFinite(Number(value))) { const previous=job.elapsed; job.elapsed=Math.max(job.elapsed,baseElapsed+Math.max(0,Number(value)||0)/1000000); this.recordProgress(job,previous,job.elapsed); }
+        if (key === 'out_time_us' && Number.isFinite(Number(value))) {
+          const outputTime=Number(value),previous=job.elapsed;
+          job.elapsed=Math.max(job.elapsed,baseElapsed+Math.max(0,outputTime)/1000000);
+          // FFmpeg 6 stream copy can omit frame counts; a positive output timestamp also proves progress.
+          if(outputTime>0&&job.status==='starting'){job.status='running';this.notify(job,'running');}
+          this.recordProgress(job,previous,job.elapsed);
+        }
       }
     });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });

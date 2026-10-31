@@ -46,6 +46,19 @@ test('playback position handles duplicate clips, boundaries and looping', () => 
   assert.equal(playbackPosition(media,9.25,true).offset,1.25);
   assert.equal(playbackPosition(media,20,false).offset,4);
 });
+
+test('stream-copy time progress marks running without requiring frame counts or reviving a stopped job',async()=>{
+ const f=setup(),events=[];f.studio.onStatus=(job,status)=>events.push(status);
+ const [started]=await f.start(),job=f.studio.jobs.get(started.id),output=f.children[0].stdout;
+ for(const value of ['N/A','0','-100','Infinity'])output.write('frame=0\nout_time_us='+value+'\n');
+ assert.equal(job.status,'starting');assert.equal(job.elapsed,0);
+ output.write('out_time_us=1250000\n');
+ assert.equal(job.status,'running');assert.equal(job.elapsed,1.25);assert.equal(job.frame,0);
+ output.write('out_time_us=2250000\n');
+ assert.equal(events.filter(status=>status==='running').length,1);
+ f.studio.stop(job.id);output.write('out_time_us=2500000\n');assert.equal(job.status,'stopping');
+ await job.completion;assert.equal(job.status,'stopped');
+});
 test('pause preserves position and reservations; resume seeks and requires consent', async () => {
   const f=setup(); const [result]=await f.start(); const job=f.studio.jobs.get(result.id);
   f.children[0].stdout.write('frame=20\nout_time_us=5250000\n');

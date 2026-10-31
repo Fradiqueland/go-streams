@@ -54,3 +54,22 @@ test('destination edits synchronize chat names and removal or platform changes c
  assert.equal((await request(app,'/api/channels/'+id,{},'DELETE')).status,200);
  assert.equal(chat.connections.size,0);assert.equal(chat.messages.length,0);assert.equal(chat.seen.size,0);
 });
+
+test('every privileged live, recording and chat route rejects unauthenticated, foreign-origin and missing-CSRF requests',async t=>{
+ const app=await fixture(t),before=JSON.stringify(app.store.data);
+ const routes=[
+  ['POST','/api/capture/start'],['POST','/api/capture/review/chunks?sequence=0'],['POST','/api/capture/review/stop'],
+  ['POST','/api/live/start'],['POST','/api/live/review/chunks?sequence=0'],['POST','/api/live/review/stop'],
+  ['POST','/api/recordings/start'],['POST','/api/recordings/review/chunks?sequence=0'],['POST','/api/recordings/review/finish'],
+  ['GET','/api/recordings/review/file'],['HEAD','/api/recordings/review/file'],
+  ['GET','/api/chat'],['PUT','/api/chat/settings'],['POST','/api/chat/authorize'],['POST','/api/chat/account/disconnect'],
+  ['POST','/api/chat/connect'],['POST','/api/chat/disconnect'],['POST','/api/chat/send']
+ ];
+ for(const [method,url]of routes){
+  const body=['GET','HEAD'].includes(method)?undefined:'{}';
+  assert.equal((await dispatch(app,url,{method,body,headers:{'Content-Type':'application/json','X-Go-Streams':'1'}})).status,401,method+' '+url);
+  assert.equal((await dispatch(app,url,{method,body,headers:{Cookie:'go_streams='+app.token,Origin:'https://foreign.example','Content-Type':'application/json','X-Go-Streams':'1'}})).status,403,method+' '+url);
+  if(body)assert.equal((await dispatch(app,url,{method,body,headers:{Cookie:'go_streams='+app.token,'Content-Type':'application/json'}})).status,403,method+' '+url);
+ }
+ assert.equal(JSON.stringify(app.store.data),before);assert.equal(app.feeds.active.size,0);assert.equal(app.recordings.active.size,0);assert.equal(app.studio.chat.connections.size,0);
+});

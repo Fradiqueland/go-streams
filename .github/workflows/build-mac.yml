@@ -34,14 +34,25 @@ jobs:
           target=$(node -p "process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64'")
           echo "$PWD/vendor/runtime/$target" >> "$GITHUB_PATH"
           echo "$PWD/vendor/yt-dlp/darwin" >> "$GITHUB_PATH"
-      - name: Test application and Mac startup
+      - name: Check application syntax
         run: |
           node scripts/check.mjs
+      - name: Verify native media and late destination joining
+        run: |
           npm run test:live
+          npm run test:wire
+          node scripts/soak-check.mjs --seconds 30 --streams 7
+      - name: Verify synthetic live browser and independent recording
+        run: |
           npm run test:live:browser
+      - name: Verify interface controls and responsive layouts
+        timeout-minutes: 5
+        run: |
           qa="$RUNNER_TEMP/gostreams-ui-qa"
           npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
           GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
+      - name: Complete ten regression review cycles
+        run: |
           npm run test:review
       - name: Build and exercise the native Mac application
         run: |
@@ -63,6 +74,7 @@ jobs:
             app/release/*review*-verification.json
             app/.tmp/review-loop/*.log
             app/.tmp/ui-check/result.json
+            app/.tmp/soak-result.json
             app/.tmp/ui-check/*.png
           if-no-files-found: error
           retention-days: 30

@@ -17,7 +17,7 @@ export class LocalRecordings {
   if(this.closed||this.studio.closing||this.studio.importingProject||this.active.size>=2)throw new AppError('Close or finish the current recording first.',409);
   if(feedId)this.studio.feeds.get(feedId);
   this.checkSpace();const id=crypto.randomUUID(),item={id,created:new Date().toISOString(),status:'recording',format:feedId?'mp4':'webm',bytes:0,error:''};
-  const child=feedId?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','4194304','-analyzeduration','3000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-f','matroska','-y',path.join(this.root,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
+  const child=feedId?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-f','matroska','-y',path.join(this.root,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
   const stream=child?child.stdin:fs.createWriteStream(path.join(this.root,id+'.part'),{flags:'wx',mode:0o600});
   const record={item,stream,sequence:0,receiving:false,lastInput:Date.now(),error:null};stream.on('error',()=>{record.error='The local recording could not be written. Check free disk space.';});
   if(child){
