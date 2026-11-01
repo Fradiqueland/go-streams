@@ -1,4 +1,5 @@
 import {sameLocalFile} from './media-paths.mjs';
+import {downloaderEnvironment} from './tool-paths.mjs';
 import {StringDecoder} from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,7 +75,7 @@ export class Downloads {
       const ffmpeg=toolsFor(settings).ffmpeg;
       if(path.isAbsolute(ffmpeg))args.push('--ffmpeg-location',path.dirname(ffmpeg));
       args.push('--no-plugin-dirs','--js-runtimes',`node:${process.execPath}`,'--no-remote-components','--',url);
-      child = spawnOwnedTool(toolsFor(settings).ytdlp, args, { windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] },{spawnProcess:this.spawn}); op.child = child;
+      child = spawnOwnedTool(toolsFor(settings).ytdlp, args, { windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'],env:downloaderEnvironment() },{spawnProcess:this.spawn}); op.child = child;
     }
     catch { this.complete(id,op,'error','Não foi possível iniciar as ferramentas de download. Extraia a aplicação completa ou reveja os caminhos nas Definições.'); return this.store.data.downloads.find(d=>d.id===id); }
     let lastProgress = -1, buffer = '', processError = false;

@@ -98,8 +98,8 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       }
       if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
       const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
-      if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1]));
-      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file);res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.m4a'?'audio/mp4':ext==='.mp4'?'video/mp4':'video/webm');}
+      if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1],{discardEmpty:body.discardEmpty===true}));
+      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file),audio=recordings.items.find(item=>item.id===recordingFile[1])?.kind==='audio';res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.m4a'?'audio/mp4':ext==='.mp4'?'video/mp4':audio?'audio/webm':'video/webm');}
       if(pathname==='/api/chat'&&req.method==='GET')return json(res,chat.state());
       if(pathname==='/api/chat/settings'&&req.method==='PUT')return json(res,chat.auth.configure(body.provider,body));
       if(pathname==='/api/chat/authorize'&&req.method==='POST')return json(res,await chat.auth.begin(body.provider));

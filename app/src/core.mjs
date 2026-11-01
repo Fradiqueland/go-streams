@@ -108,10 +108,10 @@ export class Vault {
     catch { fail('Não foi possível ler a chave do canal nesta conta.', 500); }
   }
 }
-export function runProcess(command, args, { timeout = 30000, maxBytes = 4 * 1024 * 1024, signal } = {}) {
+export function runProcess(command, args, { timeout = 30000, maxBytes = 4 * 1024 * 1024, signal, env } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new AppError('Operação cancelada.'));
-    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...(env?{env}:{}) });
     let stdout = '', stderr = '', issue, outputBytes=0;
     const outDecoder=new StringDecoder('utf8'),errDecoder=new StringDecoder('utf8');
     const abort = () => { issue = new AppError('Operação cancelada.'); child.kill(); };

@@ -18,11 +18,22 @@ test('macOS keeps writable user data outside the application bundle',()=>{
 });
 
 for(const platform of ['darwin','win32'])test(platform+' recording directory picker handles Unicode folders and cancellation without extra installations',async()=>{
- const directory=path.resolve('.tmp','Gravações de António');let call;
- assert.equal(await nativeDirectoryPicker({platform,directory,execute:async(...args)=>{call=args;return {stdout:JSON.stringify(directory)};}}),directory);
+ const directory=platform==='darwin'?'/Users/António/Gravações':'D:\\Gravações de António';let call;
+ assert.equal(await nativeDirectoryPicker({platform,directory,stat:()=>({isDirectory:()=>true}),execute:async(...args)=>{call=args;return {stdout:JSON.stringify(directory)};}}),directory);
  assert.equal(call[2].timeout,300000);assert.match(call[0],platform==='darwin'?/osascript$/:/powershell\.exe$/i);
+ if(platform==='darwin')assert.equal(call[1].at(-1),directory);
+ else assert.equal(Buffer.from(/FromBase64String\("([^"]*)"\)/.exec(call[1].at(-1))[1],'base64').toString('utf8'),directory);
  assert.equal(await nativeDirectoryPicker({platform,execute:async()=>({stdout:'null'})}),null);
  for(const stdout of ['"relative"','{}','["folder"]'])await assert.rejects(nativeDirectoryPicker({platform,execute:async()=>({stdout})}));
+});
+
+for(const platform of ['darwin','win32'])test(platform+' folder picker recovers from deleted or non-directory presets and treats paths as data',async()=>{
+ const directory=platform==='darwin'?'/Users/António/$(text) "recordings"':"D:\\António\\$(text) 'recordings'";
+ const invoke=async stat=>{let call;await nativeDirectoryPicker({platform,directory,stat,execute:async(...args)=>{call=args;return {stdout:'null'};}});return platform==='darwin'?call[1].at(-1):Buffer.from(/FromBase64String\("([^"]*)"\)/.exec(call[1].at(-1))[1],'base64').toString('utf8');};
+ assert.equal(await invoke(()=>({isDirectory:()=>true})),directory);
+ assert.equal(await invoke(()=>({isDirectory:()=>false})), '');
+ assert.equal(await invoke(()=>{throw Object.assign(Error('Removed folder'),{code:'ENOENT'});}), '');
+ if(platform==='darwin')await assert.rejects(nativeDirectoryPicker({platform,execute:async()=>({stdout:JSON.stringify('D:\\Windows-folder')})}),/invalid path/);
 });
 test('macOS native picker parses Unicode and quoted paths, cancellation and malformed output',async()=>{
  const paths=['/Users/test/Vídeo de João.mp4','/Users/test/a"b.mov'];let call;

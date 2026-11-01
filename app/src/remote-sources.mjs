@@ -1,4 +1,4 @@
-import {ytdlpPath,mediaToolPath} from './tool-paths.mjs';
+import {ytdlpPath,mediaToolPath,downloaderEnvironment} from './tool-paths.mjs';
 import dns from 'node:dns/promises';
 import https from 'node:https';
 import net from 'node:net';
@@ -142,7 +142,7 @@ export class RemoteSources {
     entry.pending=Promise.resolve().then(async()=>{
       try{
         const settings=this.settings();
-        const {stdout}=await this.execute(ytdlpPath(settings),['--ignore-config','--no-playlist','--no-cache-dir','--no-plugin-dirs','--no-remote-components','--js-runtimes',`node:${process.execPath}`,'--skip-download','--dump-single-json','--no-warnings','--socket-timeout','15','--retries','1','-f','b[ext=mp4][protocol=https][vcodec!=none][acodec!=none]','--',entry.path],{timeout:45000,maxBytes:4*1024*1024,signal:this.controller.signal});
+        const {stdout}=await this.execute(ytdlpPath(settings),['--ignore-config','--no-playlist','--no-cache-dir','--no-plugin-dirs','--no-remote-components','--js-runtimes',`node:${process.execPath}`,'--skip-download','--dump-single-json','--no-warnings','--socket-timeout','15','--retries','1','-f','b[ext=mp4][protocol=https][vcodec!=none][acodec!=none]','--',entry.path],{timeout:45000,maxBytes:4*1024*1024,signal:this.controller.signal,env:downloaderEnvironment()});
         const info=JSON.parse(stdout);
         if(info.protocol!=='https'||info.ext!=='mp4'||info.is_live||info.is_upcoming||info.live_status==='is_live'||!(info.duration>0)||!info.url)throw Error();
         const url=new URL(info.url);

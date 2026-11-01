@@ -2,7 +2,13 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.1**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Reliability review (1.1.1)
+
+Recorder finalization drains the browser's last data event after a recording error and serializes simultaneous stop requests. Crop gestures cannot resize an active recording, camera coordinates match the displayed position, and the overlay outline follows the actual camera size on small screens. Recordings retain their actual folder when the default changes, and native folder selection starts in the current folder when it still exists.
+
+Confirmed settings saves remain visible if refreshing status fails. YouTube downloads and online sources reuse Electron's included JavaScript runtime in Node mode; no separate Node installation is needed. Regression coverage includes these failure paths, consecutive recordings, cancelled capture selection, audio/video download metadata and keyboard camera positioning. Windows and Mac workflows run ten complete regression cycles and synthetic browser checks before packaging.
 
 ## Video and audio recorder (1.1.0)
 

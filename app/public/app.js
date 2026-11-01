@@ -425,6 +425,8 @@ document.addEventListener('submit',async event=>{
  event.preventDefault();if(settingsSaving)return;
  const data=new FormData(form), controls=[...form.elements].map(el=>[el,el.disabled]);
  const encoding=form.id==='encoding-form'?Object.fromEntries(['videoBitrate','audioBitrate','fps','aspect'].map(name=>[name,form.elements.namedItem(name).value])):null;
+ settingsDrafts.set(form.id,[...form.elements].filter(el=>el.name).map(el=>({name:el.name,value:el.value,checked:el.checked})));
+ let saved=false;
  settingsSaving=true;settingsSavingForm=form.id;
  for(const [el] of controls)el.disabled=true;
  try{
@@ -433,10 +435,15 @@ document.addEventListener('submit',async event=>{
   else if(form.id==='operation-form')await api('/api/settings',{operations:{maxConcurrent:Number(data.get('maxConcurrent')),historyLimit:Number(data.get('historyLimit')),persistSchedules:data.has('persistSchedules')},confirmed:data.has('persistSchedules')},'PUT');
   else if(form.id==='notification-form')await api('/api/notifications',{...Object.fromEntries(data),enabled:data.has('enabled'),port:Number(data.get('port'))},'PUT');
   else await api('/api/updates',{...Object.fromEntries(data),autoCheck:data.has('autoCheck')},'PUT');
-  settingsDrafts.delete(form.id);
+  saved=true;
+  if(form.id==='notification-form'){
+   const password=form.elements.namedItem('password');if(password)password.value='';
+   for(const field of settingsDrafts.get(form.id)||[])if(field.name==='password')field.value='';
+  }
+  await refresh(false);settingsDrafts.delete(form.id);
   if(form.id==='settings-form'){health=await api('/api/health');showHealth();}
-  await refresh(false);toast(tr("Definições guardadas."));
- }catch(error){toast(error.message,true);}
+  toast(tr("Definições guardadas."));
+ }catch(error){if(saved)connectionFailed();toast(saved?uiText('Settings saved. The status could not be refreshed: ','Definições guardadas. Não foi possível atualizar o estado: ')+error.message:error.message,true);}
  finally{settingsSaving=false;settingsSavingForm='';for(const [el,disabled]of controls)el.disabled=disabled;draw();}
 });
 $('#dialog').addEventListener('close', () => { if(!$('#dialog').open){dialogGeneration++;$('#dialog-content').innerHTML='';} });

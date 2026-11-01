@@ -17,7 +17,10 @@ export class LocalRecordings {
   if(clock)this.timer=setInterval(()=>{for(const record of this.active.values())if(Date.now()-record.lastInput>20000)void this.finish(record.item.id).catch(()=>{});},2000).unref();
  }
  save(){atomicWrite(this.file,JSON.stringify(this.items));}
- state(){return this.items.map(i=>({...i}));}
+ // Legacy/default-folder entries intentionally omit directory on disk so a
+ // moved data profile stays portable. The UI must still receive the actual
+ // location, never substitute a subsequently changed recording preference.
+ state(){return this.items.map(i=>({...i,directory:this.location(i)}));}
  validDirectory(value){return typeof value==='string'&&value.length<=4096&&path.isAbsolute(value)&&!/[\x00-\x1f]/.test(value);}
  prepareDirectory(value){
   if(!this.validDirectory(value))throw new AppError('Choose an absolute recording folder path.');
@@ -48,7 +51,9 @@ export class LocalRecordings {
   // it never needs to transcode the whole recording after the user presses Stop.
   child=format!=='webm'?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0',...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k']),'-f','matroska','-n',path.join(destination,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
   stream=child?child.stdin:fs.createWriteStream(path.join(destination,id+'.part'),{flags:'wx',mode:0o600});
-  record={item,stream,feedId,sequence:0,receiving:false,lastInput:Date.now(),error:null};stream.on('error',()=>{record.error='The local recording could not be written. Check free disk space.';if(item.status==='recording'&&this.active.get(id)===record)void this.finish(id).catch(()=>{});});
+  record={item,stream,feedId,sequence:0,receiving:false,lastInput:Date.now(),error:null,ownsPart:false};
+  if(!child)stream.once('open',()=>{record.ownsPart=true;});
+  stream.on('error',()=>{record.error='The local recording could not be written. Check free disk space.';if(item.status==='recording'&&this.active.get(id)===record)void this.finish(id).catch(()=>{});});
   this.active.set(id,record);
   if(child){
    record.child=child;record.childDone=new Promise(resolve=>child.once('close',code=>{record.exitCode=code;if((code!==0||item.status==='recording')&&!record.error)record.error='The local recording encoder stopped unexpectedly. Original local data was preserved.';resolve(code);if(item.status==='recording')void this.finish(id).catch(()=>{});}));child.stderr.on('data',()=>{});child.on('error',()=>{record.error='The local recording encoder could not be started.';});
@@ -78,11 +83,15 @@ export class LocalRecordings {
    record.item.bytes+=size;record.sequence++;record.lastInput=Date.now();return {ok:true,sequence:record.sequence};
   }finally{clearTimeout(deadline);record.receiving=false;}
  }
- async finish(id){
+ async finish(id,{discardEmpty=false}={}){
   if(this.finalizing.has(id))return this.finalizing.get(id);
   const item=this.items.find(i=>i.id===id);if(!item)throw new AppError('Recording not found.',404);if(item.status==='completed')return {ok:true,id};
   const record=this.active.get(id),part=path.join(this.location(item),id+'.part'),output=path.join(this.location(item),id+'.'+item.format);
   if(!record&&!fs.existsSync(part))throw new AppError('Recording data is unavailable.',404);
+  // Cancellation can race the start response before MediaRecorder produces
+  // its first chunk. Only that active, untouched standalone session may be
+  // discarded; existing history, shared feeds and in-flight uploads survive.
+  const cancelEmpty=discardEmpty===true&&record&&item.status==='recording'&&!record.feedId&&!record.receiving&&record.sequence===0&&item.bytes===0;
   item.status='finalizing';
   const task=(async()=>{
    await Promise.resolve();
@@ -95,6 +104,17 @@ export class LocalRecordings {
      this.active.delete(id);
     }
     if(indexFailure)throw indexFailure;
+    if(cancelEmpty){
+     const info=fs.lstatSync(part,{throwIfNoEntry:false});
+     // An encoder with no input normally produces no file. Only remove an
+     // empty file whose exclusive writer was opened by this exact session.
+     if(!info||(record.ownsPart&&info.isFile()&&info.size===0)){
+      const index=this.items.indexOf(item);this.items.splice(index,1);
+      try{this.save();if(info)fs.unlinkSync(part);}
+      catch(error){this.items.splice(index,0,item);throw error;}
+      return {ok:true,id,discarded:true};
+     }
+    }
     if(record?.error)throw Error(record.error);
     if(!fs.statSync(part).size)throw Error('Empty recording');
     // Rewrites the WebM index and duration so the completed recording can be sought.

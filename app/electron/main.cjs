@@ -83,6 +83,14 @@ async function start(){
  if(smoke)await smokeCheck(browserSession);
 }
 async function smokeCheck(browserSession){
+ const root=path.resolve(__dirname,'..');
+ const {runProcess}=await import(pathToFileURL(path.join(root,'src','core.mjs')).href);
+ const {downloaderEnvironment}=await import(pathToFileURL(path.join(root,'src','tool-paths.mjs')).href);
+ // Verify from the real GUI process, which must not inherit Node mode itself.
+ // --version alone on yt-dlp cannot exercise its nested JavaScript runtime.
+ if(process.env.ELECTRON_RUN_AS_NODE)throw Error('Electron smoke must start as a GUI application.');
+ const runtime=await runProcess(process.execPath,['-p','"go-streams-node-runtime:"+process.versions.node'],{env:downloaderEnvironment(),timeout:15000});
+ if(runtime.stdout.trim()!=='go-streams-node-runtime:'+process.versions.node)throw Error('Bundled JavaScript runtime did not start in Node mode.');
  const started=Date.now();
  while(!await window.webContents.executeJavaScript("Boolean(document.querySelector('#content h1'))")){
   if(Date.now()-started>20000)throw Error('Electron interface did not become ready.');
@@ -100,7 +108,7 @@ async function smokeCheck(browserSession){
   await window.webContents.executeJavaScript("localStorage.setItem('electron-persistence-smoke','preserved')");
  }
  await browserSession.flushStorageData();await browserSession.cookies.flushStore();
- const proof={version:app.getVersion(),electron:process.versions.electron,chromium:process.versions.chrome,node:process.versions.node,sandbox:true,nodeHidden:renderer.nodeHidden,socialIcons:renderer.icons,priorSessionPreserved:prior,protectedProjectPreserved:prior};
+ const proof={version:app.getVersion(),electron:process.versions.electron,chromium:process.versions.chrome,node:process.versions.node,sandbox:true,nodeHidden:renderer.nodeHidden,socialIcons:renderer.icons,priorSessionPreserved:prior,protectedProjectPreserved:prior,downloaderJavaScriptRuntimeVerified:true};
  fs.writeFileSync(path.join(paths.data,prior?'electron-second-launch.json':'electron-first-launch.json'),JSON.stringify(proof,null,2));
  await requestQuit();
 }

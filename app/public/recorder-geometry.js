@@ -3,9 +3,12 @@ export function cropRect(value={}){
  const width=clamp(value.width??1,.05,1),height=clamp(value.height??1,.05,1);
  return {x:clamp(value.x??0,0,1-width),y:clamp(value.y??0,0,1-height),width,height};
 }
+export function cameraPosition(value={}){
+ return {x:clamp(value.x??.96,0,1),y:clamp(value.y??.96,0,1),size:clamp(value.size??.28,.1,.65)};
+}
 export function cameraRect(value={},width,height){
- const side=clamp(value.size??.28,.1,.65)*Math.min(width,height);
- return {x:clamp(value.x??.96,0,1)*(width-side),y:clamp(value.y??.96,0,1)*(height-side),width:side,height:side};
+ const position=cameraPosition(value),side=position.size*Math.min(width,height);
+ return {x:position.x*(width-side),y:position.y*(height-side),width:side,height:side};
 }
 export function frameSize(width,height,crop={},quality=1080){
  const r=cropRect(crop),w=Math.max(2,width*r.width),h=Math.max(2,height*r.height),ratio=Math.min(1,quality/h,quality*16/9/w);

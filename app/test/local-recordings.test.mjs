@@ -43,6 +43,18 @@ test('changing the default folder never relocates an active or completed recordi
  assert.equal(fs.readFileSync(recordings.media(first.id),'utf8'),'finalized');assert.equal(fs.readFileSync(recordings.media(second.id),'utf8'),'finalized');
 });
 
+test('recording state reports the original folder after the saved default changes, including legacy entries',async t=>{
+ const {root,studio,recordings}=fixture(t),original=path.join(root,'recordings'),{id}=recordings.start({confirmed:true});
+ const req=Readable.from([Buffer.from('source')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);
+ recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'finalized');await recordings.finish(id);
+ recordings.configure({directory:path.join(root,'new-default'),askEveryTime:false});
+ assert.equal(recordings.state().find(item=>item.id===id).directory,original);
+ assert.equal(path.dirname(recordings.media(id)),original);
+ assert.equal(JSON.parse(fs.readFileSync(recordings.file,'utf8'))[0].directory,undefined,'Keep the original default relative to the data profile on disk');
+ const reopened=new LocalRecordings(studio,{clock:false});
+ try{assert.equal(reopened.state().find(item=>item.id===id).directory,original);assert.equal(path.dirname(reopened.media(id)),original);}finally{await reopened.shutdown();}
+});
+
 test('invalid recording folders and a failed preference write preserve prior preferences and do not start workers',t=>{
  const {root,recordings}=fixture(t),before={...recordings.preferences},file=path.join(root,'a-file');fs.writeFileSync(file,'original');
  for(const directory of ['relative',file,root+'\0bad'])assert.throws(()=>recordings.configure({directory,askEveryTime:false}));
@@ -135,4 +147,41 @@ test('a recording upload finishing after Stop does not acknowledge another captu
  const upload=recordings.ingest(id,'0',req);while(!written)await new Promise(resolve=>setImmediate(resolve));
  const stopped=recordings.finish(id),rejected=assert.rejects(upload,error=>error.status===410);written();
  await rejected;await stopped;assert.equal(record.sequence,0);assert.equal(recordings.state()[0].status,'completed');
+});
+
+for(const [kind,format]of [['video','webm'],['video','mp4'],['audio','m4a']])test('cancelling an untouched '+format+' start closes its writer and removes only its empty history entry',async t=>{
+ const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true,kind,format}),record=recordings.active.get(id);
+ const result=await recordings.finish(id,{discardEmpty:true});
+ assert.deepEqual(result,{ok:true,id,discarded:true});assert.equal(recordings.active.size,0);assert.equal(recordings.finalizing.size,0);assert.equal(recordings.state().length,0);
+ assert.deepEqual(JSON.parse(fs.readFileSync(recordings.file,'utf8')),[]);assert.equal(fs.existsSync(path.join(root,'recordings',id+'.part')),false);
+ if(record.child)await record.childDone;else assert.equal(record.stream.closed,true);
+});
+
+test('cancel-empty preserves a recording that already received data and finalizes it normally',async t=>{
+ const {recordings}=fixture(t),{id}=recordings.start({confirmed:true}),req=Readable.from([Buffer.from('source-to-keep')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);
+ recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'saved-output');
+ assert.deepEqual(await recordings.finish(id,{discardEmpty:true}),{ok:true,id});assert.equal(recordings.state()[0].status,'completed');assert.equal(fs.readFileSync(recordings.media(id),'utf8'),'saved-output');
+});
+
+test('cancel-empty never discards a shared capture recording even before its byte counter advances',async t=>{
+ const {root,studio,recordings}=fixture(t),child=new EventEmitter();child.stdin=new PassThrough();child.stderr=new PassThrough();child.kill=()=>child.emit('close',1);child.stdin.once('finish',()=>child.emit('close',0));studio.spawnProcess=()=>child;
+ studio.feeds={get:()=>({}),attach:()=>()=>{},shutdown:async()=>{}};recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'saved-shared-output');
+ const {id}=recordings.start({confirmed:true,feedId:'shared'});fs.writeFileSync(path.join(root,'recordings',id+'.part'),'shared-source');
+ assert.deepEqual(await recordings.finish(id,{discardEmpty:true}),{ok:true,id});assert.equal(recordings.state()[0].status,'completed');assert.equal(fs.readFileSync(recordings.media(id),'utf8'),'saved-shared-output');
+});
+
+test('cancel-empty never removes recovered history or a request still uploading its first chunk',async t=>{
+ const {root,recordings}=fixture(t),first=recordings.start({confirmed:true}),firstRecord=recordings.active.get(first.id);
+ await new Promise(resolve=>{firstRecord.stream.once('close',resolve);firstRecord.stream.end();});recordings.active.delete(first.id);firstRecord.item.status='interrupted';recordings.save();
+ await assert.rejects(recordings.finish(first.id,{discardEmpty:true}));assert.equal(recordings.state().find(item=>item.id===first.id).status,'interrupted');assert.equal(fs.existsSync(path.join(root,'recordings',first.id+'.part')),true);
+ const second=recordings.start({confirmed:true}),req=new PassThrough();req.headers={'content-type':'video/webm'};
+ const upload=recordings.ingest(second.id,'0',req),rejected=assert.rejects(upload,error=>error.status===409);
+ const stopped=assert.rejects(recordings.finish(second.id,{discardEmpty:true}));req.end(Buffer.from('pending-first-chunk'));await rejected;await stopped;
+ assert.equal(recordings.state().find(item=>item.id===second.id).status,'interrupted');assert.equal(fs.existsSync(path.join(root,'recordings',second.id+'.part')),true);
+});
+
+test('cancel-empty retains its owned source and history if removing metadata cannot be persisted',async t=>{
+ const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true}),save=recordings.save.bind(recordings);
+ recordings.save=()=>{if(!recordings.items.some(item=>item.id===id))throw Error('ENOSPC cancelled index');save();};
+ try{await assert.rejects(recordings.finish(id,{discardEmpty:true}));assert.equal(recordings.state()[0].status,'interrupted');assert.equal(fs.existsSync(path.join(root,'recordings',id+'.part')),true);assert.equal(JSON.parse(fs.readFileSync(recordings.file,'utf8'))[0].id,id);}finally{recordings.save=save;}
 });

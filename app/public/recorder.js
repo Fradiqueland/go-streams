@@ -1,5 +1,5 @@
 import {language,localeTag} from './i18n.js';
-import {cropRect,cameraRect,frameSize,containedRect,selectionRect} from './recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,frameSize,containedRect,selectionRect} from './recorder-geometry.js';
 const t=(en,pt)=>language()==='pt-PT'?pt:en;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
@@ -60,7 +60,7 @@ export class RecorderPanel {
     const name=event.target.name;
     if(['directory','askFolder'].includes(name))this.folderDirty=true;
     if(name?.startsWith('crop-')&&!this.id&&!this.starting){this.crop=cropRect(Object.fromEntries(['x','y','width','height'].map(k=>[k,Number(this.$(`[name="crop-${k}"]`).value)/100])));this.syncCrop();this.resizeCanvas();}
-    if(['cameraSize','cameraX','cameraY'].includes(name)){this.cameraPosition={size:Number(this.$('[name="cameraSize"]').value)/100,x:Number(this.$('[name="cameraX"]').value)/100,y:Number(this.$('[name="cameraY"]').value)/100};this.positionBoxes();}
+    if(['cameraSize','cameraX','cameraY'].includes(name)){this.cameraPosition={size:Number(this.$('[name="cameraSize"]').value)/100,x:Number(this.$('[name="cameraX"]').value)/100,y:Number(this.$('[name="cameraY"]').value)/100};this.syncCamera();}
    });
    this.element.addEventListener('change',()=>this.controls());
    this.$('.recorder-source-stage').addEventListener('pointerdown',event=>this.selectRegion(event));
@@ -69,6 +69,8 @@ export class RecorderPanel {
    window.addEventListener('resize',()=>this.positionBoxes());
    window.addEventListener('beforeunload',event=>{if(this.busy){event.preventDefault();event.returnValue='';}});
    window.addEventListener('pagehide',()=>{this.generation++;this.countdownAbort?.abort();this.recorder?.state!=='inactive'&&this.recorder?.stop();this.releaseDevices();});
+   navigator.mediaDevices?.addEventListener?.('devicechange',()=>{void this.listDevices(this.generation);});
+   void this.listDevices(this.generation);
   }
   if(this.element.parentNode!==container){container.innerHTML='';container.appendChild(this.element);}
   this.update(state);this.positionBoxes();
@@ -157,7 +159,8 @@ export class RecorderPanel {
   finally{if(current()){this.preparing=false;this.controls();this.positionBoxes();}}
  }
  async listDevices(generation){
-  try{const devices=await navigator.mediaDevices.enumerateDevices();if(generation!==this.generation)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const el=this.$(`[name="${name}"]`),previous=el.value;el.innerHTML=`<option value="">${t('Default device','Dispositivo predefinido')}</option>`+devices.filter(d=>d.kind===kind).map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||d.kind)}</option>`).join('');el.value=previous;}}
+  const request=this.deviceListRequest=(this.deviceListRequest||0)+1;
+  try{const devices=await navigator.mediaDevices.enumerateDevices();if(generation!==this.generation||request!==this.deviceListRequest)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const el=this.$(`[name="${name}"]`),previous=el.value,available=devices.filter(d=>d.kind===kind);el.innerHTML=`<option value="">${t('Default device','Dispositivo predefinido')}</option>`+available.map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||d.kind)}</option>`).join('');el.value=available.some(d=>d.deviceId===previous)?previous:'';}}
   catch{}
  }
  resizeCanvas(){
@@ -175,7 +178,7 @@ export class RecorderPanel {
   }
  }
  syncCrop(){for(const name of ['x','y','width','height'])this.$(`[name="crop-${name}"]`).value=Math.round(this.crop[name]*100);this.positionBoxes();}
- syncCamera(){for(const [field,key]of [['cameraSize','size'],['cameraX','x'],['cameraY','y']])this.$(`[name="${field}"]`).value=Math.round(this.cameraPosition[key]*100);this.positionBoxes();}
+ syncCamera(){this.cameraPosition=normalizedCameraPosition(this.cameraPosition);for(const [field,key]of [['cameraSize','size'],['cameraX','x'],['cameraY','y']])this.$(`[name="${field}"]`).value=Math.round(this.cameraPosition[key]*100);this.positionBoxes();}
  positionBoxes(){
   if(!this.canvas||!this.element.isConnected)return;
   const stage=this.$('.recorder-stage'),view=containedRect(stage.getBoundingClientRect(),this.canvas.width,this.canvas.height),base=stage.getBoundingClientRect(),camera=cameraRect(this.cameraPosition,view.width,view.height);
@@ -189,7 +192,7 @@ export class RecorderPanel {
  selectRegion(event){
   if(!this.screenVideo||this.id||this.starting||this.preparing||event.button!==0)return;
   const b=containedRect(this.$('.recorder-source-stage').getBoundingClientRect(),this.screenVideo.videoWidth,this.screenVideo.videoHeight),point=e=>({x:Math.max(0,Math.min(1,(e.clientX-b.left)/b.width)),y:Math.max(0,Math.min(1,(e.clientY-b.top)/b.height))}),start=point(event);
-  this.pointerSession(event,e=>{this.crop=selectionRect(start,point(e));this.syncCrop();this.resizeCanvas();});
+  this.pointerSession(event,e=>{if(!this.screenVideo||this.id||this.starting||this.preparing||this.finishing)return;this.crop=selectionRect(start,point(e));this.syncCrop();this.resizeCanvas();});
  }
  moveCamera(event){
   if(!this.output||event.button!==0)return;const b=containedRect(this.$('.recorder-stage').getBoundingClientRect(),this.canvas.width,this.canvas.height),r=cameraRect(this.cameraPosition,b.width,b.height),start={...this.cameraPosition},resize=Boolean(event.target.closest('[data-recorder="resize-camera"]'));
@@ -207,24 +210,28 @@ export class RecorderPanel {
    const ready=await countdown(this.config.countdown,value=>{this.$('.recorder-countdown').hidden=value===null;this.$('.recorder-countdown').textContent=value??'';this.$('.recorder-countdown-inline').hidden=value===null;this.$('.recorder-countdown-inline').textContent=value===null?'':t('Recording starts in ','A gravação começa em ')+value+' s';},this.countdownAbort.signal);
    if(!ready||generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){this.status(t('Countdown cancelled. No recording was started.','Contagem cancelada. Não foi iniciada nenhuma gravação.'));return;}
    const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4'});
-   if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{}).catch(()=>{});return;}
+   if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{discardEmpty:true}).catch(()=>{});return;}
    this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>{this.error(error);void this.stop().catch(()=>{});});
-   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});});recorder.addEventListener('dataavailable',event=>this.upload.push(event.data));recorder.addEventListener('error',()=>{this.error(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.')));void this.stop().catch(()=>{});});
-   recorder.start(500);this.startedAt=Date.now();this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
+   const upload=this.upload;this.recorderStarted=false;
+   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>{this.error(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.')));void this.stop().catch(()=>{});});
+   recorder.start(500);this.recorderStarted=true;this.startedAt=Date.now();this.$('.recorder-elapsed').textContent=elapsed(0);this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
    this.status(t('Recording to: ','A gravar para: ')+directory+' / '+id+(audio?'.m4a':'.mp4'));
   }catch(error){if(this.id)await this.stopWriter().catch(()=>{});this.error(error);}
   finally{this.starting=false;this.resolveStart();this.startDone=null;this.controls();}
  }
  async stopWriter(){
   const id=this.id;if(!id)return;clearInterval(this.elapsedTimer);
-  if(this.recorder&&this.recorder.state!=='inactive'){this.recorder.stop();await this.recorderDone;}
+  // An error makes MediaRecorder inactive before its final dataavailable/stop events.
+  // Drain that last event even when stop() is no longer necessary.
+  if(this.recorderStarted){if(this.recorder.state!=='inactive')this.recorder.stop();await this.recorderDone;}
   let uploadError;try{await this.upload?.finish();}catch(error){uploadError=error;}
   try{await this.api(`/api/recordings/${id}/finish`,{});if(uploadError)throw uploadError;this.status(t('Recording saved locally.','Gravação guardada localmente.'));}
-  finally{this.id=null;this.recorder=null;this.upload=null;}
+  finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;}
  }
  async stop(){
   if(this.stopDone)return this.stopDone;
   if(this.starting){this.countdownAbort?.abort();await this.startDone;}
+  if(this.stopDone)return this.stopDone;
   if(!this.id)return;this.finishing=true;this.controls();this.status(t('Saving recording…','A guardar a gravação…'));
   this.stopDone=(async()=>{try{await this.stopWriter();await this.reloadFiles();}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
  }

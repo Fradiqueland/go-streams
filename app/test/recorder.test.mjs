@@ -5,7 +5,7 @@ import path from 'node:path';
 import {Readable} from 'node:stream';
 import {Store,Vault,Studio,runProcess} from '../src/core.mjs';
 import {LocalRecordings} from '../src/local-recordings.mjs';
-import {cropRect,cameraRect,frameSize,containedRect,selectionRect} from '../public/recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition,frameSize,containedRect,selectionRect} from '../public/recorder-geometry.js';
 import {RecordingUpload,countdown,RecorderPanel} from '../public/recorder.js';
 import {uiHarness} from './ui-harness.mjs';
 
@@ -37,6 +37,87 @@ test('cancelling a start retains source-ended handlers and closing preview relea
  panel.element={querySelector:()=>({srcObject:null,value:0})};panel.output=stream;panel.streams=[stream];panel.controls=()=>{};panel.status=()=>{};
  panel.starting=true;panel.countdownAbort=new AbortController();panel.startDone=Promise.resolve().then(()=>{panel.starting=false;});const generation=panel.generation;await panel.stop();assert.equal(panel.generation,generation);assert.equal(panel.countdownAbort.signal.aborted,true);
  await panel.release();assert.equal(panel.output,null);assert.ok(calls.includes('track-stop'));assert.equal(calls.filter(c=>c.startsWith('/api/')).length,0);
+});
+
+test('camera numeric controls normalize values to the position actually drawn',()=>{
+ const fields=new Map(),panel=new RecorderPanel({api(){},toast(){}});
+ panel.$=name=>{if(!fields.has(name))fields.set(name,{});return fields.get(name);};panel.positionBoxes=()=>{};
+ panel.cameraPosition={x:1.5,y:-.2,size:2};panel.syncCamera();
+ assert.deepEqual(panel.cameraPosition,{x:1,y:0,size:.65});
+ assert.equal(panel.$('[name="cameraX"]').value,100);assert.equal(panel.$('[name="cameraY"]').value,0);assert.equal(panel.$('[name="cameraSize"]').value,65);
+ assert.deepEqual(cameraPosition({x:NaN,y:Infinity,size:-2}),{x:0,y:0,size:.1});
+});
+
+test('crop drag already in progress cannot change the canvas after recording starts or preview closes',()=>{
+ const panel=new RecorderPanel({api(){},toast(){}});let move,resizes=0;
+ panel.screenVideo={videoWidth:1600,videoHeight:900};panel.$=()=>({getBoundingClientRect:()=>({left:0,top:0,width:1600,height:900})});
+ panel.pointerSession=(_event,callback)=>{move=callback;};panel.syncCrop=()=>{};panel.resizeCanvas=()=>resizes++;
+ panel.selectRegion({button:0,clientX:100,clientY:100});move({clientX:800,clientY:450});assert.equal(resizes,1);const selected={...panel.crop};
+ for(const state of [{starting:true},{id:'recording'},{finishing:true},{screenVideo:null}]){
+  Object.assign(panel,{starting:false,id:null,finishing:false},state);move({clientX:1200,clientY:800});assert.deepEqual(panel.crop,selected);assert.equal(resizes,1);
+ }
+});
+
+test('concurrent stop requests while start settles share a single finalization',async()=>{
+ const panel=new RecorderPanel({api(){},toast(){}});let startReady,writerReady,writes=0,reloads=0;
+ panel.controls=()=>{};panel.status=()=>{};panel.starting=true;panel.countdownAbort=new AbortController();
+ panel.startDone=new Promise(resolve=>{startReady=resolve;});const writing=new Promise(resolve=>{writerReady=resolve;});
+ panel.stopWriter=async()=>{writes++;await writing;panel.id=null;};panel.reloadFiles=async()=>{reloads++;};
+ const first=panel.stop(),second=panel.stop();panel.starting=false;panel.id='recording';startReady();
+ await Promise.resolve();await Promise.resolve();assert.equal(writes,1);writerReady();await Promise.all([first,second]);assert.equal(reloads,1);assert.equal(panel.finishing,false);
+});
+
+test('inactive recorder still drains its final browser data event before closing the saved file',async()=>{
+ const calls=[],panel=new RecorderPanel({api:async route=>{calls.push(route);},toast(){}});let stopped;
+ panel.id='recording';panel.status=()=>{};panel.recorderStarted=true;panel.recorder={state:'inactive',stop(){assert.fail('Already inactive');}};
+ panel.recorderDone=new Promise(resolve=>{stopped=resolve;});panel.upload=new RecordingUpload(async blob=>calls.push(await blob.text()),assert.fail);
+ const saving=panel.stopWriter();await Promise.resolve();assert.deepEqual(calls,[]);
+ panel.upload.push(new Blob(['last-chunk']));stopped();await saving;
+ assert.deepEqual(calls,['last-chunk','/api/recordings/recording/finish']);assert.equal(panel.id,null);assert.equal(panel.recorderStarted,false);
+});
+
+test('failed MediaRecorder start does not wait for a stop event that cannot arrive',async()=>{
+ const calls=[],panel=new RecorderPanel({api:async route=>calls.push(route),toast(){}});
+ panel.id='recording';panel.status=()=>{};panel.recorderStarted=false;panel.recorder={state:'inactive',stop(){assert.fail('Never started');}};panel.recorderDone=new Promise(()=>{});
+ await panel.stopWriter();assert.deepEqual(calls,['/api/recordings/recording/finish']);assert.equal(panel.id,null);
+});
+
+function replaceGlobal(t,name,value){const previous=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});t.after(()=>{if(previous)Object.defineProperty(globalThis,name,previous);else delete globalThis[name];});}
+
+test('first recorder mount lists permitted devices once and tracks later device changes without opening them',t=>{
+ const nodes=new Map(),listeners=new Map(),calls=[],element={addEventListener(){},querySelector(selector){if(!nodes.has(selector))nodes.set(selector,{addEventListener(){}});return nodes.get(selector);}};
+ replaceGlobal(t,'document',{createElement:()=>element});replaceGlobal(t,'window',{addEventListener(){}});
+ replaceGlobal(t,'navigator',{mediaDevices:{getUserMedia(){assert.fail('Enumeration must not open devices');},addEventListener(name,callback){assert.ok(!listeners.has(name));listeners.set(name,callback);}}});
+ const panel=new RecorderPanel({api(){},toast(){}}),container={appendChild(child){child.parentNode=this;}};
+ panel.listDevices=async generation=>calls.push(generation);panel.update=()=>{};panel.positionBoxes=()=>{};
+ panel.mount(container,{});panel.mount(container,{});assert.deepEqual(calls,[0]);assert.equal(listeners.size,1);
+ panel.generation=3;listeners.get('devicechange')();assert.deepEqual(calls,[0,3]);
+});
+
+test('device refresh preserves an available selection and falls back to default after unplugging it',async t=>{
+ let devices=[{kind:'videoinput',deviceId:'camera2',label:'Camera <two>'},{kind:'audioinput',deviceId:'microphone1',label:'Microphone'}];
+ replaceGlobal(t,'navigator',{mediaDevices:{enumerateDevices:async()=>devices}});
+ const panel=new RecorderPanel({api(){},toast(){}}),fields={'[name="camera"]':{value:'camera2'},'[name="microphone"]':{value:'missing-microphone'}};panel.$=selector=>fields[selector];
+ await panel.listDevices(0);assert.equal(fields['[name="camera"]'].value,'camera2');assert.match(fields['[name="camera"]'].innerHTML,/Camera &lt;two&gt;/);assert.equal(fields['[name="microphone"]'].value,'');
+ devices=devices.filter(device=>device.kind!=='videoinput');await panel.listDevices(0);assert.equal(fields['[name="camera"]'].value,'');assert.doesNotMatch(fields['[name="camera"]'].innerHTML,/camera2/);
+});
+
+test('out-of-order device enumeration does not restore devices that a newer refresh removed',async t=>{
+ const requests=[];replaceGlobal(t,'navigator',{mediaDevices:{enumerateDevices:()=>new Promise(resolve=>requests.push(resolve))}});
+ const panel=new RecorderPanel({api(){},toast(){}}),fields={'[name="camera"]':{value:''},'[name="microphone"]':{value:''}};panel.$=selector=>fields[selector];
+ const first=panel.listDevices(0),second=panel.listDevices(0);requests[1]([]);await second;const latest=fields['[name="camera"]'].innerHTML;
+ requests[0]([{kind:'videoinput',deviceId:'removed',label:'Removed camera'}]);await first;assert.equal(fields['[name="camera"]'].innerHTML,latest);
+});
+
+test('cancellation during the start API response discards only the newly created empty writer',async t=>{
+ let startResponse,mediaStarts=0;const calls=[];
+ class FakeRecorder{static isTypeSupported(){return true;}start(){mediaStarts++;}}
+ replaceGlobal(t,'MediaRecorder',FakeRecorder);
+ const panel=new RecorderPanel({api:async(route,body)=>{calls.push({route,body});if(route==='/api/recordings/start')return new Promise(resolve=>{startResponse=resolve;});return {};},toast(){}}),fields=new Map();
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.$('[name="directory"]').value='chosen-directory';panel.$('[name="askFolder"]').checked=false;
+ panel.output={};panel.config={mode:'audio',countdown:0};panel.controls=()=>{};panel.status=()=>{};panel.error=assert.fail;
+ const pending=panel.start();await Promise.resolve();assert.equal(typeof startResponse,'function');panel.countdownAbort.abort();startResponse({id:'empty-recording'});await pending;
+ assert.deepEqual(calls.at(-1),{route:'/api/recordings/empty-recording/finish',body:{discardEmpty:true}});assert.equal(mediaStarts,0);assert.equal(panel.starting,false);assert.ok(!panel.id);
 });
 
 test('recorder route exists and language switching retains a prepared recorder and folder draft',async()=>{
