@@ -60,15 +60,6 @@ try {
   await capture('dashboard-help-1440.png','context-help',false);
   await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
-  await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
-  await prepare.scrollIntoViewIfNeeded();await prepare.focus();
-  await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
-  await prepare.hover();await help.waitFor({state:'visible'});
-  await page.waitForFunction(()=>{const tip=document.querySelector('#control-help');return !tip.hidden&&tip.textContent.startsWith('Long contextual explanation.')&&tip.scrollHeight>tip.clientHeight;});
-  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
-  await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
-  assert.equal(await help.isVisible(),true);assert.ok(await help.evaluate(el=>el.scrollTop>0));checks++;
-  await page.keyboard.press('Escape');await prepare.evaluate(el=>{delete el.dataset.help;});await page.setViewportSize({width:1440,height:1000});
   const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();await help.waitFor({state:'visible'});
   assert.equal(await studioLink.getAttribute('aria-describedby'),'control-help');
   await page.waitForTimeout(2400);assert.equal(await studioLink.evaluate(el=>el===document.activeElement),true);assert.equal(await help.isVisible(),true);checks++;
@@ -80,6 +71,15 @@ try {
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await page.locator('#dialog').isVisible(),true);
   await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
   assert.equal(app.studio.jobs.size,0);assert.equal(app.store.data.channels.length,0);checks++;
+  await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
+  await prepare.scrollIntoViewIfNeeded();await prepare.focus();
+  await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
+  await prepare.hover();await help.waitFor({state:'visible'});
+  await page.waitForFunction(()=>{const tip=document.querySelector('#control-help');return !tip.hidden&&tip.textContent.startsWith('Long contextual explanation.')&&tip.scrollHeight>tip.clientHeight;});
+  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
+  await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
+  assert.equal(await help.isVisible(),true);assert.ok(await help.evaluate(el=>el.scrollTop>0));checks++;
+  await page.keyboard.press('Escape');await prepare.evaluate(el=>{delete el.dataset.help;});await page.setViewportSize({width:1440,height:1000});
   for(const [code,title,dir] of [['es','Resumen','ltr'],['fr','Vue d’ensemble','ltr'],['hi','अवलोकन','ltr'],['ar','نظرة عامة','rtl'],['zh','概览','ltr'],['bn','সারসংক্ষেপ','ltr'],['ru','Обзор','ltr'],['id','Ringkasan','ltr'],['pt-PT','Visão geral','ltr']]){
     await page.locator('#language-select').selectOption(code);
     await page.getByRole('heading',{name:title,exact:true}).waitFor();
