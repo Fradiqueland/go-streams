@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import {Readable} from 'node:stream';
 import {PassThrough,Writable} from 'node:stream';
 import {EventEmitter} from 'node:events';
@@ -47,6 +48,12 @@ test('invalid recording folders and a failed preference write preserve prior pre
  for(const directory of ['relative',file,root+'\0bad'])assert.throws(()=>recordings.configure({directory,askEveryTime:false}));
  assert.deepEqual(recordings.preferences,before);assert.equal(recordings.active.size,0);assert.equal(recordings.items.length,0);assert.equal(fs.readFileSync(file,'utf8'),'original');
  recordings.preferencesFile=root;assert.throws(()=>recordings.configure({directory:root,askEveryTime:false}));assert.deepEqual(recordings.preferences,before);
+});
+
+test('a recording folder write probe never removes an already-existing file with the same name',t=>{
+ const {root,recordings}=fixture(t),nonce=crypto.randomUUID(),existing=path.join(root,'.gostreams-writecheck-'+nonce);fs.writeFileSync(existing,'existing user file');
+ t.mock.method(crypto,'randomUUID',()=>nonce);assert.throws(()=>recordings.configure({directory:root,askEveryTime:false}));
+ assert.equal(fs.existsSync(existing),true,'The existing file must survive a failed exclusive create');assert.equal(fs.readFileSync(existing,'utf8'),'existing user file');
 });
 test('invalid recording data is retained locally as interrupted, rather than reported as a saved video',async t=>{
  const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true});const req=Readable.from([Buffer.from('invalid-webm')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);await assert.rejects(recordings.finish(id),/preserved/);assert.equal(recordings.state()[0].status,'interrupted');assert.ok(fs.existsSync(path.join(root,'recordings',id+'.part')));assert.throws(()=>recordings.media(id),/Finish/);

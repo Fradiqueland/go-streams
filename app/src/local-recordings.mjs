@@ -21,10 +21,10 @@ export class LocalRecordings {
  validDirectory(value){return typeof value==='string'&&value.length<=4096&&path.isAbsolute(value)&&!/[\x00-\x1f]/.test(value);}
  prepareDirectory(value){
   if(!this.validDirectory(value))throw new AppError('Choose an absolute recording folder path.');
-  let probe,fd;
-  try{fs.mkdirSync(value,{recursive:true});const directory=fs.realpathSync(value);if(!fs.statSync(directory).isDirectory())throw Error();probe=path.join(directory,'.gostreams-writecheck-'+crypto.randomUUID());fd=fs.openSync(probe,'wx',0o600);fs.closeSync(fd);fd=undefined;fs.unlinkSync(probe);return directory;}
+  let probe,fd,created=false;
+  try{fs.mkdirSync(value,{recursive:true});const directory=fs.realpathSync(value);if(!fs.statSync(directory).isDirectory())throw Error();probe=path.join(directory,'.gostreams-writecheck-'+crypto.randomUUID());fd=fs.openSync(probe,'wx',0o600);created=true;fs.closeSync(fd);fd=undefined;fs.unlinkSync(probe);created=false;return directory;}
   catch{throw new AppError('The recording folder is unavailable or cannot be written. Choose another folder.',403);}
-  finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}if(probe)try{fs.unlinkSync(probe);}catch{}}
+  finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}if(created)try{fs.unlinkSync(probe);}catch{}}
  }
  configure(input){
   if(this.closed||this.studio.closing)throw new AppError('The studio is closing.',409);
