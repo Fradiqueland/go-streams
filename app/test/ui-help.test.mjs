@@ -96,3 +96,17 @@ test('repeated hover events do not replace unchanged help or reset its reading p
  e.emit('pointerover',{target:button,pointerType:'mouse'});e.flush();e.tip.scrollTop=120;const before=writes;
  e.emit('pointerover',{target:button,pointerType:'mouse'});e.flush();assert.equal(writes,before);assert.equal(e.tip.scrollTop,120);
 });
+
+test('restoring focus after a redraw keeps dismissed help closed without disabling keyboard explanations',()=>{
+ const e=environment(),installed=installContextHelp(e.doc,e.win),button=control({dataset:{action:'playlist-rename'}});
+ button.focus=()=>{e.doc.activeElement=button;e.emit('focusin',{target:button});};
+ installed.restoreFocus(button,false);assert.equal(e.doc.activeElement,button);assert.equal(e.tip.hidden,true);assert.equal(button.getAttribute('aria-describedby'),null);
+ e.emit('focusin',{target:button});assert.equal(e.tip.hidden,false);assert.equal(button.getAttribute('aria-describedby'),'control-help');
+});
+
+test('restoring focus preserves an explanation that was already being read before a redraw',()=>{
+ const e=environment(),installed=installContextHelp(e.doc,e.win),old=control({dataset:{action:'playlist-rename'}}),replacement=control({dataset:{action:'playlist-rename'}});
+ e.doc.activeElement=old;e.emit('focusin',{target:old});old.isConnected=false;
+ replacement.focus=()=>{e.doc.activeElement=replacement;e.emit('focusin',{target:replacement});};
+ installed.restoreFocus(replacement,true);assert.equal(e.tip.hidden,false);assert.equal(old.getAttribute('aria-describedby'),null);assert.equal(replacement.getAttribute('aria-describedby'),'control-help');
+});

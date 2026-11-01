@@ -77,6 +77,7 @@ function heading(title, subtitle, actions = '') { return `<div class="page-headi
 function draw() {
   if(interfaceClosing)return;
   const focused=document.activeElement;
+  const focusedHelp=Boolean(focused?.getAttribute?.('aria-describedby')?.split(/\s+/).includes('control-help'));
   const focusKey=focused?.closest?.('#content')&&['BUTTON','A'].includes(focused.tagName)?{tag:focused.tagName,action:focused.dataset.action,id:focused.dataset.id,href:focused.getAttribute('href')}:null;
   const matchesFocus=el=>focusKey&&el.tagName===focusKey.tag&&el.dataset.action===focusKey.action&&el.dataset.id===focusKey.id&&el.getAttribute('href')===focusKey.href;
   const focusIndex=focusKey?[...document.querySelectorAll('#content button,#content a')].filter(matchesFocus).indexOf(focused):-1;
@@ -96,7 +97,7 @@ function draw() {
   if(page==='settings')restoreSettings();
   applyBusyActions();
   for (const [id,value] of retained) { const el=document.getElementById(id); if(el&&[...el.options].some(o=>o.value===value))el.value=value; }
-  if(focusIndex>=0)[...document.querySelectorAll('#content button,#content a')].filter(matchesFocus)[focusIndex]?.focus({preventScroll:true});
+  if(focusIndex>=0){const replacement=[...document.querySelectorAll('#content button,#content a')].filter(matchesFocus)[focusIndex];if(replacement){if(contextualHelp)contextualHelp.restoreFocus(replacement,focusedHelp);else replacement.focus({preventScroll:true});}}
 }
 function dashboardStart(){
  const ready=state.channels.filter(channel=>channel.hasKey).length;

@@ -6,7 +6,7 @@ Current source version: **1.0.10**. Windows has an Electron desktop edition and 
 
 ## Interface review (1.0.10)
 
-Changing language waits for pending chat or recording-folder operations and preserves unsent messages, account edits and unsaved recording preferences. Chat account status refreshes retain edited setup forms, and setup fields stay locked until a save completes. Submitted client secrets are cleared from the form after a successful save. Contextual help scrolling, placement and project-export guidance remain supported.
+Changing language waits for pending chat or recording-folder operations and preserves unsent messages, account edits and unsaved recording preferences. Chat account status refreshes retain edited setup forms, and setup fields stay locked until a save completes. Submitted client secrets are cleared from the form after a successful save. Contextual help scrolling, placement and project-export guidance remain supported. Restoring keyboard focus after a view refresh no longer reopens dismissed help over neighbouring controls.
 
 ## Easier dashboard and contextual help (1.0.10)
 

@@ -6,7 +6,7 @@ Consulte também [as funções do estúdio e a configuração do chat](STREAMYAR
 
 ## Revisão 1.0.10
 
-A mudança de idioma aguarda as operações do chat e da pasta de gravação e protege mensagens, configurações de contas e preferências ainda por guardar. As atualizações de estado conservam os formulários do chat em edição; os campos ficam bloqueados enquanto se guarda a configuração. Após guardar, o segredo introduzido é retirado do campo. Mantêm-se as correções da ajuda contextual e a explicação sobre a exportação do projeto.
+A mudança de idioma aguarda as operações do chat e da pasta de gravação e protege mensagens, configurações de contas e preferências ainda por guardar. As atualizações de estado conservam os formulários do chat em edição; os campos ficam bloqueados enquanto se guarda a configuração. Após guardar, o segredo introduzido é retirado do campo. Mantêm-se as correções da ajuda contextual e a explicação sobre a exportação do projeto. Repor o foco do teclado após atualizar a vista já não reabre uma ajuda fechada sobre os botões vizinhos.
 
 ## Interface e ajuda contextual 1.0.10
 

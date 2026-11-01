@@ -128,6 +128,8 @@ try {
   await page.locator('#modal-form').getByRole('button',{name:'Guardar',exact:true}).click();
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.store.data.playlists[0].name,'Programa de ensaio renomeado');checks++;
+  await page.getByRole('heading',{name:'Programa de ensaio renomeado',exact:true}).waitFor();
+  await help.waitFor({state:'hidden'});checks++;
   await page.locator('[data-action=preview-playlist]').first().click();
   await page.getByRole('button', { name: 'Ver resultado', exact: true }).waitFor({ timeout: 30000 });
   await page.getByRole('button', { name: 'Ver resultado', exact: true }).click();

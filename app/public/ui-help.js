@@ -212,7 +212,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  if(!doc?.body||!doc.createElement||!win?.addEventListener)return null;
  if(installations.has(doc))return installations.get(doc);
  const tip=doc.createElement('div');tip.id='control-help';tip.setAttribute('role','tooltip');tip.hidden=true;doc.body.appendChild(tip);
- let active=null,originalTitle=null,generatedLabel=null,showTimer,hideTimer,blocked=null,positionRule,pointerTarget=null;
+ let active=null,originalTitle=null,generatedLabel=null,showTimer,hideTimer,blocked=null,positionRule,pointerTarget=null,restoringFocus=false;
  const clear=()=>{win.clearTimeout(showTimer);win.clearTimeout(hideTimer);showTimer=hideTimer=null;};
  function hide(){
   clear();tip.hidden=true;
@@ -254,11 +254,11 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
   pointerTarget=null;
   if(tip.contains(event.target)||active?.contains(event.target))laterHide();else win.clearTimeout(showTimer);
  });
- doc.addEventListener('focusin',event=>{const control=target(event);if(control&&control!==blocked)show(control);});
+ doc.addEventListener('focusin',event=>{const control=target(event);if(!restoringFocus&&control&&control!==blocked)show(control);});
  doc.addEventListener('focusout',event=>{if(blocked?.contains(event.target))blocked=null;if(active?.contains(event.target))hide();});
  doc.addEventListener('pointerdown',event=>{if(!tip.contains(event.target))hide();},true);
  doc.addEventListener('keydown',event=>{if(event.key==='Escape'&&!tip.hidden){blocked=active;event.preventDefault();event.stopPropagation();hide();}},true);
  doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))hide();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
  const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(()=>{if(active&&!active.isConnected)hide();else if(active&&!tip.hidden){const content=helpFor(active)||originalTitle||'';if(content!==tip.textContent){tip.textContent=content;position();}}}):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']});
- const installed={hide,tip,isReading:()=>Boolean((pointerTarget?.isConnected&&(showTimer||(!tip.hidden&&active===pointerTarget)))||(!tip.hidden&&active===doc.activeElement))};installations.set(doc,installed);return installed;
+ const installed={hide,tip,restoreFocus(control,wasReading=false){hide();restoringFocus=true;try{control.focus({preventScroll:true});}finally{restoringFocus=false;}if(wasReading)show(control);},isReading:()=>Boolean((pointerTarget?.isConnected&&(showTimer||(!tip.hidden&&active===pointerTarget)))||(!tip.hidden&&active===doc.activeElement))};installations.set(doc,installed);return installed;
 }
