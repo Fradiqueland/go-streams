@@ -477,7 +477,7 @@ export class Studio {
     const encoded = encodingArgs(encoding, playlist.quality, media, { preview: job.preview });
     const preserveInput=Boolean(context?.encoding?.copy&&!overlayEnabled);
     if(preserveInput){
-      const vf=encoded.args.indexOf('-vf');if(vf>=0)encoded.args.splice(vf,2);
+      const vf=encoded.args.indexOf('-vf');if(vf>=0)encoded.args[vf+1]='pad=ceil(iw/2)*2:ceil(ih/2)*2';
       const fps=media[0].fps||encoded.profile.fps;encoded.profile.fps=fps;
       encoded.args[encoded.args.indexOf('-g')+1]=String(Math.max(1,Math.round(fps*2)));
     }
