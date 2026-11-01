@@ -236,5 +236,7 @@
   "Banner superior": "Bandeau supérieur",
   "Banner inferior": "Bandeau inférieur",
   "Configurar sobreposições": "Configurer les superpositions",
-  "Guardar sobreposições": "Enregistrer les superpositions"
+  "Guardar sobreposições": "Enregistrer les superpositions",
+  "Preservar resolução e fps do vídeo original": "Conserver la résolution et la cadence de la vidéo d'origine",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Sans superpositions actives, conserve la résolution et la cadence du fichier. Les débits vidéo et audio restent applicables."
 }

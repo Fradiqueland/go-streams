@@ -92,11 +92,15 @@ test('paused queue offers to save without claiming it resumes transmission',asyn
 });
 
 
-test('direct-copy mode disables transcoding controls but preserves their profile when saving',async()=>{
+test('source-preserving mode keeps bitrates editable and retains the selected profile when saving',async()=>{
  const h=ready();h.run("page='settings'");
  const form=h.fields('encoding-form',{copy:true,videoBitrate:'4500',audioBitrate:'192',fps:'60',aspect:'9:16'});
  await h.emit('change',form.elements.namedItem('copy'));
- for(const name of ['videoBitrate','audioBitrate','fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,true);
+ for(const name of ['videoBitrate','audioBitrate'])assert.equal(form.elements.namedItem(name).disabled,false);
+ for(const name of ['fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,true);
+ h.run("state.settings.overlays={image:{enabled:true}};syncEncodingControls()");
+ for(const name of ['videoBitrate','audioBitrate','fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,false);
+ h.run("state.settings.overlays={};syncEncodingControls()");
  await h.emit('submit',form);
  assert.deepEqual(JSON.parse(h.requests[0].body).encoding,{copy:true,videoBitrate:4500,audioBitrate:192,fps:60,aspect:'9:16'});
  form.elements.namedItem('copy').checked=false;await h.emit('change',form.elements.namedItem('copy'));

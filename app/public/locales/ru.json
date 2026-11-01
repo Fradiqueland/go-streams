@@ -236,5 +236,7 @@
   "Banner superior": "Верхняя строка",
   "Banner inferior": "Нижняя строка",
   "Configurar sobreposições": "Настроить наложения",
-  "Guardar sobreposições": "Сохранить наложения"
+  "Guardar sobreposições": "Сохранить наложения",
+  "Preservar resolução e fps do vídeo original": "Сохранять разрешение и частоту кадров исходного видео",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Без активных наложений сохраняются разрешение и частота кадров файла. Битрейты видео и аудио продолжают применяться."
 }

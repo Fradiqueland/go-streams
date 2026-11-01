@@ -236,5 +236,7 @@
   "Banner superior": "الشريط العلوي",
   "Banner inferior": "الشريط السفلي",
   "Configurar sobreposições": "إعداد التراكبات",
-  "Guardar sobreposições": "حفظ التراكبات"
+  "Guardar sobreposições": "حفظ التراكبات",
+  "Preservar resolução e fps do vídeo original": "الحفاظ على دقة الفيديو الأصلي ومعدل إطاراته",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "عند عدم وجود تراكبات نشطة، يحافظ على دقة الملف ومعدل إطاراته. تظل معدلات بت الفيديو والصوت مطبقة."
 }

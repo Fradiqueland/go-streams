@@ -236,5 +236,7 @@
   "Banner superior": "Teks berjalan atas",
   "Banner inferior": "Teks berjalan bawah",
   "Configurar sobreposições": "Konfigurasi overlay",
-  "Guardar sobreposições": "Simpan overlay"
+  "Guardar sobreposições": "Simpan overlay",
+  "Preservar resolução e fps do vídeo original": "Pertahankan resolusi dan laju bingkai video asli",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Tanpa overlay aktif, resolusi dan laju bingkai berkas dipertahankan. Bitrate video dan audio tetap berlaku."
 }

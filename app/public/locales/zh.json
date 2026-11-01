@@ -236,5 +236,7 @@
   "Banner superior": "顶部滚动字幕",
   "Banner inferior": "底部滚动字幕",
   "Configurar sobreposições": "配置叠加层",
-  "Guardar sobreposições": "保存叠加层"
+  "Guardar sobreposições": "保存叠加层",
+  "Preservar resolução e fps do vídeo original": "保留原视频的分辨率和帧率",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "没有启用叠加层时，保留文件的分辨率和帧率。视频和音频码率仍然生效。"
 }

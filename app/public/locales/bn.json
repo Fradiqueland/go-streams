@@ -236,5 +236,7 @@
   "Banner superior": "উপরের টিকার",
   "Banner inferior": "নিচের টিকার",
   "Configurar sobreposições": "ওভারলে কনফিগার করুন",
-  "Guardar sobreposições": "ওভারলে সংরক্ষণ করুন"
+  "Guardar sobreposições": "ওভারলে সংরক্ষণ করুন",
+  "Preservar resolução e fps do vídeo original": "মূল ভিডিওর রেজোলিউশন ও ফ্রেম রেট বজায় রাখুন",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "সক্রিয় ওভারলে না থাকলে ফাইলের রেজোলিউশন ও ফ্রেম রেট বজায় থাকে। ভিডিও ও অডিওর বিটরেট প্রযোজ্য থাকে।"
 }

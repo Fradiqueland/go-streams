@@ -67,7 +67,8 @@ function restoreSettings(){
 function syncEncodingControls(){
  const form=document.getElementById('encoding-form');if(!form)return;
  const copy=form.elements.namedItem('copy');if(!copy)return;
- for(const name of ['videoBitrate','audioBitrate','fps','aspect']){const control=form.elements.namedItem(name);if(control)control.disabled=copy.checked||settingsSaving;}
+ const preserve=copy.checked&&!['top','bottom','image'].some(name=>state.settings?.overlays?.[name]?.enabled);
+ for(const name of ['videoBitrate','audioBitrate','fps','aspect']){const control=form.elements.namedItem(name);if(control)control.disabled=settingsSaving||(preserve&&['fps','aspect'].includes(name));}
 }
 
 function navigate(next) { location.hash = next; }
