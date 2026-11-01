@@ -16,7 +16,7 @@ const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const di
 let app,browser,socket;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
 let phase='startup';
 const watchdog=setTimeout(()=>{
- console.error(JSON.stringify({testTimedOut:true,phase,jobs:app?.studio.state().jobs,recordings:app?.recordings.state(),pageErrors:pagesErrors}));
+ console.error(JSON.stringify({testTimedOut:true,phase,jobs:app?.studio.state().jobs,recordings:app?.recordings.state(),receivers:receivers.map(r=>({pid:r.child.pid,exitCode:r.child.exitCode,stderr:r.diagnostics()})),pageErrors:pagesErrors}));
  socket?.close();browser?.kill();for(const receiver of receivers)receiver.child.kill();for(const job of app?.studio.jobs.values()||[])job.child?.kill();process.exit(1);
 },90000).unref();
 async function freePort(){const s=net.createServer();await new Promise((resolve,reject)=>{s.once('error',reject);s.listen(0,'127.0.0.1',resolve);});const port=s.address().port;await new Promise(resolve=>s.close(resolve));return port;}
@@ -32,10 +32,10 @@ try{
  const {ffmpeg,ffprobe}=toolsFor(app.store.data.settings);
  for(let i=0;i<2;i++){
   const port=await freePort(),url=`rtmp://127.0.0.1:${port}/live`,key=`test-${i}`,output=path.join(directory,`destination-${i}.flv`);
-  const child=spawn(ffmpeg,['-hide_banner','-loglevel','warning','-listen','1','-timeout','30','-i',`${url}/${key}`,'-c','copy','-f','flv','-y',output],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+  const child=spawn(ffmpeg,['-hide_banner','-loglevel','warning','-listen','1','-timeout','30','-rw_timeout','15000000','-i',`${url}/${key}`,'-c','copy','-f','flv','-y',output],{windowsHide:true,stdio:['ignore','ignore','pipe']});
   let stderr='';child.stderr.on('data',data=>{stderr=(stderr+data).slice(-3000);});
   const done=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>resolve({code,stderr}));});
-  receivers.push({child,done,output});app.studio.saveChannel({name:`Loopback ${i+1}`,platform:i===0?'YouTube':'Personalizado',url,key});
+  receivers.push({child,done,output,diagnostics:()=>stderr});app.studio.saveChannel({name:`Loopback ${i+1}`,platform:i===0?'YouTube':'Personalizado',url,key});
  }
  browser=spawn(binary,['--headless=new','--disable-gpu','--remote-debugging-port=0',`--user-data-dir=${path.join(directory,'browser')}`,'--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required','--no-first-run','--no-default-browser-check','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
  const endpoint=await new Promise((resolve,reject)=>{
@@ -99,10 +99,16 @@ try{
  await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
  phase='recording-saved';console.log(JSON.stringify({phase}));
  assert.equal(app.recordings.state()[0].status,'completed');
+ phase='validating-recording';console.log(JSON.stringify({phase}));
  const localMedia=await runProcess(ffprobe,['-v','error','-show_format','-of','json',app.recordings.media(app.recordings.state()[0].id)]);
  assert.ok(Number(JSON.parse(localMedia.stdout).format.duration)>1);
+ phase='releasing-preview';console.log(JSON.stringify({phase}));
  await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
- for(const receiver of receivers){await receiver.done;const {stdout}=await runProcess(ffprobe,['-v','error','-count_packets','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.ok(Number(streams.find(s=>s.codec_type==='video').nb_read_packets)>10);assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');}
+ for(const [index,receiver]of receivers.entries()){
+  phase=`validating-destination-${index+1}`;console.log(JSON.stringify({phase}));
+  let timer;try{await Promise.race([receiver.done,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(`RTMP test receiver did not close: ${receiver.diagnostics()}`)),25000);})]);}finally{clearTimeout(timer);}
+  const {stdout}=await runProcess(ffprobe,['-v','error','-count_packets','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.ok(Number(streams.find(s=>s.codec_type==='video').nb_read_packets)>10);assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');
+ }
  assert.deepEqual(pagesErrors,[]);passed=true;
  const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false};
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
