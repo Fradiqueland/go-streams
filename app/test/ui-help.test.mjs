@@ -89,3 +89,10 @@ test('changed prerequisites reposition help and respect the usable viewport widt
 test('project export help distinguishes configuration from media and protected keys',()=>{
  setLanguage('en',{persist:false});const link=control({tagName:'A'});link.setAttribute('href','/api/export');assert.match(helpFor(link),/without stream keys.*Video files are not included/);
 });
+
+test('repeated hover events do not replace unchanged help or reset its reading position',()=>{
+ const e=environment();let writes=0,value='';Object.defineProperty(e.tip,'textContent',{get:()=>value,set:text=>{value=text;writes++;e.tip.scrollTop=0;}});
+ installContextHelp(e.doc,e.win);const button=control({dataset:{help:'A long explanation'}});
+ e.emit('pointerover',{target:button,pointerType:'mouse'});e.flush();e.tip.scrollTop=120;const before=writes;
+ e.emit('pointerover',{target:button,pointerType:'mouse'});e.flush();assert.equal(writes,before);assert.equal(e.tip.scrollTop,120);
+});

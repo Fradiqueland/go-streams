@@ -226,7 +226,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  }
  function show(control){
   clear();const content=helpFor(control);if(!content||!control.isConnected)return;
-  if(active===control&&!tip.hidden){tip.textContent=content;return;}
+  if(active===control&&!tip.hidden){if(content!==tip.textContent){tip.textContent=content;position();}return;}
   hide();active=control;originalTitle=control.getAttribute('title');
   if(originalTitle!==null){if(!control.getAttribute('aria-label')&&!control.textContent.trim()){generatedLabel=originalTitle;control.setAttribute('aria-label',generatedLabel);}control.removeAttribute('title');}
   const parent=control.closest('dialog[open]')||doc.body;if(tip.parentNode!==parent)parent.appendChild(tip);

@@ -61,8 +61,10 @@ try {
   await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
   await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
+  await prepare.scrollIntoViewIfNeeded();await prepare.focus();
   await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
   await prepare.hover();await help.waitFor({state:'visible'});
+  await page.waitForFunction(()=>{const tip=document.querySelector('#control-help');return !tip.hidden&&tip.textContent.startsWith('Long contextual explanation.')&&tip.scrollHeight>tip.clientHeight;});
   assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
   await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
   assert.equal(await help.isVisible(),true);assert.ok(await help.evaluate(el=>el.scrollTop>0));checks++;
