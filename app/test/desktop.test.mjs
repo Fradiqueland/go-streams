@@ -35,7 +35,7 @@ test('macOS browser opens an app window or delegates one URL without shell inter
  for(const browserPresent of [true,false]){
   let call;const url='http://127.0.0.1:4317/?launch='+'a'.repeat(64);openBrowser(url,{platform:'darwin',directory:'/Users/João/Library/Application Support/Go Streams',prepareProfile:()=>'/Users/João/Library/Application Support/Go Streams/desktop-browser',exists:()=>browserPresent,spawnProcess:(...args)=>{call=args;const child=new EventEmitter();child.unref=()=>{};return child;}});
   assert.equal(call[0],'/usr/bin/open');assert.equal(call[2].stdio,'ignore');assert.ok(!call[1].some(x=>x.includes('--no-sandbox')));
-  if(browserPresent){assert.deepEqual(call[1].slice(0,4),['-n','-a','/Applications/Google Chrome.app','--args']);assert.ok(call[1].includes('--app='+url));assert.ok(!call[1].some(arg=>arg.startsWith('--user-data-dir=')));assert.ok(call[1].includes('--disable-features=Translate,msEdgeTranslate'));assert.ok(!call[1].includes('-g'));}
+  if(browserPresent){assert.deepEqual(call[1].slice(0,4),['-n','-a','/Applications/Google Chrome.app','--args']);assert.ok(call[1].includes('--app='+url));assert.ok(!call[1].some(arg=>arg.startsWith('--user-data-dir=')));assert.ok(call[1].includes('--disable-features=Translate,msEdgeTranslate'));assert.ok(call[1].includes('--disable-background-timer-throttling'));assert.ok(call[1].includes('--disable-renderer-backgrounding'));assert.ok(!call[1].includes('-g'));}
   else assert.deepEqual(call[1],[url]);
  }
 });

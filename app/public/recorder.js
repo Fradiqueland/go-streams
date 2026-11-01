@@ -100,7 +100,7 @@ export class RecorderPanel {
   this.$('[data-recorder="cancel"]').hidden=!this.starting;
   for(const control of this.element.querySelectorAll('.recorder-destination input,.recorder-destination .actions button'))control.disabled=locked||this.folderBusy;
   for(const control of this.element.querySelectorAll('.recorder-crop-fields input,.recorder-crop-fields button'))control.disabled=locked;
-  this.$('.recorder-region').hidden=!this.screenVideo||this.config?.mode==='audio';
+  this.$('.recorder-region').hidden=!this.screenVideo||!['screen','screen-camera'].includes(this.config?.mode);
   this.$('.recorder-camera-controls').hidden=!prepared||this.config?.mode!=='screen-camera';
   this.$('.recorder-camera-box').hidden=!prepared||this.config?.mode!=='screen-camera';
   this.$('.recorder-audio-only').hidden=!prepared||this.config?.mode!=='audio';
