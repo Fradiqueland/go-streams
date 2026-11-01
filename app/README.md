@@ -8,7 +8,7 @@ Consulte também [as funções do estúdio e a configuração do chat](STREAMYAR
 
 A finalização do gravador aguarda os últimos dados do navegador e coordena pedidos simultâneos de paragem. A seleção da área fica protegida durante a gravação, os valores da posição da câmara correspondem ao resultado e o contorno acompanha o tamanho real em ecrãs pequenos. As gravações mantêm a localização correta quando a pasta predefinida muda; o seletor abre na pasta atual quando esta ainda existe.
 
-As definições confirmadas como guardadas permanecem visíveis mesmo se a atualização do estado falhar. No Windows, os downloads e fontes YouTube utilizam o motor JavaScript incluído no Electron em modo Node, sem instalação adicional. Os testes incluem estas falhas, gravações consecutivas, cancelamento da seleção, ficheiros de áudio/vídeo e posicionamento da câmara pelo teclado. Os workflows Windows e Mac executam dez ciclos completos e testes de navegador antes do empacotamento.
+As definições confirmadas como guardadas permanecem visíveis mesmo se a atualização do estado falhar. No Windows, os downloads e fontes YouTube utilizam o motor JavaScript incluído no Electron em modo Node, sem instalação adicional. A migração de dados repete bloqueios temporários de pastas durante um período limitado e preserva destinos criados entretanto. Os testes incluem estas falhas, gravações consecutivas, cancelamento da seleção, ficheiros de áudio/vídeo e posicionamento da câmara pelo teclado. Os workflows Windows e Mac executam dez ciclos completos e testes de navegador antes do empacotamento.
 
 ## Video and audio recorder (1.1.0)
 

@@ -15,6 +15,20 @@ function regularTree(directory){
  }
 }
 function nonempty(directory){return fs.existsSync(directory)&&fs.readdirSync(directory).length>0;}
+function existing(file){try{return fs.lstatSync(file);}catch(error){if(error.code==='ENOENT')return null;throw error;}}
+function publishMigration(stage,target,{platform=process.platform,pause=milliseconds=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,milliseconds)}={}){
+ // Windows scanners can briefly lock a newly copied folder. Retry only that
+ // publication step, with a bounded startup delay, and never remove a target
+ // that another process created while the migration was being prepared.
+ for(let attempt=0;;attempt++){
+  if(existing(target))throw Error('The destination folder changed during migration. Existing data was preserved.');
+  try{fs.renameSync(stage,target);return;}
+  catch(error){
+   if(platform!=='win32'||!['EPERM','EACCES','EBUSY'].includes(error.code)||attempt>=5)throw error;
+   pause(100*(attempt+1));
+  }
+ }
+}
 function copyData(source,destination,{skipSession=false}={}){
  regularTree(source);fs.mkdirSync(destination,{recursive:true});
  for(const entry of fs.readdirSync(source,{withFileTypes:true})){
@@ -23,9 +37,11 @@ function copyData(source,destination,{skipSession=false}={}){
   if(entry.isDirectory())copyData(from,to,{skipSession});else fs.copyFileSync(from,to,fs.constants.COPYFILE_EXCL);
  }
 }
-function migrateData(target,legacy){
+function migrateData(target,legacy,options){
  target=path.resolve(target);
  if(nonempty(target)||!legacy)return {directory:target,migrated:false};
+ const originalTarget=existing(target);
+ if(originalTarget&&(!originalTarget.isDirectory()||originalTarget.isSymbolicLink()))throw Error('The data destination must be a regular folder. Existing data was preserved.');
  legacy=path.resolve(legacy);
  if(target===legacy)return {directory:target,migrated:false};
  const a=target.toLowerCase()+path.sep,b=legacy.toLowerCase()+path.sep;
@@ -35,12 +51,17 @@ function migrateData(target,legacy){
  const stage=path.join(parent,'.electron-data-migration-'+crypto.randomUUID());
  try{
   copyData(legacy,stage,{skipSession:true});
-  if(fs.existsSync(target))fs.rmdirSync(target);
-  fs.renameSync(stage,target);
+  if(originalTarget){
+   const current=existing(target);
+   if(!current||current.dev!==originalTarget.dev||current.ino!==originalTarget.ino||current.isSymbolicLink())throw Error('The destination folder changed during migration. Existing data was preserved.');
+   // rmdir only succeeds for the same empty folder, never for saved data.
+   fs.rmdirSync(target);
+  }
+  publishMigration(stage,target,options);
   return {directory:target,migrated:true};
  }finally{if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});}
 }
-function migratePreferences(data){
+function migratePreferences(data,options){
  const target=path.join(data,'electron-session');
  const legacy=path.join(data,'desktop-browser','Default','Local Storage');
  if(fs.existsSync(target)||!fs.existsSync(legacy))return target;
@@ -48,7 +69,7 @@ function migratePreferences(data){
  try{
   copyData(legacy,path.join(stage,'Local Storage'));
   fs.writeFileSync(path.join(stage,'.migrated-local-preferences'),'1\n');
-  fs.renameSync(stage,target);
+  publishMigration(stage,target,options);
  }finally{if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});}
  // Edge/Chrome cookies are never modified or treated as decryptable Electron cookies.
  return target;

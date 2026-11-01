@@ -44,6 +44,40 @@ test('interrupted Electron data migration does not publish a partial profile or 
  assert.ok(!fs.existsSync(target));assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'preserved');
  assert.deepEqual(fs.readdirSync(path.dirname(target)),[]);
 });
+
+test('Electron retries transient Windows migration publication locks without recopying or modifying the original',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','preserved');
+ fs.mkdirSync(target,{recursive:true});const rename=fs.renameSync.bind(fs),delays=[];let attempts=0;
+ t.mock.method(fs,'renameSync',(from,to)=>{if(to===target&&++attempts<3)throw Object.assign(Error('Controlled scanner lock'),{code:'EPERM'});return rename(from,to);});
+ assert.equal(dataPolicy.migrateData(target,source,{platform:'win32',pause:delay=>delays.push(delay)}).migrated,true);
+ assert.equal(attempts,3);assert.deepEqual(delays,[100,200]);
+ assert.equal(fs.readFileSync(path.join(target,'project.json'),'utf8'),'preserved');assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'preserved');
+ assert.deepEqual(fs.readdirSync(path.dirname(target)),['data']);
+});
+
+for(const withData of [false,true])test('Electron migration preserves a concurrently created '+(withData?'populated':'empty')+' destination during retry',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','portable original');let attempts=0;
+ t.mock.method(fs,'renameSync',()=>{attempts++;fs.mkdirSync(target);if(withData)fs.writeFileSync(path.join(target,'project.json'),'concurrent project');throw Object.assign(Error('Controlled competing destination'),{code:'EPERM'});});
+ assert.throws(()=>dataPolicy.migrateData(target,source,{platform:'win32',pause:()=>{}}),/destination folder changed/);
+ assert.equal(attempts,1);assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'portable original');
+ assert.deepEqual(fs.readdirSync(target),withData?['project.json']:[]);if(withData)assert.equal(fs.readFileSync(path.join(target,'project.json'),'utf8'),'concurrent project');
+ assert.deepEqual(fs.readdirSync(path.dirname(target)),['data']);
+});
+
+for(const [code,expected] of [['EACCES',6],['EIO',1]])test('Electron migration bounds '+code+' publication failures and preserves the portable source',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','portable original');let attempts=0,delays=0;
+ t.mock.method(fs,'renameSync',()=>{attempts++;throw Object.assign(Error('Controlled failure'),{code});});
+ assert.throws(()=>dataPolicy.migrateData(target,source,{platform:'win32',pause:()=>delays++}),error=>error.code===code);
+ assert.equal(attempts,expected);assert.equal(delays,expected-1);assert.ok(!fs.existsSync(target));
+ assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'portable original');assert.deepEqual(fs.readdirSync(path.dirname(target)),[]);
+});
+
+test('Electron preferences migration also recovers from a transient Windows publication lock',t=>{
+ const root=fixture(t);write(root,'desktop-browser/Default/Local Storage/leveldb/data','saved preferences');const target=path.join(root,'electron-session'),rename=fs.renameSync.bind(fs);let attempts=0;
+ t.mock.method(fs,'renameSync',(from,to)=>{if(to===target&&++attempts===1)throw Object.assign(Error('Controlled busy folder'),{code:'EBUSY'});return rename(from,to);});
+ assert.equal(dataPolicy.migratePreferences(root,{platform:'win32',pause:()=>{}}),target);assert.equal(attempts,2);
+ assert.equal(fs.readFileSync(path.join(target,'Local Storage/leveldb/data'),'utf8'),'saved preferences');assert.equal(fs.readFileSync(path.join(root,'desktop-browser/Default/Local Storage/leveldb/data'),'utf8'),'saved preferences');
+});
 test('nested data migration and ambiguous portable projects are rejected',t=>{
  const root=fixture(t),source=path.join(root,'old');write(source,'project.json','project');
  assert.throws(()=>dataPolicy.migrateData(path.join(source,'nested','data'),source),/separate/);
