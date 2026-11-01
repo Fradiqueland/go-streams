@@ -1,4 +1,5 @@
 import {hasOverlays,overlayArguments,overlayDefaults} from './overlays.mjs';
+import {appendProgramOutput} from './program-output.mjs';
 import {sameLocalFile,refreshManagedPaths} from './media-paths.mjs';
 import {StringDecoder} from 'node:string_decoder';
 import {windowsTool} from './system-tools.mjs';
@@ -472,8 +473,14 @@ export class Studio {
     }).join('\n');
     fs.writeFileSync(manifest, contents, { mode: 0o600 });
     const context=this.contexts.get(job.id),overlays=context?.overlays||overlayDefaults,overlayEnabled=hasOverlays(overlays);
-    const encoding=overlayEnabled&&context?.encoding?{...context.encoding,copy:false}:context?.encoding;
+    const encoding=context?.encoding?{...context.encoding,copy:false}:context?.encoding;
     const encoded = encodingArgs(encoding, playlist.quality, media, { preview: job.preview });
+    const preserveInput=Boolean(context?.encoding?.copy&&!overlayEnabled);
+    if(preserveInput){
+      const vf=encoded.args.indexOf('-vf');if(vf>=0)encoded.args.splice(vf,2);
+      const fps=media[0].fps||encoded.profile.fps;encoded.profile.fps=fps;
+      encoded.args[encoded.args.indexOf('-g')+1]=String(Math.max(1,Math.round(fps*2)));
+    }
     job.encoding = encoded.profile;
     const args = ['-hide_banner', '-loglevel', 'warning', '-progress', 'pipe:1', '-stats_period', '1', '-re'];
     if (!encoded.profile.copy) args.push('-xerror');
@@ -485,8 +492,8 @@ export class Studio {
       const vf=encoded.args.indexOf('-vf'),filter=encoded.args[vf+1];
       const plan=overlayArguments(overlays,this.store.directory,playlist.quality,encoded.profile.aspect,filter,encoded.needsSilence?2:1);
       const outputArgs=[...encoded.args];outputArgs.splice(vf,2);outputArgs[outputArgs.indexOf('0:v:0')]='['+plan.output+']';
-      args.push(...plan.inputs,'-filter_complex_threads','1','-filter_complex',plan.filter,...outputArgs);
-    }else args.push(...encoded.args);
+      args.push(...plan.inputs);appendProgramOutput(args,outputArgs,playlist.quality,encoded.profile.aspect,plan.filter);
+    }else appendProgramOutput(args,encoded.args,playlist.quality,encoded.profile.aspect,'',preserveInput?[media[0].width,media[0].height]:undefined);
     if (job.preview) {
       job.output = `${job.id}.mp4`;
       args.push('-t', '8', '-movflags', '+faststart', '-y', path.join(this.store.directory, 'previews', job.output));

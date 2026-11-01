@@ -1,3 +1,4 @@
+import {appendProgramOutput} from './program-output.mjs';
 import crypto from 'node:crypto';
 import {AppError} from './errors.mjs';
 import {toolsFor} from './core.mjs';
@@ -58,7 +59,8 @@ export class LiveCapture {
   launch(session, job, channel, key, command, encoded) {
     const target = `${channel.url}/${key}`;
     job.secrets = [key, channel.url, target];
-    const args = session.feedId ? ['-hide_banner','-loglevel','warning','-nostdin','-progress','pipe:1','-stats_period','1','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target] : ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0', ...encoded.args, '-rw_timeout', '10000000', '-flvflags', 'no_duration_filesize', '-f', 'flv', target];
+    const args = session.feedId ? ['-hide_banner','-loglevel','warning','-nostdin','-progress','pipe:1','-stats_period','1','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target] : ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0'];
+    if(!session.feedId){appendProgramOutput(args,encoded.args,job.quality,encoded.profile.aspect);args.push('-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target);}
     const child = this.studio.spawnProcess(command, args, {shell:false, windowsHide:true, stdio:['pipe','pipe','pipe']});
     job.child = child;
     let progress = '', stderr = '';
