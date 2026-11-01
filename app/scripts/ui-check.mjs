@@ -30,6 +30,7 @@ try {
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: response.body });
   });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(()=>document.addEventListener('securitypolicyviolation',event=>{throw Error('CSP violation: '+event.violatedDirective);}));
   async function capture(file,section='dashboard'){
     await page.screenshot({path:path.join(base,file),fullPage:true});
     screenshots.push({file,section,viewport:page.viewportSize()});
@@ -49,6 +50,27 @@ try {
   assert.ok(await page.locator('.nav-item').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=16));
   assert.ok(await page.locator('[data-action=go-live]').first().evaluate(el=>el.getBoundingClientRect().height>=44));checks++;
   const products=page.locator('.creator-credit a');assert.equal(await products.getAttribute('href'),'https://AntonioFradique.net');assert.equal(await products.getAttribute('target'),'_blank');checks++;
+  assert.equal(await page.locator('.dashboard-actions .start-card').count(),2);assert.equal(await navigation.locator('.nav-section-title').count(),3);checks++;
+  const help=page.locator('#control-help'),prepare=page.locator('.dashboard-start [data-action=go-live]');
+  await prepare.hover();await help.waitFor({state:'visible'});
+  assert.match(await help.textContent(),/Nothing is broadcast until you confirm/);checks++;
+  await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);
+  assert.equal(await prepare.getAttribute('aria-describedby'),'control-help');checks++;
+  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;}));checks++;
+  await capture('dashboard-help-1440.png','context-help');
+  await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
+  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
+  const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();await help.waitFor({state:'visible'});
+  assert.equal(await studioLink.getAttribute('aria-describedby'),'control-help');
+  await page.waitForTimeout(2400);assert.equal(await studioLink.evaluate(el=>el===document.activeElement),true);assert.equal(await help.isVisible(),true);checks++;
+  await page.keyboard.press('Escape');
+  await page.locator('.dashboard-start [data-action=channel-new]').click();
+  const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();await help.waitFor({state:'visible'});
+  assert.equal(await help.evaluate(el=>el.parentElement.id),'dialog');
+  await capture('dialog-help-1440.png','context-help');checks++;
+  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await page.locator('#dialog').isVisible(),true);
+  await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
+  assert.equal(app.studio.jobs.size,0);assert.equal(app.store.data.channels.length,0);checks++;
   for(const [code,title,dir] of [['es','Resumen','ltr'],['fr','Vue d’ensemble','ltr'],['hi','अवलोकन','ltr'],['ar','نظرة عامة','rtl'],['zh','概览','ltr'],['bn','সারসংক্ষেপ','ltr'],['ru','Обзор','ltr'],['id','Ringkasan','ltr'],['pt-PT','Visão geral','ltr']]){
     await page.locator('#language-select').selectOption(code);
     await page.getByRole('heading',{name:title,exact:true}).waitFor();
@@ -213,6 +235,12 @@ try {
   await page.getByRole('button',{name:'Guardar sobreposições',exact:true}).click();await page.locator('#dialog').waitFor({state:'hidden'});
   assert.ok(['top','bottom','image'].every(key=>!app.store.data.settings.overlays[key].enabled));checks++;
   await goTo('Câmara e ecrã ao vivo');
+  assert.equal(await page.locator('.studio-customization').getAttribute('open'),null);assert.equal(await page.locator('.production-clips').getAttribute('open'),null);
+  assert.equal(await page.locator('[data-production=choose-recording-folder]').isVisible(),true);checks++;
+  await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),true);
+  await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),false);checks++;
+  await page.locator('[data-capture=start]').hover();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/destino livre/);checks++;
+  await page.keyboard.press('Escape');
   await page.locator('#capture-form [name=source]').selectOption('microphone');
   assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
   await page.locator('[data-production=choose-recording-folder]').click();await page.waitForFunction(()=>document.querySelector('[name=recordingDirectory]').value.includes('Chosen recordings'));

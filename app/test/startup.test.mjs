@@ -22,6 +22,8 @@ test('cold-start readiness is authenticated and independent of tool checks',asyn
  assert.equal((await dispatch(app,'/api/ready',{headers:{...headers,Origin:'https://foreign.example'}})).status,403);
  const page=await dispatch(app,'/',{headers});const html=await page.text();assert.match(html,/id="startup-status"/);assert.match(html,/<html[^>]+translate="no"/);assert.match(html,/class="notranslate"/);assert.match(html,/id="language-select"/);
  assert.equal((await dispatch(app,'/boot.js',{headers})).status,200);
+ const help=await dispatch(app,'/ui-help.js',{headers});assert.equal(help.status,200);assert.equal(help.headers.get('content-type'),'text/javascript');
+ assert.deepEqual(help.body,fs.readFileSync(new URL('../public/ui-help.js',import.meta.url)));
  const favicon=await dispatch(app,'/icon.ico?v=0.15.5',{headers});
  assert.equal(favicon.status,200);assert.equal(favicon.headers.get('content-type'),'image/vnd.microsoft.icon');
  assert.deepEqual(favicon.body,fs.readFileSync(new URL('../public/icon.ico',import.meta.url)));
