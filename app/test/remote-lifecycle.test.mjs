@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {PassThrough,Readable,Writable} from 'node:stream';
 import {EventEmitter} from 'node:events';
 import {gzipSync} from 'node:zlib';
+import fs from 'node:fs';
+import path from 'node:path';
 import {RemoteSources,openRemote} from '../src/remote-sources.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -83,5 +85,19 @@ for(const status of [200,206])test('encoded '+status+' upstream media is rejecte
  try{
   await assert.rejects(sources.serve(request(status===206?'bytes=0-':undefined),destination,entry),error=>error.status===415);
   assert.equal(destination.status,undefined);assert.equal(upstream.destroyed,true);assert.equal(sources.requests.size,0);
+ }finally{await sources.shutdown();}
+});
+
+test('a missing bundled downloader can be retried after its tool setting is repaired',async t=>{
+ const exists=fs.existsSync.bind(fs);let settings={},executed=0;
+ t.mock.method(fs,'existsSync',file=>path.basename(String(file))==='runtime'||exists(file));
+ const sources=remote({settings:()=>settings,execute:async()=>{executed++;return{stdout:JSON.stringify({protocol:'https',ext:'mp4',duration:2,url:'https://r.googlevideo.com/repaired'})};}});
+ const entry=sources.entry({path:'https://youtu.be/abcdefghijk'});
+ try{
+  await assert.rejects(sources.resolve(entry),/YouTube source unavailable/);
+  assert.equal(executed,0);
+  settings={ytdlp:'controlled-downloader'};
+  const resolved=await sources.resolve(entry);
+  assert.equal(resolved.url,'https://r.googlevideo.com/repaired');assert.equal(executed,1);assert.equal(entry.pending,null);
  }finally{await sources.shutdown();}
 });

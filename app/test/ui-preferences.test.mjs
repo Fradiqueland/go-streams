@@ -76,3 +76,22 @@ for(const page of ['settings','help'])test('reconnect redraws '+page+' with newl
  assert.match(h.element('#content').innerHTML,/Go Streams 9\.1\.2/);
  if(page==='settings')assert.match(h.element('#content').innerHTML,/Private vault/);
 });
+
+test('language changes wait for a submitted operation even after its modal closes',async()=>{
+ let release;const gate=new Promise(resolve=>{release=resolve;});
+ const h=uiHarness({locale:'en',fetch:async()=>({ok:true,json:async()=>({media:[],channels:[],playlists:[],schedules:[],jobs:[],history:[],settings:{}})})});
+ let reloads=0;h.context.location.reload=()=>reloads++;h.context.save=()=>gate;
+ h.run("dialog('Pending operation','',save)");const work=h.submit({});h.element('#dialog').close();
+ const select=h.element('#language-select');select.value='fr';
+ try{select.onchange({target:select});assert.equal(reloads,0);assert.equal(select.value,'en');}
+ finally{release();await work;}
+ select.value='fr';select.onchange({target:select});assert.equal(reloads,1);
+});
+
+test('English media, playlist, download and event actions use translated labels',async()=>{
+ const h=uiHarness({locale:'en'});
+ h.run("state.media=[{id:'m',title:'Clip',duration:2,size:10,width:640,height:360,fps:30,codec:'h264'}];state.playlists=[{id:'p',name:'Show',quality:'720p',mediaIds:['m']}];state.history=[{id:'e',kind:'event',message:'Activity',time:'2026-10-31T12:00:00Z',level:'info'}]");
+ for(const page of ['media','playlists']){h.run('page='+JSON.stringify(page)+';draw()');assert.match(h.element('#content').innerHTML,/>Stream<\/button>/);}
+ await h.click('download-new');assert.match(h.element('#dialog-content').innerHTML,/>Download<\/button>/);
+ h.element('#dialog').close();h.run("page='history';draw()");assert.match(h.element('#content').innerHTML,/>Event<\/span>/);
+});

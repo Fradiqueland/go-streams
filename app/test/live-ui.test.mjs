@@ -265,3 +265,18 @@ test('an upload failure cancels a pending live start and stops its delayed sessi
  started.resolve({id:'late-session'});await starting;
  assert.equal(panel.session,null);assert.ok(calls.includes('/api/live/late-session/stop'));assert.equal(panel.feedSession,null);
 });
+
+test('saving chat application settings cannot unlock a message awaiting provider confirmation',async t=>{
+ const settings=deferred(),delivery=deferred(),calls=[];
+ replaceGlobal(t,'FormData',class{constructor(form){this.values=form.values;}get(name){return this.values[name];}*entries(){yield*Object.entries(this.values);} [Symbol.iterator](){return this.entries();}});
+ const panel=new ChatPanel({api:async route=>{calls.push(route);if(route==='/api/chat/settings')return settings.promise;if(route==='/api/chat/send')return delivery.promise;return panel.snapshot;},toast(){}});
+ const controls={'.chat-compose select':{value:'room'},'.chat-compose button':{},'.chat-compose textarea':{value:'Only send once'},'[data-chat="cancel-reply"]':{},'.chat-reply-target':{}};
+ panel.element={querySelector:selector=>controls[selector],querySelectorAll:()=>[]};panel.snapshot={accounts:{},connections:[{id:'room',status:'connected',platform:'Twitch'}],messages:[]};panel.update=state=>{panel.snapshot=state;};
+ const button={},setup={values:{clientId:'app'},dataset:{provider:'Twitch'},classList:{contains:name=>name==='chat-provider-setup'},querySelector:()=>button};
+ const compose={values:{connectionId:'room',text:'Only send once'},classList:{contains:name=>name==='chat-compose'},querySelector:selector=>selector==='textarea'?controls['.chat-compose textarea']:controls['.chat-compose button']};
+ const saving=panel.submit(setup),sending=panel.submit(compose);
+ settings.resolve({ok:true});await saving;
+ try{assert.equal(panel.sending,true);assert.equal(controls['.chat-compose button'].disabled,true);assert.equal(controls['.chat-compose textarea'].disabled,true);await panel.submit(compose);assert.equal(calls.filter(route=>route==='/api/chat/send').length,1);}
+ finally{delivery.resolve({ok:true});await sending;}
+ assert.equal(panel.sending,false);assert.equal(controls['.chat-compose textarea'].value,'');
+});

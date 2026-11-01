@@ -415,3 +415,25 @@ test('a Twitch device polling timeout backs off and retains the active authoriza
  t.mock.timers.tick(14999);await turn();assert.equal(polls,2);t.mock.timers.tick(1);await turn();
  assert.equal(polls,3);assert.equal(f.chat.auth.state().Twitch.authorized,true);assert.equal(f.chat.auth.pending.has('Twitch'),false);
 });
+
+test('a Twitch device response body timeout backs off after headers instead of cancelling sign-in',async t=>{
+ let polls=0;const f=fixture(t,async url=>{
+  if(url.endsWith('/device'))return response({device_code:'device',user_code:'CODE',verification_uri:'https://www.twitch.tv/activate',expires_in:600,interval:5});
+  if(url.endsWith('/validate'))return response({client_id:'abcdefgh123',user_id:'host',login:'Host',scopes:['user:read:chat','user:write:chat']});
+  if(++polls===1)return new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('{'));},pull(controller){controller.error(new DOMException('Response body timed out','TimeoutError'));}}));
+  return response({access_token:'access',refresh_token:'refresh',expires_in:14400});
+ });
+ t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.now()});
+ f.chat.auth.configure('Twitch',{clientId:'abcdefgh123'});await f.chat.auth.begin('Twitch');const pending=f.chat.auth.pending.get('Twitch');
+ t.mock.timers.tick(5000);await turn();assert.equal(polls,1);assert.equal(f.chat.auth.pending.get('Twitch'),pending);assert.equal(pending.interval,10000);
+ t.mock.timers.tick(9999);await turn();assert.equal(polls,1);t.mock.timers.tick(1);await turn();
+ assert.equal(polls,2);assert.equal(f.chat.auth.state().Twitch.authorized,true);
+});
+
+test('shutdown during a provider response body reports closing and drains tracked operations',async t=>{
+ let reading;const started=new Promise(resolve=>{reading=resolve;});
+ const f=fixture(t,async(url,{signal})=>new Response(new ReadableStream({start(controller){signal.addEventListener('abort',()=>controller.error(signal.reason),{once:true});reading();}})));
+ const request=f.chat.auth.http('https://api.twitch.tv/helix/users');
+ const rejected=assert.rejects(request,error=>error.status===409&&/closing/.test(error.message));
+ await started;await f.chat.shutdown();await rejected;assert.equal(f.chat.auth.operations.size,0);
+});

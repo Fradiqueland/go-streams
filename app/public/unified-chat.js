@@ -75,7 +75,7 @@ export class ChatPanel {
    }
    this.update(await this.api('/api/chat'));
   }catch(error){this.toast(error.message,true);}
-  finally{this.busyForms.delete(form);this.sending=false;button.disabled=false;this.updateComposer();}
+  finally{this.busyForms.delete(form);if(form.classList.contains('chat-compose'))this.sending=false;button.disabled=false;this.updateComposer();}
  }
  async action(button){
   const action=button.dataset.chat;if(this.sending&&['reply','cancel-reply'].includes(action))return;button.disabled=true;

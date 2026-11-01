@@ -138,7 +138,8 @@ export class RemoteSources {
     if(force&&(force===true||entry.resolved?.url===force)){entry.at=0;entry.resolved=null;}
     if(entry.resolved&&Date.now()-entry.at<5*60*1000)return entry.resolved;
     if(entry.pending)return entry.pending;
-    entry.pending=(async()=>{
+    // Install the shared promise before tool-path checks can fail synchronously.
+    entry.pending=Promise.resolve().then(async()=>{
       try{
         const settings=this.settings();
         const {stdout}=await this.execute(ytdlpPath(settings),['--ignore-config','--no-playlist','--no-cache-dir','--no-plugin-dirs','--no-remote-components','--js-runtimes',`node:${process.execPath}`,'--skip-download','--dump-single-json','--no-warnings','--socket-timeout','15','--retries','1','-f','b[ext=mp4][protocol=https][vcodec!=none][acodec!=none]','--',entry.path],{timeout:45000,maxBytes:4*1024*1024,signal:this.controller.signal});
@@ -149,7 +150,7 @@ export class RemoteSources {
         entry.resolved={url:url.href,headers:mediaHeaders(info.http_headers),title:String(info.title||'YouTube video').replace(/[\x00-\x1f]/g,' ').slice(0,200)};entry.at=Date.now();return entry.resolved;
       }catch{throw new AppError('YouTube source unavailable. Check yt-dlp, video access and availability of a combined MP4 format.');}
       finally{entry.pending=null;}
-    })();
+    });
     return entry.pending;
   }
   controller=new AbortController();

@@ -27,14 +27,15 @@ export class ChatAuth {
  async http(url,options={}){
   if(!ORIGINS.has(new URL(url).origin))throw new AppError('Chat service address rejected.');
   const task=(async()=>{
-   let response;
-   try{response=await this.request(url,{...options,redirect:'error',signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(15000)])});}
-   catch{
+   let response;const chunks=[];let size=0;
+   try{
+    response=await this.request(url,{...options,redirect:'error',signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(15000)])});
+    if(response.body){for await(const chunk of response.body){size+=chunk.length;if(size>1024*1024)throw new AppError('Chat service response was too large.',502);chunks.push(Buffer.from(chunk));}}
+   }catch(cause){
     if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);
+    if(cause instanceof AppError)throw cause;
     const error=new AppError('The chat service could not be reached.',502);error.retryable=true;throw error;
    }
-   const chunks=[];let size=0;
-   if(response.body){for await(const chunk of response.body){size+=chunk.length;if(size>1024*1024)throw new AppError('Chat service response was too large.',502);chunks.push(Buffer.from(chunk));}}
    let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw Error();}catch{throw new AppError('Invalid chat service response.',502);}
    if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);
    return {ok:response.ok,status:response.status,value};
