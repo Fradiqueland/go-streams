@@ -1,0 +1,20 @@
+const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):min));
+export function cropRect(value={}){
+ const width=clamp(value.width??1,.05,1),height=clamp(value.height??1,.05,1);
+ return {x:clamp(value.x??0,0,1-width),y:clamp(value.y??0,0,1-height),width,height};
+}
+export function cameraRect(value={},width,height){
+ const side=clamp(value.size??.28,.1,.65)*Math.min(width,height);
+ return {x:clamp(value.x??.96,0,1)*(width-side),y:clamp(value.y??.96,0,1)*(height-side),width:side,height:side};
+}
+export function frameSize(width,height,crop={},quality=1080){
+ const r=cropRect(crop),w=Math.max(2,width*r.width),h=Math.max(2,height*r.height),ratio=Math.min(1,quality/h,quality*16/9/w);
+ return {width:Math.max(2,Math.floor(w*ratio/2)*2),height:Math.max(2,Math.floor(h*ratio/2)*2)};
+}
+export function containedRect(box,width,height){
+ const ratio=Math.min(box.width/width,box.height/height),w=width*ratio,h=height*ratio;
+ return {left:box.left+(box.width-w)/2,top:box.top+(box.height-h)/2,width:w,height:h};
+}
+export function selectionRect(start,end){
+ return cropRect({x:Math.min(start.x,end.x),y:Math.min(start.y,end.y),width:Math.abs(end.x-start.x),height:Math.abs(end.y-start.y)});
+}

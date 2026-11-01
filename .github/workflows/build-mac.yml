@@ -51,6 +51,7 @@ jobs:
           qa="$RUNNER_TEMP/gostreams-ui-qa"
           npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
           GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
+          GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:recorder:browser
       - name: Complete ten regression review cycles
         run: |
           npm run test:review
@@ -72,6 +73,9 @@ jobs:
             app/release/*Mac-runtime-verification.json
             app/release/*live-studio*-verification.json
             app/release/*review*-verification.json
+            app/release/*recorder*-verification.json
+            app/.tmp/recorder-browser/*.png
+            app/.tmp/recorder-browser/result.json
             app/.tmp/review-loop/*.log
             app/.tmp/ui-check/result.json
             app/.tmp/soak-result.json

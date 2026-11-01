@@ -6,6 +6,7 @@ import * as ui from '../public/studio-ui.js';
 import * as extras from '../public/extras.js';
 import * as zones from '../public/timezones.js';
 import * as assistance from '../public/ui-help.js';
+import {RecorderPanel} from '../public/recorder.js';
 // Runs production event callbacks against controlled DOM entry points. No browser/layout claims.
 export function uiHarness({fetch=async()=>({ok:true,json:async()=>({})}),confirm=true,locale='pt-PT',storage={getItem:()=>null,setItem(){}}}={}){
  i18n.setLanguage(locale,{persist:false});
@@ -27,7 +28,7 @@ export function uiHarness({fetch=async()=>({ok:true,json:async()=>({})}),confirm
   constructor(form){this.entries=form.elements.filter(e=>e.name&&!e.disabled&&(e.type!=='checkbox'||e.checked)).map(e=>[e.name,e.value]);}
   get(name){return this.entries.find(e=>e[0]===name)?.[1]??null;}getAll(name){return this.entries.filter(e=>e[0]===name).map(e=>e[1]);}has(name){return this.entries.some(e=>e[0]===name);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}
  }
- const context=vm.createContext({...overlays,...i18n,...ui,...extras,...zones,...assistance,document,location:{hash:''},localStorage:storage,Intl,Date,structuredClone,URL,console,FormData,setTimeout:()=>1,clearTimeout(){},setInterval:fn=>intervals.push(fn),clearInterval(){},window:{addEventListener(){}},confirm:typeof confirm==='function'?confirm:()=>confirm,fetch:async(url,init)=>{requests.push({url,...init});return fetch(url,init);}});
+ const context=vm.createContext({...overlays,...i18n,...ui,...extras,...zones,...assistance,RecorderPanel,document,location:{hash:''},localStorage:storage,Intl,Date,structuredClone,URL,console,FormData,setTimeout:()=>1,clearTimeout(){},setInterval:fn=>intervals.push(fn),clearInterval(){},window:{addEventListener(){}},confirm:typeof confirm==='function'?confirm:()=>confirm,fetch:async(url,init)=>{requests.push({url,...init});return fetch(url,init);}});
  let source=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace(/^import .+;\r?\n/gm,'');
  const start=source.indexOf('try { await refresh(); health =');const end=source.indexOf('const poll =',start);if(start<0||end<0)throw Error('Startup marker changed');source=source.slice(0,start)+source.slice(end);
  vm.runInContext(source,context);

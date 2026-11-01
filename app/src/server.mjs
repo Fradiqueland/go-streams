@@ -99,7 +99,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
       const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
       if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1]));
-      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file);res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.mp4'?'video/mp4':'video/webm');}
+      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file);res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.m4a'?'audio/mp4':ext==='.mp4'?'video/mp4':'video/webm');}
       if(pathname==='/api/chat'&&req.method==='GET')return json(res,chat.state());
       if(pathname==='/api/chat/settings'&&req.method==='PUT')return json(res,chat.auth.configure(body.provider,body));
       if(pathname==='/api/chat/authorize'&&req.method==='POST')return json(res,await chat.auth.begin(body.provider));
@@ -233,7 +233,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
         return serveFile(req, res, asset[1] === 'thumb' ? path.join(directory, 'thumbs', `${media.id}.jpg`) : media.path);
       }
       if (pathname === '/api/shutdown' && req.method === 'POST') { json(res, { ok: true }); setImmediate(() => close().catch(()=>{console.error('O encerramento terminou com falhas.');process.exitCode=1;})); return; }
-      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/live-capture.js', '/live-production.js', '/unified-chat.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/ui-help.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
+      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/recorder.js', '/recorder-geometry.js', '/live-capture.js', '/live-production.js', '/unified-chat.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/ui-help.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
       throw new AppError('Não encontrado.', 404);
     } catch (e) { if (!res.headersSent) json(res, { error: e instanceof AppError ? e.message : 'Ocorreu um erro interno. Os dados existentes foram preservados.' }, e.status || 500); else res.destroy(); }
   };

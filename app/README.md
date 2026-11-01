@@ -4,6 +4,14 @@ Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e ma
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
 
+## Video and audio recorder (1.1.0)
+
+Open **Video & audio recorder** to record a screen, window, selected area, camera, screen with a square camera overlay, or audio only. Select microphone, shared computer audio, both, or silent video. The browser/system picker must supply a live audio track for computer audio; if it does not, preparation explains the missing source and does not silently record without it. Windows Electron supports system loopback; Mac browser audio availability depends on the selected source and browser. No virtual audio driver installation is required or offered.
+
+Prepare a local preview, drag a rectangle over the source to choose the recorded area, and drag or resize the square camera overlay on the result. Percentage fields, arrow keys and a size slider provide keyboard alternatives. Choose a recording folder for this session or save/use the default. The optional 3/5/10-second countdown can be cancelled before recording starts. Video is saved as H.264/AAC MP4; audio-only recording is AAC M4A with no video track. Encoding runs during recording using bundled FFmpeg. Files go directly to the chosen local folder, and finalizing preserves recoverable local data if a disk or encoding error occurs.
+
+The recorder survives navigation between app pages. Closing its preview finishes the recording and releases devices. Recording does not create a broadcast or cloud copy. The OS still asks permission to access the screen, camera or microphone. Use `npm run test:recorder:browser` with the Playwright QA package for synthetic crop, camera drag/resize, countdown, folder, navigation, video/audio and responsive checks. Physical devices and native source pickers require manual verification.
+
 ## Revisão 1.0.10
 
 A mudança de idioma aguarda as operações do chat e da pasta de gravação e protege mensagens, configurações de contas e preferências ainda por guardar. As atualizações de estado conservam os formulários do chat em edição; os campos ficam bloqueados enquanto se guarda a configuração. Após guardar, o segredo introduzido é retirado do campo. Mantêm-se as correções da ajuda contextual e a explicação sobre a exportação do projeto. Repor o foco do teclado após atualizar a vista já não reabre uma ajuda fechada sobre os botões vizinhos.

@@ -1,6 +1,7 @@
 import {overlayEditor,overlayValues,renderBanner,imageData,overlayPreview,styleOverlayPreview} from './overlays-ui.js';
 import {LiveCapturePanel} from './live-capture.js';
 import {ChatPanel} from './unified-chat.js';
+import {RecorderPanel} from './recorder.js';
 import {uiText,installContextHelp} from './ui-help.js';
 import {tr,language,localeTag,setLanguage,applyLocale} from './i18n.js';
 import { localToUtc, utcToLocal } from './timezones.js';
@@ -12,6 +13,8 @@ const names = {dashboard:tr("Visão geral"),golive:tr("Entrar em direto"),captur
 const paging={};
 let capturePanel;
 let chatPanel;
+let recorderPanel;
+names.recorder=uiText('Video & audio recorder','Gravador de vídeo e áudio');
 names.chat=language()==='pt-PT'?'Chat unificado':'Unified chat';
 function mountChat(container){chatPanel ||= new ChatPanel({api,toast,onFeature:message=>{if(capturePanel)capturePanel.featuredComment=message;else toast(language()==='pt-PT'?'Abra a pré-visualização ao vivo para mostrar comentários.':'Open the live preview to feature comments.');}});chatPanel.mount(container,state.chat,state.channels);}
 let interfaceClosing=false,exitPending=false;
@@ -48,6 +51,7 @@ async function refresh(render = true) {
   refreshApplied=request;state=next;
   capturePanel?.update(state);
   chatPanel?.update(state.chat,state.channels);
+  recorderPanel?.update(state);
   if(typeof render==='function'?render():render)draw();
   if(typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('go-streams-ready'));
   const banner=$('#connection-warning');if(banner)banner.hidden=true;
@@ -84,12 +88,14 @@ function draw() {
   const retained = [...document.querySelectorAll('#normalize-select,#preview-select')].map(el => [el.id,el.value]);
   if (!names[page]) page = 'dashboard';
   $('#crumb').textContent = names[page];
-  const navigation = [[uiText('BROADCAST','TRANSMISSÃO'),['dashboard','capture','golive','live','chat']],[uiText('CONTENT & DESTINATIONS','CONTEÚDO E DESTINOS'),['media','playlists','channels','schedules']],[uiText('APPLICATION','APLICAÇÃO'),['tools','history','settings','help']]].map(([title,keys])=>`<div class="nav-section-title">${title}</div>`+keys.map(key=>`<a href="#${key}" title="${esc(names[key])}" aria-label="${esc(names[key])}" ${key===page?'aria-current="page"':''} class="nav-item ${key===page?'selected':''}"><span>${icon(key)}</span>${names[key]}${key==='media'&&state.media.length?`<b>${state.media.length}</b>`:''}</a>`).join('')).join('');
+  const navigation = [[uiText('BROADCAST','TRANSMISSÃO'),['dashboard','capture','recorder','golive','live','chat']],[uiText('CONTENT & DESTINATIONS','CONTEÚDO E DESTINOS'),['media','playlists','channels','schedules']],[uiText('APPLICATION','APLICAÇÃO'),['tools','history','settings','help']]].map(([title,keys])=>`<div class="nav-section-title">${title}</div>`+keys.map(key=>`<a href="#${key}" title="${esc(names[key])}" aria-label="${esc(names[key])}" ${key===page?'aria-current="page"':''} class="nav-item ${key===page?'selected':''}"><span>${icon(key)}</span>${names[key]}${key==='media'&&state.media.length?`<b>${state.media.length}</b>`:''}</a>`).join('')).join('');
   if($('#nav').innerHTML!==navigation)$('#nav').innerHTML=navigation;
   if(page==='capture'){
     capturePanel ||= new LiveCapturePanel({api,toast,getState:()=>state});
     capturePanel.mount($('#content'),state);
     mountChat(capturePanel.element);
+  }else if(page==='recorder'){
+    recorderPanel ||= new RecorderPanel({api,toast});recorderPanel.mount($('#content'),state);
   }else if(page==='chat'){
     if(!chatPanel?.element||chatPanel.element.parentNode!==$('#content'))$('#content').innerHTML='';
     mountChat($('#content'));
@@ -434,12 +440,12 @@ document.addEventListener('submit',async event=>{
  finally{settingsSaving=false;settingsSavingForm='';for(const [el,disabled]of controls)el.disabled=disabled;draw();}
 });
 $('#dialog').addEventListener('close', () => { if(!$('#dialog').open){dialogGeneration++;$('#dialog-content').innerHTML='';} });
-$('#exit').onclick = async () => { if(exitPending||interfaceClosing)return; if (!confirm(tr("Encerrar o Go Streams? As transmissões ativas serão paradas."))) return; exitPending=true;$('#exit').disabled=true;try { if(capturePanel?.busy)await capturePanel.release();await api('/api/shutdown', {});interfaceClosing=true; $('#content').innerHTML = empty('✓', tr("A encerrar o estúdio"), tr("As operações estão a terminar. Pode fechar esta janela; volte a abrir pelo iniciador Go Streams.")); clearInterval(poll); } catch(e) {exitPending=false;$('#exit').disabled=false; toast(e.message, true); } };
+$('#exit').onclick = async () => { if(exitPending||interfaceClosing)return; if (!confirm(tr("Encerrar o Go Streams? As transmissões ativas serão paradas."))) return; exitPending=true;$('#exit').disabled=true;try { if(capturePanel?.busy)await capturePanel.release();if(recorderPanel?.busy)await recorderPanel.release();await api('/api/shutdown', {});interfaceClosing=true; $('#content').innerHTML = empty('✓', tr("A encerrar o estúdio"), tr("As operações estão a terminar. Pode fechar esta janela; volte a abrir pelo iniciador Go Streams.")); clearInterval(poll); } catch(e) {exitPending=false;$('#exit').disabled=false; toast(e.message, true); } };
 window.addEventListener('hashchange', () => { page = location.hash.slice(1) || 'dashboard'; query = ''; draw(); });
 function showHealth() { $('.version').textContent=health?.version?'v'+health.version:''; const ok = health?.tools?.ffmpeg?.available && health?.tools?.ffprobe?.available; $('#engine-status').textContent = ok ? tr("● Motor disponível") : tr("● Configurar motor"); $('#engine-status').className = `badge ${ok ? 'ready' : 'error'}`; }
 applyLocale();
 const contextualHelp=installContextHelp(document,window);
-$('#language-select').onchange=event=>{const select=event.target;if(modalSubmissions||chatPanel?.busy||capturePanel?.production?.preferencesBusy){select.value=language();toast(tr('Aguarde a conclusão da operação antes de mudar o idioma.'),true);return;}if(chatPanel?.hasUnsavedChanges){select.value=language();toast(uiText('Send or clear the chat draft and save its account settings before changing language.','Envie ou apague o rascunho do chat e guarde a configuração das contas antes de mudar o idioma.'),true);return;}if($('#dialog').open||settingsDrafts.size||settingsSaving||capturePanel?.busy||capturePanel?.production?.recordingPreferencesDirty){select.value=language();toast(tr('Guarde as alterações e feche a janela antes de mudar o idioma.'),true);return;}try{setLanguage(select.value);location.reload();}catch(error){select.value=language();toast(error.message,true);}};
+$('#language-select').onchange=event=>{const select=event.target;if(modalSubmissions||chatPanel?.busy||capturePanel?.production?.preferencesBusy||recorderPanel?.busy){select.value=language();toast(tr('Aguarde a conclusão da operação antes de mudar o idioma.'),true);return;}if(chatPanel?.hasUnsavedChanges){select.value=language();toast(uiText('Send or clear the chat draft and save its account settings before changing language.','Envie ou apague o rascunho do chat e guarde a configuração das contas antes de mudar o idioma.'),true);return;}if($('#dialog').open||settingsDrafts.size||settingsSaving||capturePanel?.busy||capturePanel?.production?.recordingPreferencesDirty||recorderPanel?.hasUnsavedChanges){select.value=language();toast(tr('Guarde as alterações e feche a janela antes de mudar o idioma.'),true);return;}try{setLanguage(select.value);location.reload();}catch(error){select.value=language();toast(error.message,true);}};
 try { await refresh(); health = await api('/api/health'); showHealth(); if (['settings','help'].includes(page)) draw(); } catch(e) { $('#content').innerHTML = empty('!', tr("Não foi possível abrir o estúdio"), e.message,btn('reconnect',tr("Tentar novamente")));connectionFailed(); }
 const poll = setInterval(async () => { if (loading) return; loading = true; try { await refresh(()=>!contextualHelp?.isReading() && !$('#dialog').open && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName) && ['dashboard','golive','live','schedules','history','tools'].includes(page)); } catch {connectionFailed();} finally { loading = false; } $('#clock').textContent = new Date().toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }); }, 2000);
 

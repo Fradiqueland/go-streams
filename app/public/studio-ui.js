@@ -2,6 +2,7 @@ import {tr,language,localeTag,setLanguage,applyLocale} from './i18n.js';
 // Shared rendering and date filtering for the desktop studio.
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paths={
+recorder:'M3 5h18v14H3z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
 capture:'M3 6h12v12H3z M15 10l6-4v12l-6-4z',
 chat:'M3 3h18v14H8l-5 4z M7 7h10 M7 12h7',
 dashboard:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',

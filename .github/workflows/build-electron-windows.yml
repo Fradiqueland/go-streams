@@ -64,6 +64,8 @@ jobs:
           $env:GO_STREAMS_PLAYWRIGHT_PACKAGE = Join-Path $qa 'package.json'
           npm run test:ui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:recorder:browser
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Complete ten regression review cycles
         run: |
           $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
@@ -113,6 +115,9 @@ jobs:
             app/release/*Electron-build.json
             app/release/*live-studio*-verification.json
             app/release/*review*-verification.json
+            app/release/*recorder*-verification.json
+            app/.tmp/recorder-browser/*.png
+            app/.tmp/recorder-browser/result.json
             app/.tmp/review-loop/*.log
             app/.tmp/ui-check/result.json
             app/.tmp/soak-result.json

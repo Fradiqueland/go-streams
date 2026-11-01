@@ -2,7 +2,15 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.0.10**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Video and audio recorder (1.1.0)
+
+Open **Video & audio recorder** to record a screen, window, selected area, camera, screen with a square camera overlay, or audio only. Select microphone, shared computer audio, both, or silent video. The browser/system picker must supply a live audio track for computer audio; if it does not, preparation explains the missing source and does not silently record without it. Windows Electron supports system loopback; Mac browser audio availability depends on the selected source and browser. No virtual audio driver installation is required or offered.
+
+Prepare a local preview, drag a rectangle over the source to choose the recorded area, and drag or resize the square camera overlay on the result. Percentage fields, arrow keys and a size slider provide keyboard alternatives. Choose a recording folder for this session or save/use the default. The optional 3/5/10-second countdown can be cancelled before recording starts. Video is saved as H.264/AAC MP4; audio-only recording is AAC M4A with no video track. Encoding runs during recording using bundled FFmpeg. Files go directly to the chosen local folder, and finalizing preserves recoverable local data if a disk or encoding error occurs.
+
+The recorder survives navigation between app pages. Closing its preview finishes the recording and releases devices. Recording does not create a broadcast or cloud copy. The OS still asks permission to access the screen, camera or microphone. Use `npm run test:recorder:browser` with the Playwright QA package for synthetic crop, camera drag/resize, countdown, folder, navigation, video/audio and responsive checks. Physical devices and native source pickers require manual verification.
 
 ## Interface review (1.0.10)
 
