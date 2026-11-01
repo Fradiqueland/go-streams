@@ -15,7 +15,8 @@ const base = path.resolve(process.env.GO_STREAMS_UI_OUTPUT||'.tmp/ui-check'); fs
 const directory = fs.mkdtempSync(path.join(base, 'data-'));
 const clip = path.join(directory, 'Ensaio de emissão.mp4');
 await runProcess('ffmpeg', ['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-ac','2','-y',clip]);
-const app = await createApplication({ directory, port: 4317, listen: false, clock: false,folderPicker:async()=>path.join(directory,'Chosen recordings') });
+let folderPickerWait,chatSetupWait;
+const app = await createApplication({ directory, port: 4317, listen: false, clock: false,folderPicker:async()=>{if(folderPickerWait)await folderPickerWait;return path.join(directory,'Chosen recordings');} });
 let context;
 const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const started=new Date().toISOString(),screenshots=[];let passed=false,failure='';
@@ -26,6 +27,7 @@ try {
   await context.route('**/*', async route => {
     const request = route.request();
     if (!request.url().startsWith(app.base + '/')) return route.abort();
+    if(chatSetupWait&&request.url()===app.base+'/api/chat/settings')await chatSetupWait;
     const response = await dispatch(app, request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: response.body });
   });
@@ -252,12 +254,39 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('#capture-form [name=source]').selectOption('microphone');
   assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
-  await page.locator('[data-production=choose-recording-folder]').click();await page.waitForFunction(()=>document.querySelector('[name=recordingDirectory]').value.includes('Chosen recordings'));
+  let releaseFolderPicker;folderPickerWait=new Promise(resolve=>{releaseFolderPicker=resolve;});
+  try{
+    await page.locator('[data-production=choose-recording-folder]').click();
+    await page.waitForFunction(()=>document.querySelector('[data-production=choose-recording-folder]').disabled);
+    await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  }finally{releaseFolderPicker();folderPickerWait=null;}
+  await page.waitForFunction(()=>document.querySelector('[name=recordingDirectory]').value.includes('Chosen recordings'));
+  await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.match(await page.locator('[name=recordingDirectory]').inputValue(),/Chosen recordings/);checks++;
   await page.locator('[name=askRecordingFolder]').uncheck();await page.locator('[data-production=save-recording-preferences]').click();
   await page.waitForFunction(()=>!document.querySelector('[data-production=save-recording-preferences]').disabled);
   assert.equal(app.recordings.preferences.directory,fs.realpathSync(path.join(directory,'Chosen recordings')));assert.equal(app.recordings.preferences.askEveryTime,false);checks++;
   await goTo('Visão geral');
   await goTo('Câmara e ecrã ao vivo');assert.equal(await page.locator('[name=askRecordingFolder]').isChecked(),false);checks++;
+  await goTo('Chat unificado');const chatDraft=page.locator('.chat-compose textarea');
+  await chatDraft.fill('Unsent review draft');await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');
+  await goTo('Visão geral');await goTo('Chat unificado');assert.equal(await chatDraft.inputValue(),'Unsent review draft');checks++;
+  await chatDraft.fill('');await page.locator('.chat-account-setup>summary').click();
+  const youtubeSetup=page.locator('.chat-provider-setup[data-provider="YouTube"]');await youtubeSetup.locator('..').locator('summary').click();
+  await youtubeSetup.locator('[name=clientId]').fill('123-review.apps.googleusercontent.com');await youtubeSetup.locator('[name=clientSecret]').fill('synthetic-unsaved-secret');
+  await chatDraft.focus();app.studio.chat.auth.pending.set('Twitch',{url:'https://www.twitch.tv/activate',userCode:'REVIEW',expires:Date.now()+600000});
+  await page.locator('.chat-accounts a[href="https://www.twitch.tv/activate"]').waitFor();
+  assert.equal(await youtubeSetup.locator('[name=clientId]').inputValue(),'123-review.apps.googleusercontent.com');assert.equal(await youtubeSetup.locator('[name=clientSecret]').inputValue(),'synthetic-unsaved-secret');assert.equal(await youtubeSetup.locator('..').evaluate(el=>el.open),true);
+  await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  let releaseChatSetup;chatSetupWait=new Promise(resolve=>{releaseChatSetup=resolve;});
+  try{
+    await youtubeSetup.locator('button').click();await page.waitForFunction(()=>document.querySelector('.chat-provider-setup[data-provider="YouTube"] [name=clientId]').disabled);
+    assert.equal(await youtubeSetup.locator('[name=clientSecret]').isDisabled(),true);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  }finally{releaseChatSetup();chatSetupWait=null;}
+  await page.waitForFunction(()=>{const form=document.querySelector('.chat-provider-setup[data-provider="YouTube"]');return !form.querySelector('[name=clientId]').disabled&&form.querySelector('[name=clientSecret]').value==='';});
+  assert.equal(app.studio.chat.auth.state().YouTube.configured,true);assert.equal(app.studio.chat.auth.state().YouTube.hasClientSecret,true);assert.equal(await youtubeSetup.locator('[name=clientSecret]').getAttribute('value'),null);checks++;
+  app.studio.chat.auth.pending.delete('Twitch');
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Unified live chat',exact:true}).waitFor();
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Chat unificado ao vivo',exact:true}).waitFor();checks++;
   await goTo('Visão geral');
   await capture('dashboard-populated.png');
   for(const width of [1440,800,390]){

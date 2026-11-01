@@ -319,3 +319,33 @@ test('saving chat application settings cannot unlock a message awaiting provider
  finally{delivery.resolve({ok:true});await sending;}
  assert.equal(panel.sending,false);assert.equal(controls['.chat-compose textarea'].value,'');
 });
+
+test('chat remains busy until every pending account operation and status refresh settles',async()=>{
+ const first=deferred(),second=deferred(),refresh=deferred(),errors=[];
+ const panel=new ChatPanel({api:async(route,data)=>route==='/api/chat/authorize'?(data.provider==='YouTube'?first.promise:second.promise):refresh.promise,toast:message=>errors.push(message)});panel.update=()=>{};
+ assert.equal(panel.busy,false);
+ const one=panel.action({dataset:{chat:'authorize',provider:'YouTube'}}),two=panel.action({dataset:{chat:'authorize',provider:'Twitch'}});
+ assert.equal(panel.busy,true);first.resolve();refresh.resolve({});await one;assert.equal(panel.busy,true);
+ second.reject(Error('Provider unavailable'));await two;assert.equal(panel.busy,false);assert.ok(errors.includes('Provider unavailable'));
+});
+
+test('chat setup locks pending fields, preserves failed drafts and clears submitted secrets after success',async t=>{
+ const id={name:'clientId',type:'text',value:'new-client',defaultValue:'old-client',disabled:false},secret={name:'clientSecret',type:'password',value:'private-draft',defaultValue:'',disabled:false},button={disabled:false};
+ const form={dataset:{provider:'YouTube'},elements:[id,secret,button],classList:{contains:name=>name==='chat-provider-setup'},querySelector:()=>button,querySelectorAll:()=>[id,secret]};
+ replaceGlobal(t,'FormData',class{constructor(){this.values=[['clientId',id.value],['clientSecret',secret.value]];}[Symbol.iterator](){return this.values[Symbol.iterator]();}});
+ let request=deferred();const panel=new ChatPanel({api:async route=>route==='/api/chat/settings'?request.promise:{},toast(){}});panel.update=()=>{};panel.updateComposer=()=>{};
+ panel.element={querySelector:()=>null,querySelectorAll:()=>[form]};
+ assert.equal(panel.hasUnsavedChanges,true);const failed=panel.submit(form);assert.equal(panel.busy,true);assert.ok(form.elements.every(el=>el.disabled));
+ request.reject(Error('Save failed'));await failed;assert.equal(panel.busy,false);assert.ok(form.elements.every(el=>!el.disabled));assert.equal(secret.value,'private-draft');assert.equal(panel.hasUnsavedChanges,true);
+ request=deferred();const saved=panel.submit(form);request.resolve({YouTube:{hasClientSecret:true}});await saved;
+ assert.equal(secret.value,'');assert.equal(secret.defaultValue,'');assert.match(secret.placeholder,/Saved/);assert.equal(id.defaultValue,'new-client');assert.equal(panel.hasUnsavedChanges,false);assert.equal(panel.busy,false);
+});
+
+test('chat detects unsent messages and connection edits without treating a completed connection as a draft',()=>{
+ const draft={value:''},resource={value:''},destination={value:'channel-a'},panel=new ChatPanel({});
+ panel.element={querySelector:selector=>({'.chat-compose textarea':draft,'.chat-connect [name="resource"]':resource,'.chat-connect select':destination}[selector]),querySelectorAll:()=>[]};
+ assert.equal(panel.hasUnsavedChanges,false);draft.value='A reply not yet sent';assert.equal(panel.hasUnsavedChanges,true);
+ draft.value=' ';resource.value='live-video';assert.equal(panel.hasUnsavedChanges,true);
+ panel.connectedDraft={channelId:'channel-a',resource:'live-video'};assert.equal(panel.hasUnsavedChanges,false);
+ destination.value='channel-b';assert.equal(panel.hasUnsavedChanges,true);resource.value='';assert.equal(panel.hasUnsavedChanges,false);
+});

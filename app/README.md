@@ -1,18 +1,18 @@
-# Go Streams 1.0.9
+# Go Streams 1.0.10
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
 
-## Revisão 1.0.9
+## Revisão 1.0.10
 
-A ajuda longa mantém-se aberta ao deslocar o seu texto. A posição e as dimensões respeitam a janela disponível quando os requisitos mudam. A exportação do projeto explica que não inclui os vídeos nem as chaves.
+A mudança de idioma aguarda as operações do chat e da pasta de gravação e protege mensagens, configurações de contas e preferências ainda por guardar. As atualizações de estado conservam os formulários do chat em edição; os campos ficam bloqueados enquanto se guarda a configuração. Após guardar, o segredo introduzido é retirado do campo. Mantêm-se as correções da ajuda contextual e a explicação sobre a exportação do projeto.
 
-## Interface e ajuda contextual 1.0.9
+## Interface e ajuda contextual 1.0.10
 
 O painel apresenta duas entradas: captação ao vivo e vídeos ou playlists preparados. O menu agrupa transmissão, conteúdos/destinos e aplicação. Passe o rato sobre os controlos ou selecione-os com o teclado para ler a explicação; use Escape para a fechar. As opções de imagem/apresentador e os clips expandem apenas quando necessário; a gravação local fica diretamente acessível.
 
-## Captação ao vivo 1.0.9
+## Captação ao vivo 1.0.10
 
 Em **Origem**, escolha **Apenas microfone** para usar apenas o áudio do microfone, sem pedir acesso à câmara ou ao ecrã. A imagem emitida é o fundo, imagem e composição escolhidos no estúdio.
 

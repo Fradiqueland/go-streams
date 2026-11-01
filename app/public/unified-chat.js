@@ -2,7 +2,14 @@ import {language} from './i18n.js';
 const text=(en,pt)=>language()==='pt-PT'?pt:en;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export class ChatPanel {
- constructor({api,toast,onFeature}){Object.assign(this,{api,toast,onFeature});this.replyTo=null;this.selected=null;this.snapshot={accounts:{},connections:[],messages:[]};}
+ constructor({api,toast,onFeature}){Object.assign(this,{api,toast,onFeature});this.replyTo=null;this.selected=null;this.pendingOperations=0;this.snapshot={accounts:{},connections:[],messages:[]};}
+ get busy(){return this.pendingOperations>0;}
+ changedSetup(form){return [...form.querySelectorAll('input')].some(input=>input.value!==input.defaultValue);}
+ get hasUnsavedChanges(){
+  if(!this.element)return false;
+  const resource=this.element.querySelector('.chat-connect [name="resource"]')?.value?.trim(),channelId=this.element.querySelector('.chat-connect select')?.value;
+  return Boolean(this.element.querySelector('.chat-compose textarea')?.value?.trim()||[...(this.element.querySelectorAll?.('.chat-provider-setup')||[])].some(form=>this.changedSetup(form))||resource&&(resource!==this.connectedDraft?.resource||channelId!==this.connectedDraft?.channelId));
+ }
  mount(container,state,channels){
   if(!this.element){
    this.element=document.createElement('section');this.element.className='panel unified-chat';
@@ -22,11 +29,13 @@ export class ChatPanel {
   const accountSignature=JSON.stringify(this.snapshot.accounts);
   // Keep application credential forms intact while the operator edits them.
   if(this.accountSignature!==accountSignature&&!this.element.querySelector('.chat-accounts')?.contains(document.activeElement)){
+   const retained=[...(this.element.querySelectorAll?.('.chat-provider-setup')||[])].filter(form=>this.busyForms?.has(form)||this.changedSetup(form)).map(form=>({form,open:form.closest('details').open}));
    this.accountSignature=accountSignature;
    this.element.querySelector('.chat-accounts').innerHTML=['YouTube','Twitch'].map(provider=>{
     const a=this.snapshot.accounts[provider]||{};
     return `<section class="chat-account"><h3>${provider}</h3><p>${a.authorized?esc(a.name)+' — '+text('Authorized','Autorizado'):text('Account not connected','Conta por ligar')}</p>${a.pending?`<p>${a.pending.code?'<strong>'+esc(a.pending.code)+'</strong> ':''}<a href="${esc(a.pending.url)}" target="_blank" rel="noopener noreferrer">${text('Complete authorization','Concluir autorização')}</a></p>`:''}<div class="actions"><button type="button" class="secondary small" data-chat="authorize" data-provider="${provider}" ${a.configured?'':'disabled'}>${text('Sign in','Iniciar sessão')}</button>${a.authorized?`<button type="button" class="secondary small" data-chat="disconnect-account" data-provider="${provider}">${text('Disconnect account','Desligar conta')}</button>`:''}</div><details><summary>${text('OAuth application setup','Configuração da aplicação OAuth')}</summary><form class="chat-provider-setup" data-provider="${provider}"><label>Client ID<input name="clientId" value="${esc(a.clientId||'')}" autocomplete="off" required></label>${provider==='YouTube'?`<label>Client secret<input name="clientSecret" type="password" autocomplete="new-password" placeholder="${a.hasClientSecret?text('Saved — leave blank to retain','Guardado — deixe vazio para manter'):''}"></label>`:''}<p class="form-hint">${provider==='YouTube'?text('Requires a registered Google Desktop OAuth application with the YouTube Data API enabled.','Requer uma aplicação OAuth Google para computador, com a YouTube Data API ativa.'):text('Requires a registered Twitch public OAuth application. No client secret is needed.','Requer uma aplicação OAuth pública registada na Twitch. Não necessita de client secret.')} ${text('Stream keys do not grant chat access.','As chaves de transmissão não dão acesso ao chat.')}</p><button class="secondary small">${text('Save application settings','Guardar configuração')}</button></form></details></section>`;
    }).join('');
+   for(const {form,open} of retained){const replacement=this.element.querySelector(`.chat-provider-setup[data-provider="${form.dataset.provider}"]`);if(replacement){replacement.closest('details').open=open;replacement.replaceWith(form);}}
   }
   const options=channels.filter(c=>['YouTube','Twitch'].includes(c.platform)),destination=this.element.querySelector('.chat-connect select');
   const key=JSON.stringify(options.map(c=>[c.id,c.name,c.platform]));if(key!==this.channelSignature){this.channelSignature=key;const selected=destination.value;destination.innerHTML=options.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} — ${esc(c.platform)}</option>`).join('');destination.value=options.some(c=>c.id===selected)?selected:options[0]?.id||'';}
@@ -59,15 +68,16 @@ export class ChatPanel {
   if(atBottom)log.scrollTop=log.scrollHeight;
  }
  async submit(form){
-  this.busyForms ||= new WeakSet();if(this.sending||this.busyForms.has(form))return;this.busyForms.add(form);const data=new FormData(form),button=form.querySelector('button');button.disabled=true;
+  this.busyForms ||= new WeakSet();if(this.sending||this.busyForms.has(form))return;this.busyForms.add(form);const data=new FormData(form),button=form.querySelector('button'),controls=[...(form.elements||[])].map(el=>[el,el.disabled]);button.disabled=true;for(const [el]of controls)el.disabled=true;this.pendingOperations++;
   try{
-   if(form.classList.contains('chat-provider-setup')){await this.api('/api/chat/settings',{provider:form.dataset.provider,...Object.fromEntries(data)},'PUT');this.toast(text('Application settings saved. You can sign in now.','Configuração guardada. Já pode iniciar sessão.'));}
+   if(form.classList.contains('chat-provider-setup')){const accounts=await this.api('/api/chat/settings',{provider:form.dataset.provider,...Object.fromEntries(data)},'PUT');for(const input of form.querySelectorAll?.('input')||[]){if(input.type==='password'){input.value='';input.placeholder=accounts?.[form.dataset.provider]?.hasClientSecret?text('Saved — leave blank to retain','Guardado — deixe vazio para manter'):'';}else input.defaultValue=input.value;}this.toast(text('Application settings saved. You can sign in now.','Configuração guardada. Já pode iniciar sessão.'));}
    else if(form.classList.contains('chat-connect')){
     const channelId=data.get('channelId'),result=await this.api('/api/chat/connect',{channelId,resource:data.get('resource'),confirmed:data.has('confirmed')});
     this.update(result);const connection=result.connections?.find(c=>c.channelId===channelId||c.id===channelId);
     if(connection?.status==='connected')this.toast(text('Chat connected.','Chat ligado.'));
     else if(connection?.status==='connecting')this.toast(text('Chat connection requested. Waiting for the platform to confirm.','Ligação do chat pedida. A aguardar confirmação da plataforma.'));
     else throw Error(connection?.error||text('The chat connection was not confirmed. Reconnect the chat.','A ligação do chat não foi confirmada. Volte a ligar o chat.'));
+    this.connectedDraft={channelId,resource:String(data.get('resource')||'').trim()};
    }
    else{
     this.sending=true;this.updateComposer();
@@ -75,10 +85,10 @@ export class ChatPanel {
    }
    this.update(await this.api('/api/chat'));
   }catch(error){this.toast(error.message,true);}
-  finally{this.busyForms.delete(form);if(form.classList.contains('chat-compose'))this.sending=false;button.disabled=false;this.updateComposer();}
+  finally{this.busyForms.delete(form);this.pendingOperations--;if(form.classList.contains('chat-compose'))this.sending=false;for(const [el,disabled]of controls)el.disabled=disabled;button.disabled=false;this.updateComposer();}
  }
  async action(button){
-  const action=button.dataset.chat;if(this.sending&&['reply','cancel-reply'].includes(action))return;button.disabled=true;
+  const action=button.dataset.chat;if(this.sending&&['reply','cancel-reply'].includes(action))return;button.disabled=true;this.pendingOperations++;
   try{
    if(action==='authorize'){await this.api('/api/chat/authorize',{provider:button.dataset.provider});this.toast(text('Open the authorization link in Accounts to finish signing in.','Abra a ligação de autorização em Contas para concluir a sessão.'));}
    if(action==='disconnect-account')await this.api('/api/chat/account/disconnect',{provider:button.dataset.provider});
@@ -88,6 +98,6 @@ export class ChatPanel {
    if(action==='feature')this.onFeature(this.snapshot.messages.find(m=>m.id===button.dataset.id));
    if(action==='hide-featured')this.onFeature(null);
    if(['authorize','disconnect-account','disconnect-chat'].includes(action))this.update(await this.api('/api/chat'));
-  }catch(error){this.toast(error.message,true);}finally{button.disabled=false;if(['reply','cancel-reply'].includes(action))this.updateComposer();}
+  }catch(error){this.toast(error.message,true);}finally{this.pendingOperations--;button.disabled=false;if(['reply','cancel-reply'].includes(action))this.updateComposer();}
  }
 }

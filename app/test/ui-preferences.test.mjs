@@ -95,3 +95,15 @@ test('English media, playlist, download and event actions use translated labels'
  await h.click('download-new');assert.match(h.element('#dialog-content').innerHTML,/>Download<\/button>/);
  h.element('#dialog').close();h.run("page='history';draw()");assert.match(h.element('#content').innerHTML,/>Event<\/span>/);
 });
+
+for(const [name,panel] of [
+ ['pending chat operation','chatPanel={busy:true}'],
+ ['unsent chat draft','chatPanel={hasUnsavedChanges:true}'],
+ ['recording folder operation','capturePanel={production:{preferencesBusy:true}}'],
+ ['unsaved recording folder','capturePanel={production:{recordingPreferencesDirty:true}}']
+])test('language changes preserve a '+name,()=>{
+ const h=uiHarness({locale:'en'});let reloads=0;h.context.location.reload=()=>reloads++;
+ h.run(panel);const select=h.element('#language-select');select.value='fr';select.onchange({target:select});
+ assert.equal(reloads,0);assert.equal(select.value,'en');assert.ok(h.element('#toast').textContent);
+ h.run('chatPanel=undefined;capturePanel=undefined');select.value='fr';select.onchange({target:select});assert.equal(reloads,1);
+});
