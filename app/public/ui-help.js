@@ -186,6 +186,7 @@ export function helpFor(control){
  if(fields[name])return say(fields[name]);
  const href=control.getAttribute?.('href')||'';
  if(href.startsWith('#')&&routes[href.slice(1)])return say(routes[href.slice(1)]);
+ if(href==='/api/export')return uiText('Download the project configuration without stream keys. Video files are not included.','Transfira a configuração do projeto sem chaves de transmissão. Os ficheiros de vídeo não são incluídos.');
  if(href.startsWith('/api/recordings/'))return uiText('Download a copy of this completed local recording. Its original stays in the recording folder.','Transfira uma cópia desta gravação concluída. O original fica na pasta das gravações.');
  if(href.startsWith('https://')||href.startsWith('http://'))return uiText('Open this address in the browser. This does not start a transmission.','Abra este endereço no navegador. Isto não inicia uma transmissão.');
  if(control.tagName==='SUMMARY')return uiText('Expand or collapse this group of optional settings. Your current selections are retained.','Expanda ou recolha este grupo de opções. As seleções atuais são mantidas.');
@@ -231,9 +232,13 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
   const parent=control.closest('dialog[open]')||doc.body;if(tip.parentNode!==parent)parent.appendChild(tip);
   tip.textContent=content;tip.hidden=false;
   const ids=new Set((control.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));ids.add(tip.id);control.setAttribute('aria-describedby',[...ids].join(' '));
+  position();
+ }
+ function position(){
+  if(!active||tip.hidden)return;
   // Change an existing external stylesheet rule; no inline styles or CSP exception.
   if(!positionRule)for(const sheet of doc.styleSheets)try{positionRule=[...sheet.cssRules].find(rule=>rule.selectorText==='#control-help');if(positionRule)break;}catch{}
-  if(positionRule){const point=tooltipPosition(control.getBoundingClientRect(),tip.getBoundingClientRect(),{width:doc.documentElement?.clientWidth||win.innerWidth,height:win.innerHeight});positionRule.style.setProperty('left',point.left+'px');positionRule.style.setProperty('top',point.top+'px');}
+  if(positionRule){const viewport={width:doc.documentElement?.clientWidth||win.innerWidth,height:win.innerHeight};positionRule.style.setProperty('max-width',Math.max(1,Math.min(360,viewport.width-24))+'px');positionRule.style.setProperty('max-height',Math.max(1,viewport.height-24)+'px');const point=tooltipPosition(active.getBoundingClientRect(),tip.getBoundingClientRect(),viewport);positionRule.style.setProperty('left',point.left+'px');positionRule.style.setProperty('top',point.top+'px');}
  }
  const target=event=>event.target?.closest?.('button,a,input,select,textarea,summary,[data-help]');
  const laterHide=()=>{win.clearTimeout(hideTimer);hideTimer=win.setTimeout(()=>{if(doc.activeElement!==active)hide();},160);};
@@ -253,7 +258,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  doc.addEventListener('focusout',event=>{if(blocked?.contains(event.target))blocked=null;if(active?.contains(event.target))hide();});
  doc.addEventListener('pointerdown',event=>{if(!tip.contains(event.target))hide();},true);
  doc.addEventListener('keydown',event=>{if(event.key==='Escape'&&!tip.hidden){blocked=active;event.preventDefault();event.stopPropagation();hide();}},true);
- doc.addEventListener('close',hide,true);doc.addEventListener('scroll',hide,true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
- const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(()=>{if(active&&!active.isConnected)hide();else if(active&&!tip.hidden){const content=helpFor(active)||originalTitle||'';if(content!==tip.textContent)tip.textContent=content;}}):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']});
+ doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))hide();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
+ const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(()=>{if(active&&!active.isConnected)hide();else if(active&&!tip.hidden){const content=helpFor(active)||originalTitle||'';if(content!==tip.textContent){tip.textContent=content;position();}}}):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']});
  const installed={hide,tip,isReading:()=>Boolean((pointerTarget?.isConnected&&(showTimer||(!tip.hidden&&active===pointerTarget)))||(!tip.hidden&&active===doc.activeElement))};installations.set(doc,installed);return installed;
 }

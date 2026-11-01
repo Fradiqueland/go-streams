@@ -60,6 +60,13 @@ try {
   await capture('dashboard-help-1440.png','context-help',false);
   await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
+  await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
+  await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
+  await prepare.hover();await help.waitFor({state:'visible'});
+  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
+  await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
+  assert.equal(await help.isVisible(),true);assert.ok(await help.evaluate(el=>el.scrollTop>0));checks++;
+  await page.keyboard.press('Escape');await prepare.evaluate(el=>{delete el.dataset.help;});await page.setViewportSize({width:1440,height:1000});
   const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();await help.waitFor({state:'visible'});
   assert.equal(await studioLink.getAttribute('aria-describedby'),'control-help');
   await page.waitForTimeout(2400);assert.equal(await studioLink.evaluate(el=>el===document.activeElement),true);assert.equal(await help.isVisible(),true);checks++;

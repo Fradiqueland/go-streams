@@ -70,3 +70,22 @@ test('dashboard offers distinct live and prepared-video entry points and explain
  h.run("state.channels=[{id:'c',hasKey:false}]");html=h.run('dashboard()');assert.match(html,/missing stream keys/);assert.ok(!html.includes('undefined'));
  h.run("state.channels[0].hasKey=true");assert.match(h.run('dashboard()'),/destinations are configured/);
 });
+
+test('scrolling long help preserves it while scrolling the surrounding page dismisses it',()=>{
+ const e=environment();installContextHelp(e.doc,e.win);const button=control({dataset:{help:'Long explanation '.repeat(100)}});
+ e.emit('focusin',{target:button});e.emit('scroll',{target:e.tip});assert.equal(e.tip.hidden,false);
+ e.emit('scroll',{target:e.doc.body});assert.equal(e.tip.hidden,true);
+});
+
+test('changed prerequisites reposition help and respect the usable viewport width',()=>{
+ setLanguage('en',{persist:false});const e=environment();e.doc.documentElement={clientWidth:300};e.win.innerHeight=240;
+ e.tip.getBoundingClientRect=()=>({width:276,height:e.tip.textContent.includes('free destination')?140:50});
+ const button=control({dataset:{capture:'start'},disabled:false,getBoundingClientRect:()=>({left:220,top:170,bottom:214,width:80,height:44})});
+ installContextHelp(e.doc,e.win);e.emit('focusin',{target:button});const before=Number.parseFloat(e.properties.get('top'));
+ button.disabled=true;e.mutate();assert.ok(Number.parseFloat(e.properties.get('top'))<before);assert.equal(e.properties.get('max-width'),'276px');assert.equal(e.properties.get('max-height'),'216px');
+ assert.ok(Number.parseFloat(e.properties.get('top'))+140<=228);
+});
+
+test('project export help distinguishes configuration from media and protected keys',()=>{
+ setLanguage('en',{persist:false});const link=control({tagName:'A'});link.setAttribute('href','/api/export');assert.match(helpFor(link),/without stream keys.*Video files are not included/);
+});
