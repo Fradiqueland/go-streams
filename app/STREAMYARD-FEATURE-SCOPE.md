@@ -1,4 +1,4 @@
-# Go Streams live studio scope — 1.0.5
+# Go Streams live studio scope — 1.0.6
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
