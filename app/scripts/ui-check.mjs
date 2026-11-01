@@ -31,8 +31,8 @@ try {
   });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(()=>document.addEventListener('securitypolicyviolation',event=>{throw Error('CSP violation: '+event.violatedDirective);}));
-  async function capture(file,section='dashboard'){
-    await page.screenshot({path:path.join(base,file),fullPage:true});
+  async function capture(file,section='dashboard',fullPage=true){
+    await page.screenshot({path:path.join(base,file),fullPage});
     screenshots.push({file,section,viewport:page.viewportSize()});
   }
   const navigation=page.locator('#nav');
@@ -57,7 +57,7 @@ try {
   await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);
   assert.equal(await prepare.getAttribute('aria-describedby'),'control-help');checks++;
   assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;}));checks++;
-  await capture('dashboard-help-1440.png','context-help');
+  await capture('dashboard-help-1440.png','context-help',false);
   await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
   const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();await help.waitFor({state:'visible'});
@@ -67,7 +67,7 @@ try {
   await page.locator('.dashboard-start [data-action=channel-new]').click();
   const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();await help.waitFor({state:'visible'});
   assert.equal(await help.evaluate(el=>el.parentElement.id),'dialog');
-  await capture('dialog-help-1440.png','context-help');checks++;
+  await capture('dialog-help-1440.png','context-help',false);await help.waitFor({state:'visible'});checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await page.locator('#dialog').isVisible(),true);
   await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
   assert.equal(app.studio.jobs.size,0);assert.equal(app.store.data.channels.length,0);checks++;

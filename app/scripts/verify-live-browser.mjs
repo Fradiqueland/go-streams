@@ -13,7 +13,7 @@ const candidates=process.platform==='darwin'?['/Applications/Google Chrome.app/C
 const binary=process.env.GO_STREAMS_BROWSER||candidates.find(p=>fs.existsSync(p));
 if(!binary)throw Error('Set GO_STREAMS_BROWSER to an installed Chromium browser.');
 const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const directory=fs.mkdtempSync(path.join(parent,'live-browser-'));
-let app,browser,socket;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
+let app,browser,socket,evaluate;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
 let phase='startup';
 const watchdog=setTimeout(()=>{
  console.error(JSON.stringify({testTimedOut:true,phase,jobs:app?.studio.state().jobs,recordings:app?.recordings.state(),receivers:receivers.map(r=>({pid:r.child.pid,exitCode:r.child.exitCode,stderr:r.diagnostics()})),pageErrors:pagesErrors}));
@@ -53,7 +53,7 @@ try{
  await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__captureTest=[];const NativeRecorder=window.MediaRecorder;window.MediaRecorder=class extends NativeRecorder{constructor(...args){super(...args);const stats={mime:this.mimeType,chunks:0,bytes:0,errors:[]};window.__captureTest.push(stats);this.addEventListener('dataavailable',e=>{stats.chunks++;stats.bytes+=e.data.size;});this.addEventListener('error',e=>stats.errors.push(String(e.error)));}};`},sessionId);
  await command('Page.navigate',{url:app.url+'#capture'},sessionId);
  await command('Runtime.enable',{},sessionId);
- const evaluate=async expression=>{
+ evaluate=async expression=>{
   const result=await command('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true},sessionId);
   if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);
   return result.result.value;
@@ -116,7 +116,15 @@ try{
  await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");
  const requests=await evaluate('window.__mediaRequests');assert.equal(requests.length,1);assert.equal(requests[0].video,false);assert.ok(requests[0].audio);
  assert.equal(await evaluate('window.__inputStreams.at(-1).getVideoTracks().length'),0);
- await evaluate("document.querySelector('[data-production=record]').click()");await waitFor("!document.querySelector('[data-production=stop-record]').disabled");await delay(3500);
+  await evaluate("document.querySelector('[data-production=record]').click()");await waitFor("!document.querySelector('[data-production=stop-record]').disabled");
+  // Wait for the shared encoder's first keyframe and real bytes, rather than
+  // stopping a short recording before a loaded runner has produced its output.
+  const audioDeadline=Date.now()+25000;
+  while(!app.recordings.state().some(item=>item.status==='recording'&&item.bytes>=32768)){
+   if(Date.now()>audioDeadline)throw Error('Microphone-only recording did not receive encoded media.');
+   await delay(100);
+  }
+  await delay(2000);
  await evaluate("document.querySelector('[data-production=stop-record]').click()");await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
  assert.equal(app.recordings.state().length,3);assert.ok(app.recordings.state().every(item=>item.status==='completed'&&item.directory===fs.realpathSync(path.join(directory,'chosen-recordings'))));
  const audioOnly=JSON.parse((await runProcess(ffprobe,['-v','error','-show_streams','-of','json',app.recordings.media(app.recordings.state()[0].id)])).stdout).streams;assert.equal(audioOnly.find(s=>s.codec_type==='audio').codec_name,'aac');assert.equal(audioOnly.find(s=>s.codec_type==='video').codec_name,'h264');
@@ -125,7 +133,12 @@ try{
  const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false,microphoneOnlyWithoutCamera:true,recordingsWrittenToChosenFolder:true};
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
  await command('Browser.close').catch(()=>{});
-}finally{
+ }catch(error){
+  const recordingEvidence=app?.recordings.state().map(({status,bytes,error})=>({status,bytes,error}));
+  let interfaceEvidence;try{interfaceEvidence=await evaluate("({recording:document.querySelector('.recording-status')?.textContent,capture:document.querySelector('.capture-status')?.textContent,toast:document.querySelector('#toast')?.textContent})");}catch{}
+  console.error(JSON.stringify({phase,recordingEvidence,interfaceEvidence,pageErrors:pagesErrors}));
+  throw error;
+ }finally{
  phase='cleanup';
  socket?.close();if(browser&&browser.exitCode===null)browser.kill();
  await app?.close();for(const r of receivers)if(r.child.exitCode===null)r.child.kill();await Promise.allSettled(receivers.map(r=>r.done));
