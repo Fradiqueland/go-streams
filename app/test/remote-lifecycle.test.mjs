@@ -5,6 +5,7 @@ import {EventEmitter} from 'node:events';
 import {gzipSync} from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {RemoteSources,openRemote} from '../src/remote-sources.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -89,8 +90,12 @@ for(const status of [200,206])test('encoded '+status+' upstream media is rejecte
 });
 
 test('a missing bundled downloader can be retried after its tool setting is repaired',async t=>{
- const exists=fs.existsSync.bind(fs);let settings={},executed=0;
- t.mock.method(fs,'existsSync',file=>path.basename(String(file))==='runtime'||exists(file));
+ const exists=fs.existsSync.bind(fs),stat=fs.statSync.bind(fs);let settings={},executed=0;
+ const runtime=fileURLToPath(new URL('../runtime',import.meta.url));
+ const bundled=fileURLToPath(new URL(`../vendor/yt-dlp/${process.platform}/${process.platform==='win32'?'yt-dlp.exe':'yt-dlp'}`,import.meta.url));
+ // Exercise the missing-tool branch even when CI has prepared its bundled tools.
+ t.mock.method(fs,'statSync',(file,...args)=>{if(path.resolve(String(file))===bundled)throw Object.assign(Error('Controlled missing bundled downloader'),{code:'ENOENT'});return stat(file,...args);});
+ t.mock.method(fs,'existsSync',file=>path.resolve(String(file))===runtime||exists(file));
  const sources=remote({settings:()=>settings,execute:async()=>{executed++;return{stdout:JSON.stringify({protocol:'https',ext:'mp4',duration:2,url:'https://r.googlevideo.com/repaired'})};}});
  const entry=sources.entry({path:'https://youtu.be/abcdefghijk'});
  try{
