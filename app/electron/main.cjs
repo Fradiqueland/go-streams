@@ -45,6 +45,9 @@ async function start(){
  backend=await createApplication({directory:paths.data,port,picker:async()=>{
   const result=await dialog.showOpenDialog(window,{title:'Import videos',properties:['openFile','multiSelections'],filters:[{name:'Videos',extensions:['mp4','mkv','mov','webm','avi','m4v','ts']}]});
   return result.canceled?[]:result.filePaths;
+ },folderPicker:async({directory})=>{
+  const result=await dialog.showOpenDialog(window,{title:'Choose a folder for local recordings',defaultPath:directory,properties:['openDirectory','createDirectory']});
+  return result.canceled?null:result.filePaths[0]||null;
  }});
  // The loopback origin stays fixed so user preferences survive every upgrade.
  const profile=migratePreferences(paths.data),browserSession=session.fromPath(profile);

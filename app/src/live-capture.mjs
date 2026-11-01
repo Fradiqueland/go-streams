@@ -27,7 +27,7 @@ export class LiveCapture {
     if(feed&&(feed.quality!==input.quality||feed.aspect!==input.aspect||feed.source!==input.source))fail('The live destination format must match the shared capture.');
     if (studio.closing || studio.importingProject) fail('The studio is busy or closing.', 409);
     if (input.confirmed !== true) fail('Confirm the live broadcast destinations before starting.');
-    if (!['camera', 'screen', 'screen-camera'].includes(input.source)) fail('Choose a live capture source.');
+    if (!['camera', 'screen', 'screen-camera', 'microphone'].includes(input.source)) fail('Choose a live capture source.');
     if (!['720p', '1080p'].includes(input.quality) || !['16:9', '9:16'].includes(input.aspect)) fail('Choose a supported live video format.');
     if (!['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'].includes(input.mimeType)) fail('This browser does not support live WebM capture. Use Chrome or Edge.');
     if (!Array.isArray(input.channelIds) || !input.channelIds.length || input.channelIds.length > 64 || new Set(input.channelIds).size !== input.channelIds.length) fail('Select destinations without duplicates.');

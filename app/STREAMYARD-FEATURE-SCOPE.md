@@ -1,4 +1,4 @@
-# Go Streams live studio scope — 1.0.6
+# Go Streams live studio scope — 1.0.7
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -16,7 +16,8 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 | Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; not a shared online studio |
 | Presenter notes | Private notes and scrolling teleprompter | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
-| Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting | Stored on this computer only; bounded upload buffer, finalized index/duration, interrupted-file recovery |
+| Microphone-only live mode | Capture microphone audio without requesting camera or screen access | Sends the selected background, image and studio composition as the video picture; supports the same RTMP destinations and local recording |
+| Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting; choose a folder each time or save a default | Files are written directly to the selected folder; preferences persist locally; bounded upload buffer, finalized index/duration, interrupted-file recovery |
 | Chat aggregation | YouTube and Twitch messages in one panel with origin labels and filters | Official provider authorization and registered OAuth applications required |
 | Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs and may relay to linked channels in a Shared Chat session; rate limits, moderation and quotas apply |
 | Featured comments | Show/hide an incoming comment on the captured program | Local canvas overlay; does not automatically post a message |

@@ -33,7 +33,7 @@ export class LiveCapturePanel {
    this.element=document.createElement('section');this.element.className='live-capture-studio';
    this.element.innerHTML=`<div class="page-heading"><div><h1>${text('Live camera & screen','Câmara e ecrã ao vivo')}</h1><p>${text('Preview locally, then send the same live feed to your selected destinations.','Pré-visualize localmente e envie o mesmo direto para os destinos selecionados.')}</p></div></div>
     <div class="capture-layout"><section class="panel"><h2>${text('1. Prepare your source','1. Preparar a origem')}</h2><form id="capture-form">
-    <label>${text('Source','Origem')}<select name="source"><option value="camera">${text('Camera','Câmara')}</option><option value="screen">${text('Screen or window','Ecrã ou janela')}</option><option value="screen-camera">${text('Screen + camera','Ecrã + câmara')}</option></select></label>
+    <label>${text('Source','Origem')}<select name="source"><option value="camera">${text('Camera','Câmara')}</option><option value="microphone">${text('Microphone only','Apenas microfone')}</option><option value="screen">${text('Screen or window','Ecrã ou janela')}</option><option value="screen-camera">${text('Screen + camera','Ecrã + câmara')}</option></select></label>
     <div class="form-row"><label>${text('Quality','Qualidade')}<select name="quality"><option value="720p">720p</option><option value="1080p">1080p</option></select></label><label>${text('Orientation','Orientação')}<select name="aspect"><option value="16:9">16:9 — ${text('Landscape','Horizontal')}</option><option value="9:16">9:16 — ${text('Portrait','Vertical')}</option></select></label></div>
     <label>${text('Camera','Câmara')}<select name="camera"><option value="">${text('Default camera','Câmara predefinida')}</option></select></label><label>${text('Microphone','Microfone')}<select name="microphone"><option value="">${text('Default microphone','Microfone predefinido')}</option></select></label>
     <label class="check"><input type="checkbox" name="useMic" checked> ${text('Include microphone','Incluir microfone')}</label>
@@ -69,17 +69,22 @@ export class LiveCapturePanel {
  controls(){
   const active=Boolean(this.session)||this.preparing||this.stopping||Boolean(this.releasing);
   for(const input of this.element.querySelectorAll('#capture-form input,#capture-form select'))input.disabled=active||Boolean(this.output);
+  const source=this.element.querySelector('[name="source"]')?.value,microphoneOnly=source==='microphone';
+  for(const [name,disabled]of [['camera',!['camera','screen-camera'].includes(source)],['systemAudio',!['screen','screen-camera'].includes(source)],['useMic',microphoneOnly]]){
+   const input=this.element.querySelector(`[name="${name}"]`);if(input){input.disabled=active||Boolean(this.output)||disabled;if(name==='useMic'&&microphoneOnly)input.checked=true;}
+  }
   this.element.querySelector('[data-capture="preview"]').disabled=active||Boolean(this.output);
   this.element.querySelector('[data-capture="release"]').disabled=!this.output||active;
   this.element.querySelector('[data-capture="mute"]').disabled=!this.mic;
   this.element.querySelector('[data-capture="stop"]').disabled=!this.session||this.stopping;
   const hasDestinations=Boolean(this.element.querySelector('.capture-destinations input:checked:not(:disabled)'));
   this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
-  this.production?.update(this.recordings||[]);
+  this.production?.update(this.recordings||[],this.recordingPreferences);
  }
  update(state){
   if(!this.element)return;
   this.recordings=state.recordings||[];
+  this.recordingPreferences=state.recordingPreferences;
   const selected=new Set([...this.element.querySelectorAll('.capture-destinations input:checked')].map(el=>el.value));
   const signature=JSON.stringify(state.channels.map(c=>[c.id,c.name,c.platform,c.hasKey,state.jobs.some(j=>!j.ended&&j.channelId===c.id)]));
   if(signature!==this.destinationsSignature){
@@ -112,12 +117,13 @@ export class LiveCapturePanel {
    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw Error(text('Live capture requires Chrome, Edge, Safari 18.4+ or the Electron edition, with media permissions enabled.','A captação requer Chrome, Edge, Safari 18.4+ ou a edição Electron, com permissões de multimédia.'));
    this.config={source:form.get('source'),quality:form.get('quality'),aspect:form.get('aspect')};
    const device=value=>value?{deviceId:{exact:value}}:true;
-   if(this.config.source!=='camera'){
+   if(['screen','screen-camera'].includes(this.config.source)){
     if(!navigator.mediaDevices.getDisplayMedia)throw Error('Screen sharing is unavailable in this browser.');
     this.screen=retain(await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:form.has('systemAudio')}));
    }
    if(this.config.source!=='screen'||form.has('useMic')){
-    const stream=await navigator.mediaDevices.getUserMedia({video:this.config.source==='screen'?false:device(form.get('camera')),audio:form.has('useMic')?device(form.get('microphone')):false});
+    const microphoneOnly=this.config.source==='microphone';
+    const stream=await navigator.mediaDevices.getUserMedia({video:['camera','screen-camera'].includes(this.config.source)?device(form.get('camera')):false,audio:microphoneOnly||form.has('useMic')?device(form.get('microphone')):false});
     retain(stream);this.mic=stream.getAudioTracks()[0];
     if(stream.getVideoTracks().length)this.camera=stream;
    }

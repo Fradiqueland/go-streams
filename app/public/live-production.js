@@ -9,18 +9,22 @@ export function layoutRects(layout,width,height,hasCamera,hasScreen){
  return [{source:'screen',x:0,y:0,w:width,h:height},{source:'camera',x:width*.70,y:height*.70,w:width*.28,h:height*.28}];
 }
 export class ProductionTools {
- constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed});this.values={...defaults};this.images={};this.scenes={};try{const saved=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))this.scenes=saved;}catch{}this.level=0;}
+ constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed}){Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.images={};this.scenes={};try{const saved=JSON.parse(localStorage.getItem('go-streams-scenes')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))this.scenes=saved;}catch{}this.level=0;}
  get recording(){return Boolean(this.recordingId)||Boolean(this.finishing)||Boolean(this.starting);}
  mount(parent){
   if(this.element)return;
   this.element=document.createElement('section');this.element.className='panel production-tools';
   this.element.innerHTML=`<h2>${t('Studio production','Produção do estúdio')}</h2><div class="production-grid"><div><label>${t('Live layout','Layout ao vivo')}<select name="layout"><option value="pip">${t('Picture in picture','Imagem na imagem')}</option><option value="split">${t('Screen + presenter side by side','Ecrã e apresentador lado a lado')}</option><option value="camera">${t('Camera only','Apenas câmara')}</option><option value="screen">${t('Screen only','Apenas ecrã')}</option></select></label><label class="check"><input type="checkbox" name="mirror">${t('Mirror camera','Espelhar câmara')}</label><div class="form-row"><label>${t('Background','Fundo')}<input name="background" type="color" value="#111827"></label><label>${t('Brand color','Cor da marca')}<input name="accent" type="color" value="#e70952"></label></div><label>${t('Logo image','Imagem do logótipo')}<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label><label>${t('Background image','Imagem de fundo')}<input type="file" name="backgroundImage" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="secondary small" data-production="clear-images">${t('Remove images','Remover imagens')}</button></div><div><label>${t('Presenter name','Nome do apresentador')}<input name="name" maxlength="80"></label><label>${t('Presenter title','Título do apresentador')}<input name="title" maxlength="100"></label><label>${t('On-screen banner','Faixa no vídeo')}<input name="banner" maxlength="160"></label><label>${t('Scrolling ticker','Texto em movimento')}<input name="ticker" maxlength="500"></label><label>${t('Microphone volume','Volume do microfone')}<input type="range" name="micVolume" min="0" max="1.5" step="0.05" value="1"></label><label>${t('Shared audio volume','Volume do áudio partilhado')}<input type="range" name="screenVolume" min="0" max="1.5" step="0.05" value="1"></label><label>${t('Mixed audio level','Nível do áudio misturado')}<meter class="capture-audio-meter" min="0" max="1" value="0"></meter></label></div></div><div class="form-row"><label>${t('Saved studio scene','Cena guardada')}<select name="scene"><option value="intro">Intro</option><option value="main">${t('Main','Principal')}</option><option value="presentation">${t('Presentation','Apresentação')}</option><option value="outro">Outro</option></select></label><div class="actions"><button type="button" class="secondary" data-production="save-scene">${t('Save scene','Guardar cena')}</button><button type="button" class="secondary" data-production="load-scene">${t('Load scene','Carregar cena')}</button></div></div><details><summary>${t('Private notes & teleprompter','Notas privadas e teleponto')}</summary><label>${t('These notes are not drawn into the program frame.','Estas notas não são desenhadas no vídeo do programa.')}<textarea name="notes" rows="4" maxlength="30000"></textarea></label><div class="teleprompter" tabindex="0"></div><button type="button" class="secondary" data-production="teleprompter">${t('Start / pause scrolling','Iniciar / pausar movimento')}</button></details><h3>${t('Local recording','Gravação local')}</h3><p>${t('Record the composed video and mixed audio to this computer, with or without broadcasting. Files are saved locally; no cloud recording is used.','Grave o vídeo composto e o áudio misturado neste computador, com ou sem transmissão. Os ficheiros ficam guardados localmente; não é usada gravação na nuvem.')}</p><div class="actions"><button type="button" class="secondary" data-production="record" disabled>${t('Start local recording','Iniciar gravação local')}</button><button type="button" class="danger" data-production="stop-record" disabled>${t('Stop & save recording','Parar e guardar gravação')}</button></div><p class="recording-status" role="status"></p><div class="recording-files"></div>`;
+  const location=document.createElement('div');location.className='recording-location';
+  location.innerHTML=`<label>${t('Recording folder','Pasta das gravações')}<input name="recordingDirectory" type="text" maxlength="4096" placeholder="${t('Choose a folder or enter an absolute path','Escolha uma pasta ou introduza um caminho absoluto')}"></label><label class="check"><input name="askRecordingFolder" type="checkbox" checked>${t('Ask for a folder whenever recording starts','Perguntar a pasta sempre que iniciar uma gravação')}</label><div class="actions"><button type="button" class="secondary" data-production="choose-recording-folder">${t('Choose folder','Escolher pasta')}</button><button type="button" class="secondary" data-production="save-recording-preferences">${t('Save recording preferences','Guardar preferências de gravação')}</button></div><p class="form-hint">${t('Recordings are written directly to the chosen folder. Turn off the question and save to use this folder by default.','As gravações são escritas diretamente na pasta escolhida. Desative a pergunta e guarde para usar esta pasta por predefinição.')}</p>`;
+  this.element.querySelector('[data-production="record"]').parentElement.before(location);
   parent.appendChild(this.element);
   const clips=document.createElement('div');clips.className='production-clips';clips.innerHTML=`<h3>${t('Intro, outro & video clips','Introdução, encerramento e clips')}</h3><label>${t('Local video file','Vídeo local')}<input type="file" name="clipFile" accept="video/mp4,video/webm"></label><p class="form-hint">${t('The clip replaces the live picture and temporarily mutes the live microphone/shared audio. At the end, the live picture and audio return.','O clip substitui a imagem ao vivo e silencia temporariamente o microfone/áudio partilhado. No final regressam a imagem e o áudio ao vivo.')}</p><div class="actions"><button type="button" class="secondary" data-production="play-clip">${t('Play selected clip','Reproduzir clip selecionado')}</button><button type="button" class="secondary" data-production="stop-clip">${t('Return to live','Regressar ao direto')}</button><button type="button" class="secondary" data-production="snapshot">${t('Save frame as PNG','Guardar imagem PNG')}</button></div><p class="form-hint">${t('Shortcuts: Ctrl+Alt+1–4 changes layouts. Ctrl+Alt+R starts/stops local recording.','Atalhos: Ctrl+Alt+1–4 muda o layout. Ctrl+Alt+R inicia/para a gravação local.')}</p>`;
   this.element.appendChild(clips);
   window.addEventListener('keydown',event=>{if(!event.ctrlKey||!event.altKey||event.repeat)return;const layouts={'1':'camera','2':'screen','3':'pip','4':'split'};if(layouts[event.key]){event.preventDefault();this.values.layout=layouts[event.key];this.element.querySelector('[name=layout]').value=this.values.layout;}if(event.code==='KeyR'&&this.getStream()){event.preventDefault();if(this.recording)void this.stopRecording();else void this.startRecording();}});
   this.element.addEventListener('input',event=>{
    const el=event.target;if(['background','accent','name','title','banner','ticker','layout'].includes(el.name))this.values[el.name]=el.value;if(el.name==='mirror')this.values.mirror=el.checked;
+   if(['recordingDirectory','askRecordingFolder'].includes(el.name))this.recordingPreferencesDirty=true;
    if(el.name==='micVolume'||el.name==='screenVolume')this.setVolume(el.name,Number(el.value));
    if(el.name==='notes')this.element.querySelector('.teleprompter').textContent=el.value;
   });
@@ -50,21 +54,44 @@ export class ProductionTools {
   if(v.banner)band(v.banner,h*.72,h*.08);
   if(v.ticker){ctx.fillStyle=v.accent;ctx.fillRect(0,h*.94,w,h*.06);ctx.font=`${Math.round(h*.03)}px sans-serif`;ctx.fillStyle='#fff';const span=ctx.measureText(v.ticker).width+w;ctx.fillText(v.ticker,w-(performance.now()/20)%span,h*.982);}
  }
- update(recordings=this.recordings||[]){
+ applyRecordingPreferences(preferences){
+  this.recordingPreferences={...preferences};
+  const directory=this.element?.querySelector('[name="recordingDirectory"]'),ask=this.element?.querySelector('[name="askRecordingFolder"]');
+  if(directory)directory.value=preferences.directory;if(ask)ask.checked=preferences.askEveryTime;
+ }
+ recordingOptions(){return {directory:this.element?.querySelector('[name="recordingDirectory"]')?.value??this.recordingPreferences.directory,askEveryTime:this.element?.querySelector('[name="askRecordingFolder"]')?.checked??this.recordingPreferences.askEveryTime};}
+ async chooseRecordingDirectory(){
+  if(this.preferencesBusy)return null;
+  this.preferencesBusy=true;this.update();
+  try{const result=await this.api('/api/recordings/pick-directory',{directory:this.recordingOptions().directory});if(result.directory===null)return null;
+   this.recordingPreferencesDirty=true;this.applyRecordingPreferences({...this.recordingOptions(),directory:result.directory});return result.directory;
+  }finally{this.preferencesBusy=false;this.update();}
+ }
+ async saveRecordingPreferences(){
+  if(this.preferencesBusy||this.recording)return;
+  this.preferencesBusy=true;this.update();
+  try{const preferences=await this.api('/api/recordings/preferences',this.recordingOptions(),'PUT');this.recordingPreferencesDirty=false;this.applyRecordingPreferences(preferences);this.toast(t('Recording preferences saved.','Preferências de gravação guardadas.'));}
+  finally{this.preferencesBusy=false;this.update();}
+ }
+ update(recordings=this.recordings||[],preferences){
   if(!this.element)return;
+  if(preferences&&!this.recordingPreferencesDirty&&!this.preferencesBusy&&(preferences.revision||0)>=(this.recordingPreferences.revision||0))this.applyRecordingPreferences(preferences);
+  for(const selector of ['[name="recordingDirectory"]','[name="askRecordingFolder"]','[data-production="choose-recording-folder"]','[data-production="save-recording-preferences"]']){const control=this.element.querySelector(selector);if(control)control.disabled=this.recording||Boolean(this.preferencesBusy);}
   this.recordings=recordings;
   const current=recordings.find(item=>item.id===this.recordingId);
   if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
    this.recordingId=null;void this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
   }
-  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording;
+  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
   const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${item.id}/file">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
  }
  async startRecording(){
-  if(!this.getStream()||this.recording)return;
+  if(!this.getStream()||this.recording||this.preferencesBusy)return;
   this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
-  try{const feedId=await this.acquireFeed('recording');const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.');}
+  try{let {directory,askEveryTime}=this.recordingOptions();if(askEveryTime||!directory){directory=await this.chooseRecordingDirectory();if(directory===null)return;}
+   if(!this.getStream())throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
+   const feedId=await this.acquireFeed('recording');const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId,directory});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;}
   catch(error){await this.releaseFeed('recording').catch(()=>{});this.recordingId=null;this.toast(error.message,true);}
   finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
  }
@@ -82,6 +109,7 @@ export class ProductionTools {
   button.disabled=true;
   try{
    const action=button.dataset.production;
+   if(action==='choose-recording-folder')await this.chooseRecordingDirectory();if(action==='save-recording-preferences')await this.saveRecordingPreferences();
    if(action==='record')await this.startRecording();if(action==='stop-record')await this.stopRecording();
    if(action==='recover'){button.disabled=true;await this.api(`/api/recordings/${button.dataset.id}/finish`,{});this.toast(t('Recording recovered.','Gravação recuperada.'));}
    if(action==='clear-images'){this.imageLoads={};this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}

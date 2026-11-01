@@ -37,7 +37,7 @@ export class CaptureFeeds {
  create(input){
   if(this.studio.closing||this.studio.importingProject)throw new AppError('The studio is busy or closing.',409);
   if(this.active.size>=2)throw new AppError('Finish the current live capture first.',409);
-  if(input.confirmed!==true||!['720p','1080p'].includes(input.quality)||!['16:9','9:16'].includes(input.aspect)||!['camera','screen','screen-camera'].includes(input.source))throw new AppError('Confirm a supported capture source and format.');
+  if(input.confirmed!==true||!['720p','1080p'].includes(input.quality)||!['16:9','9:16'].includes(input.aspect)||!['camera','screen','screen-camera','microphone'].includes(input.source))throw new AppError('Confirm a supported capture source and format.');
   const encoded=encodingArgs({...this.studio.store.data.settings.encoding,copy:false,aspect:input.aspect,fps:30,videoBitrate:input.quality==='1080p'?4500:2500},input.quality,[{audio:{}}]);
   const feed={id:crypto.randomUUID(),source:input.source,quality:input.quality,aspect:input.aspect,sequence:0,receiving:false,lastInput:Date.now(),sinks:new Set(),stopped:false,started:false,tail:Buffer.alloc(0),tables:new Map()};
   const args=['-hide_banner','-loglevel','error','-nostdin','-fflags','+genpts','-probesize','1048576','-analyzeduration','1000000','-f','webm','-i','pipe:0', ];appendProgramOutput(args,encoded.args.filter(arg=>arg!=='-shortest'),input.quality,input.aspect);args.push('-tune','zerolatency','-bf','0','-x264-params','repeat-headers=1','-f','mpegts','-mpegts_start_pid',String(VIDEO_PID),'-mpegts_pmt_start_pid',String(PMT_PID),'-mpegts_flags','resend_headers+pat_pmt_at_frames','-flush_packets','1','-muxdelay','0','-muxpreload','0','pipe:1');

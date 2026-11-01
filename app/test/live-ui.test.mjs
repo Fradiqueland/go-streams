@@ -125,6 +125,45 @@ test('permission results arriving after device release cannot revive a cancelled
  assert.equal(track.stopped,true);assert.equal(panel.output,null);assert.equal(panel.streams.length,0);assert.equal(panel.preparing,false);
 });
 
+test('microphone-only preview requests audio without camera or screen access and retains the composed video output',async t=>{
+ const requests=[];let microphone;
+ const {panel,Track,Stream}=previewEnvironment(t,'microphone',{getUserMedia:async constraints=>{requests.push(constraints);return microphone;},getDisplayMedia:()=>assert.fail('Microphone-only mode must never request screen access')});
+ const audio=new Track('audio');microphone=new Stream([audio]);
+ await panel.preview();assert.deepEqual(requests,[{video:false,audio:true}]);assert.equal(panel.camera,undefined);assert.equal(panel.screen,undefined);assert.equal(panel.cameraVideo,null);assert.equal(panel.screenVideo,null);assert.equal(panel.mic,audio);
+ assert.equal(panel.output.getVideoTracks().length,1);assert.equal(panel.output.getAudioTracks().length,1);assert.equal(panel.config.source,'microphone');panel.releaseDevices();assert.equal(audio.stopped,true);
+});
+
+test('denying microphone permission cannot fall back to camera capture',async t=>{
+ const requests=[],{panel}=previewEnvironment(t,'microphone',{getUserMedia:async constraints=>{requests.push(constraints);throw Error('Microphone permission denied');},getDisplayMedia:()=>assert.fail('No screen permission is expected')});
+ await panel.preview();assert.equal(requests.length,1);assert.equal(requests[0].video,false);assert.equal(panel.output,null);assert.equal(panel.lastStatus.error,true);assert.match(panel.lastStatus.value,/denied/);
+});
+
+test('cancelling the recording folder question starts neither a shared encoder nor a recording',async()=>{
+ const calls=[],tools=new ProductionTools({getStream:()=>({}),api:async route=>{calls.push(route);return {directory:null};},acquireFeed:()=>assert.fail('Cancelled folder choice must not acquire a feed'),releaseFeed:()=>assert.fail('There is no feed to release'),toast:()=>assert.fail('Cancellation is not an error')});
+ tools.update=()=>{};tools.element={querySelector:()=>null};
+ await tools.startRecording();assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(tools.recordingId,undefined);assert.equal(tools.starting,false);assert.equal(tools.startDone,null);
+});
+
+test('a predefined recording folder bypasses the picker and is sent to the independent recording worker',async()=>{
+ const requests=[],tools=new ProductionTools({getStream:()=>({}),api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},acquireFeed:async()=> 'shared-feed',releaseFeed:async()=>{},toast(){}});
+ tools.update=()=>{};const status={};tools.element={querySelector:selector=>selector==='.recording-status'?status:null};tools.recordingPreferences={directory:'/chosen/recordings',askEveryTime:false};
+ await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,feedId:'shared-feed',directory:'/chosen/recordings'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);
+});
+
+test('a stale state poll cannot replace freshly saved recording preferences',()=>{
+ const controls={'[name="recordingDirectory"]':{},'[name="askRecordingFolder"]':{},'[data-production="record"]':{},'[data-production="stop-record"]':{},'.recording-files':{}},tools=new ProductionTools({getStream:()=>null});
+ tools.element={querySelector:selector=>controls[selector]};tools.applyRecordingPreferences({directory:'/new',askEveryTime:false,revision:2});
+ tools.update([],{directory:'/old',askEveryTime:true,revision:1});assert.equal(controls['[name="recordingDirectory"]'].value,'/new');assert.equal(controls['[name="askRecordingFolder"]'].checked,false);
+ tools.update([],{directory:'/newer',askEveryTime:true,revision:3});assert.equal(controls['[name="recordingDirectory"]'].value,'/newer');assert.equal(controls['[name="askRecordingFolder"]'].checked,true);
+});
+
+test('a preview closed during folder selection cannot start a recording when the picker returns',async()=>{
+ const pending=deferred(),calls=[];let stream={};const errors=[];
+ const tools=new ProductionTools({getStream:()=>stream,api:async route=>{calls.push(route);return pending.promise;},acquireFeed:()=>assert.fail('The preview is already closed'),releaseFeed:async()=>{},toast:message=>errors.push(message)});
+ tools.update=()=>{};tools.element={querySelector:()=>null};const start=tools.startRecording();stream=null;pending.resolve({directory:'/chosen'});await start;
+ assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(tools.recordingId,null);assert.match(errors[0],/preview/);
+});
+
 test('ending screen sharing during microphone permission cancels the pending camera acquisition',async t=>{
  const pending=deferred();let screen;const {panel,Track,Stream}=previewEnvironment(t,'screen-camera',{getDisplayMedia:async()=>screen,getUserMedia:()=>pending.promise});
  const screenTrack=new Track(),cameraTrack=new Track(),camera=new Stream([cameraTrack]);screen=new Stream([screenTrack]);

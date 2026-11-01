@@ -15,7 +15,7 @@ const base = path.resolve(process.env.GO_STREAMS_UI_OUTPUT||'.tmp/ui-check'); fs
 const directory = fs.mkdtempSync(path.join(base, 'data-'));
 const clip = path.join(directory, 'Ensaio de emissão.mp4');
 await runProcess('ffmpeg', ['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-ac','2','-y',clip]);
-const app = await createApplication({ directory, port: 4317, listen: false, clock: false });
+const app = await createApplication({ directory, port: 4317, listen: false, clock: false,folderPicker:async()=>path.join(directory,'Chosen recordings') });
 let context;
 const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const started=new Date().toISOString(),screenshots=[];let passed=false,failure='';
@@ -212,6 +212,15 @@ try {
   for(const name of ['topEnabled','bottomEnabled','imageEnabled'])await page.locator('[name='+name+']').uncheck();
   await page.getByRole('button',{name:'Guardar sobreposições',exact:true}).click();await page.locator('#dialog').waitFor({state:'hidden'});
   assert.ok(['top','bottom','image'].every(key=>!app.store.data.settings.overlays[key].enabled));checks++;
+  await goTo('Câmara e ecrã ao vivo');
+  await page.locator('#capture-form [name=source]').selectOption('microphone');
+  assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
+  await page.locator('[data-production=choose-recording-folder]').click();await page.waitForFunction(()=>document.querySelector('[name=recordingDirectory]').value.includes('Chosen recordings'));
+  await page.locator('[name=askRecordingFolder]').uncheck();await page.locator('[data-production=save-recording-preferences]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-production=save-recording-preferences]').disabled);
+  assert.equal(app.recordings.preferences.directory,fs.realpathSync(path.join(directory,'Chosen recordings')));assert.equal(app.recordings.preferences.askEveryTime,false);checks++;
+  await goTo('Visão geral');
+  await goTo('Câmara e ecrã ao vivo');assert.equal(await page.locator('[name=askRecordingFolder]').isChecked(),false);checks++;
   await goTo('Visão geral');
   await capture('dashboard-populated.png');
   for(const width of [1440,800,390]){

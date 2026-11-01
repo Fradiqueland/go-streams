@@ -2,9 +2,11 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.0.6**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.0.7**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
 
-## Live camera and screen capture (1.0.6)
+## Live camera and screen capture (1.0.7)
+
+Choose **Microphone only** to broadcast microphone audio with a selected background or image without camera/screen permission. Local recording can ask for a folder at each start or remember a default; recording files are written directly to the selected folder.
 
 Open **Live camera & screen** to preview a camera, a screen/window, or a screen with a camera inset. Choose a microphone, 720p/1080p and landscape/portrait, then select one or more configured RTMP/RTMPS channels and explicitly confirm **Start live broadcast**. Preview alone never starts a broadcast. The original prerecorded single-video, playlist, repeat, schedule, queue and backup options remain available.
 

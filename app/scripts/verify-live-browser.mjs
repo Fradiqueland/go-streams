@@ -21,7 +21,7 @@ const watchdog=setTimeout(()=>{
 },90000).unref();
 async function freePort(){const s=net.createServer();await new Promise((resolve,reject)=>{s.once('error',reject);s.listen(0,'127.0.0.1',resolve);});const port=s.address().port;await new Promise(resolve=>s.close(resolve));return port;}
 try{
- app=await createApplication({directory:path.join(directory,'data'),port:0,portableVault:true,chatOptions:{request:async(url,options)=>{
+ app=await createApplication({directory:path.join(directory,'data'),port:0,portableVault:true,folderPicker:async()=>path.join(directory,'chosen-recordings'),chatOptions:{request:async(url,options)=>{
   let value;if(url.includes('/videos?'))value={items:[{liveStreamingDetails:{activeLiveChatId:'mock-room'}}]};
   else if(options.method==='POST'){chatPosts.push(JSON.parse(options.body));value={id:'mock-reply'};}
   else value={pollingIntervalMillis:30000,nextPageToken:'mock-next',items:[{id:'mock-viewer',authorDetails:{displayName:'Test viewer',channelId:'viewer'},snippet:{displayMessage:'Hello <script>not executable</script>',publishedAt:new Date().toISOString()}}]};
@@ -49,6 +49,7 @@ try{
  const command=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++sequence;const timer=setTimeout(()=>{pending.delete(id);reject(Error(`Browser command timed out: ${method}`));},20000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});
  const {targetId}=await command('Target.createTarget',{url:'about:blank'}),{sessionId}=await command('Target.attachToTarget',{targetId,flatten:true});
  await command('Page.enable',{},sessionId);
+ await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__mediaRequests=[];window.__inputStreams=[];const nativeMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=constraints=>{window.__mediaRequests.push(constraints);return nativeMedia(constraints).then(stream=>{window.__inputStreams.push(stream);return stream;});};`},sessionId);
  await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__captureTest=[];const NativeRecorder=window.MediaRecorder;window.MediaRecorder=class extends NativeRecorder{constructor(...args){super(...args);const stats={mime:this.mimeType,chunks:0,bytes:0,errors:[]};window.__captureTest.push(stats);this.addEventListener('dataavailable',e=>{stats.chunks++;stats.bytes+=e.data.size;});this.addEventListener('error',e=>stats.errors.push(String(e.error)));}};`},sessionId);
  await command('Page.navigate',{url:app.url+'#capture'},sessionId);
  await command('Runtime.enable',{},sessionId);
@@ -109,8 +110,19 @@ try{
   let timer;try{await Promise.race([receiver.done,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(`RTMP test receiver did not close: ${receiver.diagnostics()}`)),25000);})]);}finally{clearTimeout(timer);}
   const {stdout}=await runProcess(ffprobe,['-v','error','-count_packets','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.ok(Number(streams.find(s=>s.codec_type==='video').nb_read_packets)>10);assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');
  }
+ phase='microphone-only-preview';console.log(JSON.stringify({phase}));
+ assert.equal(await evaluate('window.__inputStreams.every(stream=>stream.getVideoTracks().every(track=>track.readyState==="ended"))'),true);
+ await evaluate('window.__mediaRequests=[];const source=document.querySelector("#capture-form [name=source]");source.value="microphone";source.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("[data-capture=preview]").click();');
+ await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");
+ const requests=await evaluate('window.__mediaRequests');assert.equal(requests.length,1);assert.equal(requests[0].video,false);assert.ok(requests[0].audio);
+ assert.equal(await evaluate('window.__inputStreams.at(-1).getVideoTracks().length'),0);
+ await evaluate("document.querySelector('[data-production=record]').click()");await waitFor("!document.querySelector('[data-production=stop-record]').disabled");await delay(3500);
+ await evaluate("document.querySelector('[data-production=stop-record]').click()");await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
+ assert.equal(app.recordings.state().length,3);assert.ok(app.recordings.state().every(item=>item.status==='completed'&&item.directory===fs.realpathSync(path.join(directory,'chosen-recordings'))));
+ const audioOnly=JSON.parse((await runProcess(ffprobe,['-v','error','-show_streams','-of','json',app.recordings.media(app.recordings.state()[0].id)])).stdout).streams;assert.equal(audioOnly.find(s=>s.codec_type==='audio').codec_name,'aac');assert.equal(audioOnly.find(s=>s.codec_type==='video').codec_name,'h264');
+ await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
  assert.deepEqual(pagesErrors,[]);passed=true;
- const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false};
+ const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false,microphoneOnlyWithoutCamera:true,recordingsWrittenToChosenFolder:true};
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
  await command('Browser.close').catch(()=>{});
 }finally{

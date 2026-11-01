@@ -8,13 +8,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
-import {nativePicker,openBrowser,defaultDataDirectory,showStartupError} from '../src/desktop.mjs';
+import {nativePicker,nativeDirectoryPicker,openBrowser,defaultDataDirectory,showStartupError} from '../src/desktop.mjs';
 import {spawnOwnedTool,stopProcessTree} from '../src/processes.mjs';
 import {verifyRelease} from '../src/updates.mjs';
 import {buildMac} from '../scripts/build-mac.mjs';
 test('macOS keeps writable user data outside the application bundle',()=>{
  assert.equal(defaultDataDirectory('/Applications/GoStreams.app',{platform:'darwin',home:'/Users/Antonio'}),path.join('/Users/Antonio','Library','Application Support','Go Streams'));
  assert.equal(defaultDataDirectory('D:/App',{platform:'win32',home:'C:/Users/User'}),path.join('D:/App','data'));
+});
+
+for(const platform of ['darwin','win32'])test(platform+' recording directory picker handles Unicode folders and cancellation without extra installations',async()=>{
+ const directory=path.resolve('.tmp','Gravações de António');let call;
+ assert.equal(await nativeDirectoryPicker({platform,directory,execute:async(...args)=>{call=args;return {stdout:JSON.stringify(directory)};}}),directory);
+ assert.equal(call[2].timeout,300000);assert.match(call[0],platform==='darwin'?/osascript$/:/powershell\.exe$/i);
+ assert.equal(await nativeDirectoryPicker({platform,execute:async()=>({stdout:'null'})}),null);
+ for(const stdout of ['"relative"','{}','["folder"]'])await assert.rejects(nativeDirectoryPicker({platform,execute:async()=>({stdout})}));
 });
 test('macOS native picker parses Unicode and quoted paths, cancellation and malformed output',async()=>{
  const paths=['/Users/test/Vídeo de João.mp4','/Users/test/a"b.mov'];let call;

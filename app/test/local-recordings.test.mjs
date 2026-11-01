@@ -20,6 +20,34 @@ test('local-only recording requires consent, preserves media and settings, final
  const {stdout}=await runProcess('ffprobe',['-v','error','-show_format','-show_streams','-of','json',recordings.media(id)]),meta=JSON.parse(stdout);assert.ok(Number(meta.format.duration)>=1);assert.equal(meta.streams.find(s=>s.codec_type==='audio').codec_name,'opus');
  assert.equal(JSON.stringify(studio.store.data),original);assert.deepEqual(fs.readFileSync(source),bytes);assert.ok(!fs.existsSync(path.join(root,'recordings',id+'.part')));
 });
+
+test('chosen recording folder and ask preference survive restart; interrupted data is recovered from that folder',async t=>{
+ const {root,studio,recordings}=fixture(t),directory=path.join(root,'Gravações escolhidas'),source=path.join(root,'sound.webm');
+ await runProcess('ffmpeg',['-v','error','-f','lavfi','-i','color=c=black:s=160x90:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','1.2','-c:v','libvpx','-deadline','realtime','-c:a','libopus','-y',source]);
+ const preferences=recordings.configure({directory,askEveryTime:false});assert.equal(preferences.directory,fs.realpathSync(directory));assert.equal(preferences.askEveryTime,false);
+ const {id}=recordings.start({confirmed:true}),request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',request);
+ const record=recordings.active.get(id);await new Promise(resolve=>{record.stream.once('close',resolve);record.stream.end();});recordings.active.delete(id);recordings.save();
+ assert.ok(fs.existsSync(path.join(directory,id+'.part')));assert.ok(!fs.existsSync(path.join(root,'recordings',id+'.part')));
+ const reopened=new LocalRecordings(studio,{clock:false});t.after(()=>reopened.shutdown());assert.deepEqual(reopened.preferences,preferences);await reopened.finish(id);
+ assert.equal(reopened.media(id),path.join(fs.realpathSync(directory),id+'.webm'));assert.ok(!fs.existsSync(path.join(directory,id+'.part')));
+ const info=JSON.parse((await runProcess('ffprobe',['-v','error','-show_format','-of','json',reopened.media(id)])).stdout);assert.ok(Number(info.format.duration)>1);
+});
+
+test('changing the default folder never relocates an active or completed recording',async t=>{
+ const {root,recordings}=fixture(t),a=path.join(root,'a'),b=path.join(root,'b');recordings.execute=async(_command,args)=>fs.writeFileSync(args.at(-1),'finalized');
+ recordings.configure({directory:a,askEveryTime:false});const first=recordings.start({confirmed:true});
+ recordings.configure({directory:b,askEveryTime:true});const second=recordings.start({confirmed:true});
+ for(const {id}of [first,second]){const request=Readable.from([Buffer.from('source')]);request.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',request);await recordings.finish(id);}
+ assert.equal(recordings.media(first.id),path.join(fs.realpathSync(a),first.id+'.webm'));assert.equal(recordings.media(second.id),path.join(fs.realpathSync(b),second.id+'.webm'));
+ assert.equal(fs.readFileSync(recordings.media(first.id),'utf8'),'finalized');assert.equal(fs.readFileSync(recordings.media(second.id),'utf8'),'finalized');
+});
+
+test('invalid recording folders and a failed preference write preserve prior preferences and do not start workers',t=>{
+ const {root,recordings}=fixture(t),before={...recordings.preferences},file=path.join(root,'a-file');fs.writeFileSync(file,'original');
+ for(const directory of ['relative',file,root+'\0bad'])assert.throws(()=>recordings.configure({directory,askEveryTime:false}));
+ assert.deepEqual(recordings.preferences,before);assert.equal(recordings.active.size,0);assert.equal(recordings.items.length,0);assert.equal(fs.readFileSync(file,'utf8'),'original');
+ recordings.preferencesFile=root;assert.throws(()=>recordings.configure({directory:root,askEveryTime:false}));assert.deepEqual(recordings.preferences,before);
+});
 test('invalid recording data is retained locally as interrupted, rather than reported as a saved video',async t=>{
  const {root,recordings}=fixture(t),{id}=recordings.start({confirmed:true});const req=Readable.from([Buffer.from('invalid-webm')]);req.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',req);await assert.rejects(recordings.finish(id),/preserved/);assert.equal(recordings.state()[0].status,'interrupted');assert.ok(fs.existsSync(path.join(root,'recordings',id+'.part')));assert.throws(()=>recordings.media(id),/Finish/);
 });

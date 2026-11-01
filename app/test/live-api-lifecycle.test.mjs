@@ -6,16 +6,26 @@ import {createApplication} from '../src/server.mjs';
 import {exportBackup} from '../src/backups.mjs';
 import {dispatch} from './transport.mjs';
 
-async function fixture(t){
+async function fixture(t,options={}){
  const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});
  const directory=fs.mkdtempSync(path.join(parent,'live-api-review-'));
- const app=await createApplication({directory,listen:false,clock:false,portableVault:true});
+ const app=await createApplication({directory,listen:false,clock:false,portableVault:true,...options});
  t.after(async()=>{await app.close();assert.ok(directory.startsWith(parent+path.sep));fs.rmSync(directory,{recursive:true,force:true});});
  return app;
 }
 function request(app,url,body,method='POST'){
  return dispatch(app,url,{method,headers:{Cookie:'go_streams='+app.token,'Content-Type':'application/json','X-Go-Streams':'1'},body:JSON.stringify(body)});
 }
+
+test('recording folder selection supports cancellation and persists a user-selected default through the authenticated API',async t=>{
+ let selected=null,calls=0;const app=await fixture(t,{folderPicker:async()=>{calls++;return selected;}}),before=JSON.stringify(app.store.data);
+ let response=await request(app,'/api/recordings/pick-directory',{});assert.equal(response.status,200);assert.deepEqual(await response.json(),{directory:null});
+ selected=path.join(app.store.directory,'Chosen recording folder');response=await request(app,'/api/recordings/pick-directory',{});assert.equal((await response.json()).directory,selected);assert.equal(calls,2);
+ response=await request(app,'/api/recordings/preferences',{directory:selected,askEveryTime:false},'PUT');assert.equal(response.status,200);assert.equal((await response.json()).askEveryTime,false);
+ const state=await dispatch(app,'/api/state',{headers:{Cookie:'go_streams='+app.token}});assert.equal((await state.json()).recordingPreferences.directory,fs.realpathSync(selected));
+ assert.equal(JSON.stringify(app.store.data),before);assert.equal(app.recordings.active.size,0);assert.equal(app.feeds.active.size,0);
+ assert.equal((await request(app,'/api/recordings/preferences',{directory:'relative',askEveryTime:false},'PUT')).status,400);
+});
 
 for(const phase of ['before','during'])test('backup restore refuses a capture feed '+phase+' decryption',async t=>{
  const app=await fixture(t),password='Review-backup-password-123';
@@ -61,6 +71,7 @@ test('every privileged live, recording and chat route rejects unauthenticated, f
   ['POST','/api/capture/start'],['POST','/api/capture/review/chunks?sequence=0'],['POST','/api/capture/review/stop'],
   ['POST','/api/live/start'],['POST','/api/live/review/chunks?sequence=0'],['POST','/api/live/review/stop'],
   ['POST','/api/recordings/start'],['POST','/api/recordings/review/chunks?sequence=0'],['POST','/api/recordings/review/finish'],
+  ['POST','/api/recordings/pick-directory'],['PUT','/api/recordings/preferences'],
   ['GET','/api/recordings/review/file'],['HEAD','/api/recordings/review/file'],
   ['GET','/api/chat'],['PUT','/api/chat/settings'],['POST','/api/chat/authorize'],['POST','/api/chat/account/disconnect'],
   ['POST','/api/chat/connect'],['POST','/api/chat/disconnect'],['POST','/api/chat/send']

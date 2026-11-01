@@ -12,7 +12,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {APP_VERSION} from './version.mjs';
-import {nativePicker,openBrowser,defaultDataDirectory,showStartupError} from './desktop.mjs';
+import {nativePicker,nativeDirectoryPicker,openBrowser,defaultDataDirectory,showStartupError} from './desktop.mjs';
 import { AppError, Store, Vault, Studio, toolsFor, runProcess, atomicWrite } from './core.mjs';
 import { validateEncoding } from './encoding.mjs';
 import {operationSettings, validateOperations} from './operations.mjs';
@@ -49,7 +49,7 @@ function serveFile(req, res, file, contentType) {
   if (req.method === 'HEAD' || !stat.size) return res.end();
   const stream = fs.createReadStream(file, { start, end }); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
 }
-export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions, chatOptions } = {}) {
+export async function createApplication({ directory = process.env.GO_STREAMS_DATA || defaultDataDirectory(root), port = 4317, portableVault, picker = nativePicker, folderPicker = nativeDirectoryPicker, clock = true, listen = true, downloadOptions, notificationOptions, updateOptions, remoteOptions, liveOptions, chatOptions } = {}) {
   let store, vault, studio, downloads, notifications, updates, remoteSources, chat, recordings, feeds;
   const token = crypto.randomBytes(32).toString('hex'); let base = '', shuttingDown = false, restoring = false, healthCache;
   const handler = async (req, res) => {
@@ -89,7 +89,13 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/live/start' && req.method === 'POST') return json(res, studio.liveCapture.start(body), 201);
       const liveStop = /^\/api\/live\/([\w-]+)\/stop$/.exec(pathname);
       if (liveStop && req.method === 'POST') { studio.liveCapture.stop(liveStop[1]); return json(res, {ok:true}); }
-      if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state(),chat:chat.state(),recordings:recordings.state()});
+      if (pathname === '/api/state' && req.method === 'GET') return json(res, {...studio.state(),updateStatus:updates.state(),chat:chat.state(),recordings:recordings.state(),recordingPreferences:{...recordings.preferences}});
+      if(pathname==='/api/recordings/preferences'&&req.method==='PUT')return json(res,recordings.configure(body));
+      if(pathname==='/api/recordings/pick-directory'&&req.method==='POST'){
+       const initial=recordings.validDirectory(body.directory)&&fs.existsSync(body.directory)?body.directory:recordings.root;
+       const directory=await folderPicker({directory:initial});if(directory!==null&&!recordings.validDirectory(directory))throw new AppError('The folder picker returned an invalid path.');
+       return json(res,{directory});
+      }
       if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
       const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
       if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1]));

@@ -22,6 +22,20 @@ export async function nativePicker({platform=process.platform,execute=runProcess
   const result = await execute(windowsTool('powershell'), ['-NoProfile', '-STA', '-Command', script], { timeout: 5 * 60000 });
   return JSON.parse(result.stdout.trim());
 }
+export async function nativeDirectoryPicker({directory='',platform=process.platform,execute=runProcess}={}){
+ let result;
+ if(platform==='darwin'){
+  const script='function run(argv){var app=Application.currentApplication();app.includeStandardAdditions=true;try{var options={withPrompt:"Choose a folder for local recordings"};if(argv[0])options.defaultLocation=Path(argv[0]);return JSON.stringify(app.chooseFolder(options).toString());}catch(e){if(e.errorNumber===-128)return "null";throw e;}}';
+  result=await execute('/usr/bin/osascript',['-l','JavaScript','-e',script,'--',directory],{timeout:5*60000});
+ }else if(platform==='win32'){
+  const script='[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);Add-Type -AssemblyName System.Windows.Forms;$d=New-Object System.Windows.Forms.FolderBrowserDialog;$d.Description="Choose a folder for local recordings";$d.ShowNewFolderButton=$true;if($d.ShowDialog() -eq "OK"){ConvertTo-Json -InputObject $d.SelectedPath -Compress}else{"null"};$d.Dispose()';
+  result=await execute(windowsTool('powershell'),['-NoProfile','-STA','-Command',script],{timeout:5*60000});
+ }else throw new AppError('Enter an absolute recording folder path on this system.');
+ const selected=JSON.parse(result.stdout.trim());
+ if(selected===null)return null;
+ if(typeof selected!=='string'||!path.isAbsolute(selected)||/[\x00-\x1f]/.test(selected))throw new AppError('The folder picker returned an invalid path.');
+ return selected;
+}
 export function prepareBrowserProfile(directory) {
   const profile=path.join(directory,'desktop-browser');
   fs.mkdirSync(profile,{recursive:true});
