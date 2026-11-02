@@ -1,4 +1,4 @@
-# Go Streams live studio scope - 1.1.3
+# Go Streams live studio scope - 1.1.4
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -6,19 +6,20 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 
 | Area | Go Streams implementation | Verification / limits |
 | --- | --- | --- |
-| Dashboard and help | Separate live/prepared-video entry points, grouped menu, expandable optional controls and adjacent information icons with click/touch/keyboard activation | Escape dismisses help; enabled/disabled actions describe effects and prerequisites |
+| Dashboard and help | Separate live/prepared-video entry points, grouped menu, expandable optional controls and information icons beside relevant system controls | Click/touch/keyboard activation only; Escape dismisses help. Navigation, brand, website and social links have no adjacent information icon |
 | Multistream | One captured source to multiple configured RTMP/RTMPS destinations | Independent workers; shares channel reservations and concurrency limits with prerecorded streams |
 | Camera and microphone | Device selection, preview, microphone mute, mixed audio meter | Browser/OS media permission required; real device testing remains manual |
 | Screen sharing | Screen/window selection; screen with camera inset | Shared audio depends on OS, browser and chosen source |
-| Layouts | Camera, screen, picture in picture and side-by-side presentation | Live changes; landscape/portrait at 720p/1080p |
+| Layouts and output proportions | Camera, screen, picture in picture and side-by-side presentation; 16:9, 9:16, 1:1, 4:3, 3:4 and 21:9 live output | 720p/1080p; proportions can change in the prepared preview and are locked during broadcasting or local recording |
 | Branding | Logo, background image, colors, mirrored camera | User-provided PNG/JPEG/WebP images; local processing |
-| Lower thirds and banners | Presenter name/title, banner and moving ticker | Rendered into the composed video |
+| Lower thirds and banners | Presenter name/title, banner, moving ticker and emoji insertion | Rendered into the composed video in both the live studio and video recorder |
 | Intro/outro and clips | Local MP4/WebM clip replaces the live picture and ducks source audio | Returns to camera/screen when ended; compatible browser codecs required |
 | Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; not a shared online studio |
 | Presenter notes | Private notes and scrolling teleprompter | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
 | Microphone-only live mode | Capture microphone audio without requesting camera or screen access | Sends the selected background, image and studio composition as the video picture; supports the same RTMP destinations and local recording |
 | Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting; choose a folder each time or save a default | Files are written directly to the selected folder; preferences persist locally; bounded upload buffer, finalized index/duration, interrupted-file recovery |
+| Video recorder production | The live studio's layouts, logo/background/colors, camera mirroring, presenter text, banners/ticker/emojis, clips, separate microphone/shared-audio volumes, four scenes, PNG snapshots and private notes/teleprompter | Scenes use a separate local recorder profile key. Clips replace picture and selected audio, remain silent in silent-video mode, and return to camera/screen afterward. Picture tools are hidden in audio-only mode |
 | Chat aggregation | YouTube and Twitch messages in one panel with origin labels and filters | Official provider authorization and registered OAuth applications required |
 | Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs and may relay to linked channels in a Shared Chat session; rate limits, moderation and quotas apply |
 | Featured comments | Show/hide an incoming comment on the captured program | Local canvas overlay; does not automatically post a message |

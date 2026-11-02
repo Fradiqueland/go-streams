@@ -79,22 +79,6 @@ const production={
  snapshot:['Save the current composed preview as a PNG image.','Guarde a pré-visualização composta atual como imagem PNG.'],
  teleprompter:['Start or pause scrolling your private notes. Notes are not drawn into the broadcast.','Inicie ou pause o movimento das notas privadas. As notas não são desenhadas na transmissão.']
 };
-const routes={
- recorder:['Prepare and save local video or audio recordings, with a selectable folder, countdown and optional camera overlay.','Prepare e guarde gravações locais de vídeo ou áudio, com pasta selecionável, contagem e câmara opcional.'],
- dashboard:['See status and choose between live capture and prepared videos.','Veja o estado e escolha entre captação ao vivo e vídeos preparados.'],
- capture:['Open the studio for camera, screen or microphone-only capture and optional local recording.','Abra o estúdio para câmara, ecrã ou apenas microfone, com gravação local opcional.'],
- golive:['Prepare prerecorded videos or playlists for your configured channels.','Prepare vídeos pré-gravados ou playlists para os canais configurados.'],
- live:['Monitor active transmissions and use their stop, pause and recovery controls.','Acompanhe as transmissões ativas e use os controlos de paragem, pausa e recuperação.'],
- chat:['Read connected platform chats and reply to the selected conversation.','Leia os chats ligados e responda à conversa selecionada.'],
- media:['Add, find and preview your videos and video links.','Adicione, procure e pré-visualize vídeos e ligações de vídeo.'],
- playlists:['Organize videos into ordered, optionally repeating programmes.','Organize os vídeos em programas ordenados, com repetição opcional.'],
- channels:['Manage platform destinations, servers and protected stream keys.','Gira os destinos, servidores e chaves de transmissão protegidas.'],
- schedules:['Choose future transmission times and check which schedules are active.','Escolha horários futuros e confirme quais os agendamentos ativos.'],
- tools:['Test playback locally and prepare compatible video copies.','Teste a reprodução local e prepare cópias compatíveis dos vídeos.'],
- history:['Review finished transmissions and activity records.','Consulte transmissões terminadas e registos de atividade.'],
- settings:['Configure output quality, operation, backups and optional integrations.','Configure a qualidade de saída, a operação, as cópias de segurança e as integrações opcionais.'],
- help:['Open the application guide and platform setup information.','Abra o guia da aplicação e a informação de configuração das plataformas.']
-};
 const chat={
  reply:['Select this message as the reply target, then write and send your response.','Selecione esta mensagem como destino da resposta; depois escreva e envie o texto.'],
  feature:['Show this comment in the live studio picture.','Mostre este comentário na imagem do estúdio ao vivo.'],
@@ -136,6 +120,7 @@ const fields={
  screenVolume:['Adjust the volume of captured screen or tab sound.','Ajuste o volume do som captado do ecrã ou separador.'],
  notes:['Keep private presenter notes here. They are not included in the broadcast picture.','Guarde aqui notas privadas do apresentador. Não são incluídas na imagem transmitida.'],
  scene:['Choose the scene to save or load.','Escolha a cena que pretende guardar ou carregar.'],
+ emojiTarget:['Choose which text field receives the emoji you select below. The text appears in the saved video or live output.','Escolha o campo de texto que recebe o emoji selecionado abaixo. O texto aparece no vídeo gravado ou na emissão ao vivo.'],
  clipFile:['Choose a local MP4 or WebM clip. It plays only when you press the clip playback button.','Escolha um clip local MP4 ou WebM. Só é reproduzido quando carrega no botão de reprodução do clip.'],
  videoBitrate:['Set the video data rate. More bitrate uses more upload capacity and recording space.','Defina a taxa de dados do vídeo. Mais bitrate usa mais upload e espaço nas gravações.'],
  audioBitrate:['Set the audio data rate for encoding.','Defina a taxa de dados usada na codificação do áudio.'],
@@ -166,6 +151,13 @@ const forms={
 
 export function helpFor(control){
  if(!control)return '';
+ const tag=control.tagName,href=control.getAttribute?.('href')||'';
+ // Plain navigation, branding and external addresses need no extra control.
+ // Keep explanations for actual system actions and local exports/downloads.
+ if(!['BUTTON','A','INPUT','SELECT','TEXTAREA','SUMMARY'].includes(tag)||control.id==='sidebar-toggle')return '';
+ if(control.closest?.('[data-no-help]'))return '';
+ if(tag==='INPUT'&&control.type==='hidden')return '';
+ if(tag==='A'&&!['/api/export','/api/history.csv'].includes(href)&&!/^\/api\/recordings\/[^/?#]+\/file(?:[?#]|$)/.test(href))return '';
  const d=control.dataset||{},form=control.form||control.closest?.('form');
  if(d.help)return d.help;
  if(d.recorder)return uiText({prepare:'Choose the screen, camera and sound sources. Preview alone does not save a recording.',start:'Start the chosen countdown, then save locally to the selected folder.',stop:'Stop capturing and finish the local MP4 video or M4A audio file.',cancel:'Cancel preparation or countdown before recording starts.',release:'Save an active recording and release the screen, camera and microphone.',folder:'Choose a folder for this recording.', 'default-folder':'Restore the saved recording folder and ask preference.', 'save-folder':'Remember this folder and the ask preference for future recordings.','full-area':'Reset the crop to include the whole selected source.','resize-camera':'Drag this handle to resize the square camera overlay.',recover:'Try to finish the preserved local recording data.'}[d.recorder]||'Manage your local recording.',{prepare:'Escolha as origens de ecrã, câmara e som. A pré-visualização não guarda uma gravação.',start:'Inicie a contagem escolhida e guarde localmente na pasta selecionada.',stop:'Pare a captura e termine o ficheiro de vídeo MP4 ou áudio M4A.',cancel:'Cancele a preparação ou contagem antes de começar a gravar.',release:'Guarde a gravação em curso e liberte o ecrã, a câmara e o microfone.',folder:'Escolha uma pasta para esta gravação.','default-folder':'Reponha a pasta e a preferência guardadas.','save-folder':'Guarde esta pasta e a preferência para as próximas gravações.','full-area':'Reponha a área para incluir toda a origem selecionada.','resize-camera':'Arraste este canto para redimensionar a câmara em quadrado.',recover:'Tente terminar os dados locais de gravação preservados.'}[d.recorder]||'Gira a gravação local.');
@@ -178,6 +170,7 @@ export function helpFor(control){
  if('move' in d)return uiText('Move this video one position in the playlist. Save the form to keep the new order.','Mova este vídeo uma posição na playlist. Guarde o formulário para manter a nova ordem.');
  if('remove' in d)return uiText('Remove this occurrence from the playlist. The library video is kept. Save to apply.','Retire esta ocorrência da playlist. O vídeo fica na biblioteca. Guarde para aplicar.');
  const id=control.id||'',name=control.name||'';
+ if(form?.id==='capture-form'&&name==='aspect')return uiText('Choose 16:9, 9:16, 1:1, 4:3, 3:4 or 21:9. You can change the prepared preview before starting a live output or recording.','Escolha 16:9, 9:16, 1:1, 4:3, 3:4 ou 21:9. Pode mudar a pré-visualização preparada antes de iniciar uma emissão ou gravação.');
  if(control.closest?.('.recorder-studio')){
   const recorderFields={mode:['Choose screen, screen with camera, camera video or audio only.','Escolha ecrã, ecrã com câmara, vídeo da câmara ou apenas áudio.'],sound:['Choose microphone, computer sound, both, or silent video. Computer sound needs an audio-capable shared source.','Escolha microfone, som do computador, ambos ou vídeo sem som. O som do computador exige uma origem partilhada com áudio.'],aspect:['Choose the saved video shape before recording. Original follows the source or selected area\'s proportions. Screen content fits without distortion; camera video fills the frame.','Escolha a proporção do vídeo antes de gravar. Original segue as proporções da origem ou da área selecionada. O ecrã ajusta-se sem distorção; o vídeo da câmara preenche a imagem.'],countdown:['Choose the delay before local recording starts. You can cancel before recording begins.','Escolha o intervalo antes de iniciar a gravação local. Pode cancelar antes de começar a gravar.'],directory:['The recording is written directly to this folder. Save it as default to reuse it later.','A gravação é escrita diretamente nesta pasta. Guarde como predefinição para a reutilizar.'],askFolder:['Ask where to save before each recording. Turn this off to use the displayed folder.','Pergunte onde guardar antes de cada gravação. Desative para usar a pasta apresentada.'],cameraSize:['Adjust the size of the square camera overlay. The overlay stays within the saved picture.','Ajuste o tamanho do quadrado da câmara. O quadrado permanece dentro da imagem gravada.'],cameraX:['Move the camera square horizontally within the recorded picture.','Mova o quadrado da câmara na horizontal dentro da imagem gravada.'],cameraY:['Move the camera square vertically within the recorded picture.','Mova o quadrado da câmara na vertical dentro da imagem gravada.']};
   if(recorderFields[name])return say(recorderFields[name]);
@@ -188,17 +181,13 @@ export function helpFor(control){
  if(id==='pick-files')return uiText('Open the system file picker and place the chosen video paths in this form. Confirm the form to import them.','Abra o seletor de ficheiros do sistema e coloque os caminhos dos vídeos neste formulário. Confirme o formulário para os importar.');
  if(control.classList?.contains('close')||control.classList?.contains('cancel'))return uiText('Close this window and discard unsaved edits. An operation already submitted continues.','Feche esta janela e descarte as alterações por guardar. Uma operação já submetida continua.');
  if(id==='exit')return uiText('Close the studio. Active operations must be stopped before it exits.','Encerre o estúdio. As operações ativas têm de parar antes de sair.');
- if(id==='sidebar-toggle')return uiText('Expand or collapse the menu. Every section remains available.','Expanda ou recolha o menu. Todas as secções continuam disponíveis.');
  if(id==='language-select')return uiText('Change the interface language. Save open edits before switching.','Mude o idioma da interface. Guarde as alterações abertas antes de mudar.');
  if(d.pageKey||d.pageSize)return uiText('Change the displayed results page or the number of results per page.','Mude a página de resultados ou a quantidade de resultados por página.');
  if(d.filter||id==='search'||id==='downloads-search')return uiText('Filter the displayed results without changing saved media or transmissions.','Filtre os resultados apresentados sem alterar os vídeos guardados ou as transmissões.');
  if(fields[name])return say(fields[name]);
- const href=control.getAttribute?.('href')||'';
- if(href.startsWith('#')&&routes[href.slice(1)])return say(routes[href.slice(1)]);
  if(href==='/api/export')return uiText('Download the project configuration without stream keys. Video files are not included.','Transfira a configuração do projeto sem chaves de transmissão. Os ficheiros de vídeo não são incluídos.');
  if(href==='/api/history.csv')return uiText('Download the activity history as a CSV file for a spreadsheet.','Transfira o histórico de atividade num ficheiro CSV para uma folha de cálculo.');
  if(href.startsWith('/api/recordings/'))return uiText('Download a copy of this completed local recording. Its original stays in the recording folder.','Transfira uma cópia desta gravação concluída. O original fica na pasta das gravações.');
- if(href.startsWith('https://')||href.startsWith('http://'))return uiText('Open this address in the browser. This does not start a transmission.','Abra este endereço no navegador. Isto não inicia uma transmissão.');
  if(control.tagName==='SUMMARY')return uiText('Expand or collapse this group of optional settings. Your current selections are retained.','Expanda ou recolha este grupo de opções. As seleções atuais são mantidas.');
  if(control.tagName==='BUTTON'&&control.type==='submit'){
   if(form?.classList?.contains('chat-compose'))return uiText('Send this message to the selected platform conversation. Viewers of that chat can see it.','Envie esta mensagem à conversa da plataforma selecionada. Os participantes desse chat podem vê-la.');
@@ -207,9 +196,7 @@ export function helpFor(control){
   return hint||uiText('Review the choices in this form, then save or confirm them.','Reveja as escolhas deste formulário e guarde ou confirme.');
  }
  if(['INPUT','SELECT','TEXTAREA'].includes(control.tagName))return uiText('Set this option before saving or starting the operation. Its label describes the value to enter.','Defina esta opção antes de guardar ou iniciar a operação. A etiqueta indica o valor a introduzir.');
- const fallback=control.getAttribute?.('title')||control.dataset?.helpTitle||control.getAttribute?.('aria-label');if(fallback)return fallback;
- const label=['BUTTON','A'].includes(control.tagName)?control.textContent?.replace(/\s+/g,' ').trim():'';
- return label?uiText('Activate “'+label+'” to use this action.','Ative “'+label+'” para usar esta ação.'):'';
+ return '';
 }
 
 export function tooltipPosition(anchor,size,viewport){
@@ -225,7 +212,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  if(installations.has(doc))return installations.get(doc);
  const tip=doc.createElement('div');tip.id='control-help';tip.setAttribute('role','tooltip');tip.hidden=true;doc.body.appendChild(tip);
  const entries=new Map(),sources=new WeakMap();let active=null,positionRule,sequence=0,refreshing=false;
- const selectors='button,a,input:not([type="hidden"]),select,textarea,summary,[data-help]';
+ const selectors='button,a,input:not([type="hidden"]),select,textarea,summary';
  const labelText=label=>{
   if(!label)return '';
   const copy=label.cloneNode?.(true);if(!copy)return label.textContent?.trim()||'';
@@ -263,12 +250,13 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  function refresh(){
   if(refreshing)return;refreshing=true;
   try{
-   for(const [control,entry]of entries)if(!control.isConnected||!entry.icon.isConnected){
+   for(const [control,entry]of entries)if(!control.isConnected||!entry.icon.isConnected||!helpFor(control)){
     if(active===control)hide();
     // Capture and recorder panels are detached on navigation, then reused.
     // Unwrap their real controls before removing decoration.
     if(entry.wrapper?.parentNode&&entry.wrapper.contains(control))entry.wrapper.replaceWith(control);else entry.wrapper?.remove();
-    entry.icon.remove();entries.delete(control);
+    entry.icon.remove();sources.delete(entry.icon);entries.delete(control);delete control.dataset.helpId;
+    if(entry.field&&!entry.field.querySelectorAll('.control-info').length)entry.field.classList.remove('control-info-field');
    }
    for(const control of doc.querySelectorAll?.(selectors)||[]){
     if(control.closest?.('#control-help,.control-info')||control.tagName==='INPUT'&&control.type==='hidden')continue;
@@ -286,7 +274,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
      }else if(control.tagName==='SUMMARY'){if(!control.getAttribute('aria-label')&&!control.getAttribute('aria-labelledby'))control.setAttribute('aria-label',labelText(control));icon.classList.add('control-info-summary');control.appendChild(icon);}
      else if(control.dataset.recorder==='resize-camera'){icon.classList.add('control-info-overlay');control.after(icon);}
      else{wrapper=doc.createElement('span');wrapper.className='control-info-pair'+(['INPUT','SELECT','TEXTAREA'].includes(control.tagName)?' control-info-input':'');control.before(wrapper);wrapper.appendChild(control);wrapper.appendChild(icon);}
-     entry={icon,wrapper};entries.set(control,entry);
+     entry={icon,wrapper,field:label&&['INPUT','SELECT','TEXTAREA'].includes(control.tagName)?label:null};entries.set(control,entry);
     }
     entry.icon.setAttribute('aria-label',uiText('Information: ','Informação: ')+controlLabel(control));
     const hidden=Boolean(control.hidden);if(entry.icon.hidden!==hidden)entry.icon.hidden=hidden;if(entry.wrapper&&entry.wrapper.hidden!==hidden)entry.wrapper.hidden=hidden;
@@ -306,6 +294,6 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  // A click may be followed by a delayed scroll event from bringing its icon
  // into view. Keep explicitly opened information visible and track its anchor.
  doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))position();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
- const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(refresh):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','open','title','data-help']});
+ const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(refresh):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','open','title','href','id','name','type','data-help','data-no-help','data-action','data-capture','data-production','data-recorder','data-chat']});
  const installed={hide,tip,refresh,sourceFor:icon=>sources.get(icon),infoFor:control=>entries.get(control)?.icon,restoreFocus(control,wasReading=false,asInfo=false){hide();refresh();const target=asInfo?entries.get(control)?.icon:control;target?.focus({preventScroll:true});if(asInfo&&wasReading)show(control);},isReading:()=>Boolean(active&&!tip.hidden)};installations.set(doc,installed);refresh();return installed;
 }

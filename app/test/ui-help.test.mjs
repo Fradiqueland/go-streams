@@ -10,9 +10,9 @@ function control(properties={}){
   get parentElement(){return this.parentNode;},get isConnected(){return connected&&(this.parentNode?this.parentNode.isConnected!==false:true);},set isConnected(value){connected=value;},
   get textContent(){return text+this.children.map(child=>child.textContent).join('');},set textContent(value){text=String(value);this.children=[];},
   get className(){return classes;},set className(value){classes=value;},get labels(){const label=this.closest('label');return label?[label]:[];},
-  classList:{contains:name=>classes.split(/\s+/).includes(name),add(...names){classes=[...new Set([...classes.split(/\s+/).filter(Boolean),...names])].join(' ');}},
+  classList:{contains:name=>classes.split(/\s+/).includes(name),add(...names){classes=[...new Set([...classes.split(/\s+/).filter(Boolean),...names])].join(' ');},remove(...names){classes=classes.split(/\s+/).filter(name=>!names.includes(name)).join(' ');}},
   getAttribute:name=>attributes.get(name)??null,hasAttribute:name=>attributes.has(name),setAttribute:(name,value)=>attributes.set(name,String(value)),removeAttribute:name=>attributes.delete(name),
-  matches(selector){return selector.split(',').some(value=>{value=value.trim();return value.startsWith('#')?this.id===value.slice(1):value.startsWith('.')?this.classList.contains(value.slice(1)):value==='[aria-hidden="true"]'?this.getAttribute('aria-hidden')==='true':value==='dialog[open]'?this.tagName==='DIALOG'&&this.open:this.tagName.toLowerCase()===value;});},
+  matches(selector){return selector.split(',').some(value=>{value=value.trim();return value.startsWith('#')?this.id===value.slice(1):value.startsWith('.')?this.classList.contains(value.slice(1)):value==='[aria-hidden="true"]'?this.getAttribute('aria-hidden')==='true':value==='[data-no-help]'?this.hasAttribute('data-no-help')||Object.hasOwn(this.dataset,'noHelp'):value==='dialog[open]'?this.tagName==='DIALOG'&&this.open:this.tagName.toLowerCase()===value;});},
   closest(selector){for(let item=this;item;item=item.parentNode)if(item.matches?.(selector))return item;return null;},
   contains(other){return this===other||this.children.some(child=>child.contains(other));},
   appendChild(child){if(child.parentNode)child.parentNode.children.splice(child.parentNode.children.indexOf(child),1);child.parentNode=this;child.isConnected=true;this.children.push(child);return child;},
@@ -45,11 +45,13 @@ test('help never reads passwords or stream-key values',()=>{
  for(const name of ['password','key']){const field=control({tagName:'INPUT',name});Object.defineProperty(field,'value',{get(){throw Error('Secret value must not be read');}});assert.ok(helpFor(field));}
  const form={classList:{contains:cls=>cls==='chat-compose'}};assert.match(helpFor(control({type:'submit',form})),/Viewers.*can see/);
 });
-test('plain action buttons and the running queue add action always have information',()=>{
+test('described system actions have information without decorating arbitrary labelled elements',()=>{
  assert.match(helpFor(control({id:'queue-add-button',textContent:'Add'})),/upcoming queue.*Save/);
  assert.match(helpFor(control({id:'pick-files',textContent:'Choose files'})),/system file picker.*Confirm/);
- assert.match(helpFor(control({textContent:'Choose files'})),/Choose files/);
- const e=environment(),button=e.add(control({textContent:'Choose files'}));assert.ok(e.installed.infoFor(button));
+ assert.equal(helpFor(control({textContent:'Choose files'})),'');
+ assert.equal(helpFor(control({tagName:'SPAN',dataset:{help:'An ordinary caption'}})),'');
+ const e=environment(),button=control({textContent:'Choose files'});button.setAttribute('title','Choose files');e.add(button);assert.equal(e.installed.infoFor(button),undefined);assert.equal(button.getAttribute('title'),null);assert.equal(button.parentNode,e.doc.body);
+ button.dataset.help='Choose local files to import into the project.';e.mutate();assert.ok(e.installed.infoFor(button));
 });
 test('tooltip placement stays inside small viewports and flips above a low trigger',()=>{
  const p=tooltipPosition({left:350,top:650,bottom:694,width:35},{width:300,height:90},{width:390,height:720});assert.ok(p.left>=12&&p.left+300<=378);assert.ok(p.top+90<650);
@@ -102,9 +104,9 @@ test('a delayed page scroll after clicking information repositions it without cl
  top=80;e.emit('scroll',{target:e.doc.body});assert.equal(e.tip.hidden,false);assert.notEqual(e.properties.get('top'),before);assert.equal(e.tip.scrollTop,40);assert.equal(icon.getAttribute('aria-expanded'),'true');assert.equal(e.installed.isReading(),true);
  e.emit('keydown',{key:'Escape'});assert.equal(e.tip.hidden,true);e.emit('scroll',{target:e.doc.body});assert.equal(e.tip.hidden,true,'Scrolling cannot reopen dismissed information');
 });
-test('dynamic controls get one icon and title-only controls retain accessible names',()=>{
- const e=environment(),button=control({textContent:''});button.setAttribute('title','Specific action');e.add(button);const icon=e.installed.infoFor(button);assert.equal(button.getAttribute('aria-label'),'Specific action');assert.equal(button.getAttribute('title'),null);assert.match(icon.getAttribute('aria-label'),/Specific action/);
- e.installed.refresh();e.mutate();assert.equal(e.installed.infoFor(button),icon);assert.equal(button.parentNode.querySelectorAll('.control-info').length,1);button.setAttribute('title','Updated explanation');e.mutate();assert.equal(button.getAttribute('title'),null);e.click(button);assert.equal(e.tip.textContent,'Updated explanation');
+test('explicitly described dynamic actions get one icon and title-only labels stay accessible',()=>{
+ const e=environment(),button=control({textContent:'',dataset:{help:'Specific action explanation'}});button.setAttribute('title','Specific action');e.add(button);const icon=e.installed.infoFor(button);assert.equal(button.getAttribute('aria-label'),'Specific action');assert.equal(button.getAttribute('title'),null);assert.match(icon.getAttribute('aria-label'),/Specific action/);
+ e.installed.refresh();e.mutate();assert.equal(e.installed.infoFor(button),icon);assert.equal(button.parentNode.querySelectorAll('.control-info').length,1);button.dataset.help='Updated explanation';button.setAttribute('title','Updated action');e.mutate();assert.equal(button.getAttribute('title'),null);e.click(button);assert.equal(e.tip.textContent,'Updated explanation');
 });
 test('detaching cached panels removes decoration without deleting their reusable controls',()=>{
  const e=environment(),panel=control({tagName:'SECTION',textContent:''});e.doc.body.appendChild(panel);const button=e.add(control({dataset:{capture:'preview'}}),panel);e.click(button);panel.remove();e.mutate();assert.equal(e.tip.hidden,true);assert.equal(button.parentNode,panel);assert.equal(panel.children.length,1);assert.equal(e.installed.infoFor(button),undefined);e.doc.body.appendChild(panel);e.mutate();assert.ok(e.installed.infoFor(button));assert.ok(panel.contains(button));assert.equal(panel.querySelectorAll('.control-info').length,1);
@@ -119,3 +121,45 @@ test('dashboard entry points explain missing destinations',()=>{
  const h=uiHarness({locale:'en'});let html=h.run('dashboard()');assert.match(html,/Open live studio/);assert.match(html,/Prepared videos or playlists/);assert.match(html,/First time/);h.run("state.channels=[{id:'c',hasKey:false}]");assert.match(h.run('dashboard()'),/missing stream keys/);h.run("state.channels[0].hasKey=true");assert.match(h.run('dashboard()'),/destinations are configured/);
 });
 test('project export help distinguishes configuration from media and keys',()=>{const link=control({tagName:'A'});link.setAttribute('href','/api/export');assert.match(helpFor(link),/without stream keys.*Video files are not included/);});
+
+test('social, website, branding and navigation links retain their names without info icons or hover titles',()=>{
+ const e=environment();
+ for(const href of ['https://antoniofradique.net/instagram','https://AntonioFradique.net','http://example.test','#dashboard','#capture','#settings','/guide','mailto:help@example.test']){
+  const link=control({tagName:'A',textContent:'',dataset:{help:'Generic address explanation'}});link.setAttribute('href',href);link.setAttribute('title','Recognizable link');e.add(link);
+  assert.equal(helpFor(link),'');assert.equal(e.installed.infoFor(link),undefined);assert.equal(link.parentNode,e.doc.body);assert.equal(link.getAttribute('aria-label'),'Recognizable link');assert.equal(link.getAttribute('title'),null);assert.equal(link.dataset.helpId,undefined);
+ }
+ assert.equal(helpFor(control({id:'sidebar-toggle',dataset:{help:'Navigation'}})),'');
+});
+
+test('local exports and recording downloads keep meaningful help while unrelated local links do not',()=>{
+ for(const [href,expected]of [['/api/export',/without stream keys/],['/api/history.csv',/CSV/],['/api/recordings/abc/file',/completed local recording/],['/api/recordings/abc/file?download=1',/completed local recording/]]){
+  const e=environment(),link=control({tagName:'A'});link.setAttribute('href',href);e.add(link);e.click(link);assert.match(e.tip.textContent,expected);
+ }
+ for(const href of ['/api/recordings/abc','/api/recordings/abc/finish','/api/recordings/abc/file-extra']){const link=control({tagName:'A'});link.setAttribute('href',href);assert.equal(helpFor(link),'');}
+});
+
+test('changing an export into an external link removes its wrapper, association and active explanation',()=>{
+ const e=environment(),link=control({tagName:'A'});link.setAttribute('href','/api/export');link.setAttribute('aria-describedby','existing-note');e.add(link);const icon=e.installed.infoFor(link);e.click(link);
+ assert.ok(e.observed.attributeFilter.includes('href'));link.setAttribute('href','https://example.test');e.mutate();
+ assert.equal(e.tip.hidden,true);assert.equal(e.installed.infoFor(link),undefined);assert.equal(e.installed.sourceFor(icon),undefined);assert.equal(link.parentNode,e.doc.body);assert.equal(link.dataset.helpId,undefined);assert.equal(link.getAttribute('aria-describedby'),'existing-note');assert.equal(icon.isConnected,false);
+ const event=e.emit('click',{target:icon});assert.ok(!event.prevented);assert.equal(e.tip.hidden,true);
+});
+
+test('removing explicit help from an otherwise ordinary button leaves the original control intact',()=>{
+ const e=environment(),button=e.add(control({dataset:{help:'Specific action explanation'},textContent:'Named action'}));e.click(button);delete button.dataset.help;e.mutate();
+ assert.equal(e.tip.hidden,true);assert.equal(e.installed.infoFor(button),undefined);assert.equal(button.parentNode,e.doc.body);assert.equal(button.textContent,'Named action');assert.equal(button.dataset.helpId,undefined);
+ button.dataset.action='go-live';e.mutate();assert.ok(e.installed.infoFor(button));e.click(button);assert.match(e.tip.textContent,/Nothing is broadcast/);
+});
+
+test('content palettes can opt out dynamically without leaving icons, hover titles or label padding',()=>{
+ const e=environment(),group=control({tagName:'DIV',textContent:''}),label=control({tagName:'LABEL',textContent:'Emoji destination'});e.doc.body.appendChild(group);group.appendChild(label);
+ const select=e.add(control({tagName:'SELECT',name:'emojiTarget',textContent:''}),label);e.click(select);assert.match(e.tip.textContent,/text field receives the emoji/);assert.ok(label.classList.contains('control-info-field'));
+ group.setAttribute('data-no-help','');select.setAttribute('title','No tooltip');e.mutate();assert.equal(e.tip.hidden,true);assert.equal(e.installed.infoFor(select),undefined);assert.equal(select.getAttribute('title'),null);assert.equal(select.parentNode,label);assert.ok(!label.classList.contains('control-info-field'));
+ group.removeAttribute('data-no-help');e.mutate();assert.ok(e.installed.infoFor(select));assert.ok(label.classList.contains('control-info-field'));assert.equal(label.querySelectorAll('.control-info').length,1);
+});
+
+test('turning a field into a hidden input removes its information and restores it when visible again',()=>{
+ const e=environment(),label=control({tagName:'LABEL',textContent:'Project name'});e.doc.body.appendChild(label);const field=e.add(control({tagName:'INPUT',type:'text',name:'name',textContent:'',value:'Preserved'}),label);e.click(field);
+ field.type='hidden';e.mutate();assert.equal(e.installed.infoFor(field),undefined);assert.equal(e.tip.hidden,true);assert.ok(!label.classList.contains('control-info-field'));assert.equal(field.value,'Preserved');
+ field.type='text';e.mutate();assert.ok(e.installed.infoFor(field));assert.equal(label.querySelectorAll('.control-info').length,1);assert.equal(field.value,'Preserved');
+});

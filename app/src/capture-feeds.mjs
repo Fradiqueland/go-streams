@@ -1,7 +1,7 @@
 import {appendProgramOutput} from './program-output.mjs';
 import crypto from 'node:crypto';
 import {AppError,toolsFor} from './core.mjs';
-import {encodingArgs} from './encoding.mjs';
+import {encodingArgs,encodingAspects} from './encoding.mjs';
 import {WebmEncoder} from './webm-encoder.mjs';
 
 const TS_PACKET=188,VIDEO_PID=256,PMT_PID=4096;
@@ -38,7 +38,7 @@ export class CaptureFeeds {
  create(input){
   if(this.studio.closing||this.studio.importingProject)throw new AppError('The studio is busy or closing.',409);
   if(this.active.size>=2)throw new AppError('Finish the current live capture first.',409);
-  if(input.confirmed!==true||!['720p','1080p'].includes(input.quality)||!['16:9','9:16'].includes(input.aspect)||!['camera','screen','screen-camera','microphone'].includes(input.source))throw new AppError('Confirm a supported capture source and format.');
+  if(input.confirmed!==true||!['720p','1080p'].includes(input.quality)||!encodingAspects.includes(input.aspect)||!['camera','screen','screen-camera','microphone'].includes(input.source))throw new AppError('Confirm a supported capture source and format.');
   const encoded=encodingArgs({...this.studio.store.data.settings.encoding,copy:false,aspect:input.aspect,fps:30,videoBitrate:input.quality==='1080p'?4500:2500},input.quality,[{audio:{}}]);
   const feed={id:crypto.randomUUID(),source:input.source,quality:input.quality,aspect:input.aspect,sequence:0,receiving:false,lastInput:Date.now(),sinks:new Set(),stopped:false,started:false,tail:Buffer.alloc(0),tables:new Map()};
   const child=new WebmEncoder(colorFilter=>{

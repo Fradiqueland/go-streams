@@ -2,7 +2,15 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.3**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.4**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Recorder production tools and live formats (1.1.4)
+
+Information icons appear beside relevant system controls. Sidebar navigation, the application brand, website and social links do not get an adjacent **i**. Explanations open only by clicking, touching or activating the information icon with the keyboard; hovering over the original control does not open help.
+
+The video recorder includes the same local production tools as the live studio: picture-in-picture and side-by-side layouts, mirrored camera, logo and background images, colors, presenter name/title, banners, a scrolling ticker and emoji insertion. Adjust microphone and shared-audio levels separately, save/load four scenes, play local intro/outro clips and save the composed frame as a PNG. Recorder scenes are stored separately from live scenes in the local browser profile. Clips temporarily replace the picture and selected audio, then return to the camera/screen; choosing silent video also keeps clips silent. Private notes and the scrolling teleprompter stay outside the composed frame, although sharing the app's own window can expose its interface. These picture tools are hidden in audio-only recording mode.
+
+Live capture offers six fixed output proportions: **16:9, 9:16, 1:1, 4:3, 3:4 and 21:9**, at 720p or 1080p. The prepared preview can change proportion before output starts without reopening devices. Dimensions remain locked while broadcasting or making a local recording, so the encoded feed keeps the selected format. These features use the bundled application components and require no additional Windows or Mac installation.
 
 ## Recovery and persistence review (1.1.3)
 

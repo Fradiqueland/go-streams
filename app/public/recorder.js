@@ -1,4 +1,5 @@
 import {language,localeTag} from './i18n.js';
+import {ProductionTools,layoutRects} from './live-production.js';
 import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
 const t=(en,pt)=>language()==='pt-PT'?pt:en;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,6 +74,10 @@ export class RecorderPanel {
    void this.listDevices(this.generation);
   }
   if(this.element.parentNode!==container){container.innerHTML='';container.appendChild(this.element);}
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,recordingControls:false,sceneStorageKey:'go-streams-recorder-scenes',getStream:()=>this.config?.mode==='audio'||this.releaseDone?null:this.output,setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>this.snapshot(),toggleRecording:()=>{if(this.finishing||this.preparing||this.starting||this.folderBusy)return;return this.id?this.stop():this.start();},onChange:()=>{this.controls();if(this.output&&this.config.mode!=='audio')this.draw();}});
+  this.production.mount(this.element);
+  this.$('.recorder-destination').before(this.production.element);
+  this.production.element.querySelector('h2').textContent=t('Video composition','Composição do vídeo');
   this.update(state);this.positionBoxes();
  }
  status(message){this.$('.recorder-status').textContent=message;}
@@ -106,11 +111,16 @@ export class RecorderPanel {
   for(const control of this.element.querySelectorAll('.recorder-destination input,.recorder-destination .actions button'))control.disabled=locked||this.folderBusy;
   for(const control of this.element.querySelectorAll('.recorder-crop-fields input,.recorder-crop-fields button'))control.disabled=locked;
   this.$('.recorder-region').hidden=!this.screenVideo||!['screen','screen-camera'].includes(this.config?.mode);
-  this.$('.recorder-camera-controls').hidden=!prepared||this.config?.mode!=='screen-camera';
-  this.$('.recorder-camera-box').hidden=!prepared||this.config?.mode!=='screen-camera';
+  const cameraOverlay=prepared&&this.config?.mode==='screen-camera'&&(!this.production||this.production.values.layout==='pip')&&!this.production?.clip;
+  this.$('.recorder-camera-controls').hidden=!cameraOverlay;
+  this.$('.recorder-camera-box').hidden=!cameraOverlay;
   this.$('.recorder-audio-only').hidden=!prepared||this.config?.mode!=='audio';
   this.$('.recorder-watermark').hidden=!prepared||this.config?.mode==='audio';
   this.$('.recorder-frame-size').hidden=!prepared||this.config?.mode==='audio';
+  if(this.production?.element){
+   this.production.element.hidden=mode==='audio';
+   for(const [name,available]of [['micVolume',['microphone','both'].includes(sound)],['screenVolume',['system','both'].includes(sound)]])this.production.element.querySelector(`[name="${name}"]`).disabled=!available;
+  }
  }
  async chooseFolder(){
   if(this.folderBusy)return null;this.folderBusy=true;this.controls();
@@ -156,9 +166,10 @@ export class RecorderPanel {
    if(sound!=='none'){
     this.audio=new AudioContext();await this.audio.resume();if(!current())throw Error('Preview cancelled');const destination=this.audio.createMediaStreamDestination(),mix=this.audio.createGain();mix.connect(destination);this.analyser=this.audio.createAnalyser();mix.connect(this.analyser);
     const silentSink=this.audio.createGain();silentSink.gain.value=0;mix.connect(silentSink).connect(this.audio.destination);
-    const inputs=this.streams.filter(stream=>stream.getAudioTracks().length);mix.gain.value=1/Math.max(1,inputs.length);for(const stream of inputs)this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(mix);
+    const inputs=this.streams.filter(stream=>stream.getAudioTracks().length);this.audioMix=mix;this.audioInputScale=1/Math.max(1,inputs.length);this.audioInputs=[];
+    for(const stream of inputs){const name=stream===this.screen?'screenVolume':'micVolume',gain=this.audio.createGain();gain.gain.value=this.inputVolume(name)*this.audioInputScale;this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(gain).connect(mix);this.audioInputs.push({name,gain});}
     audioTracks.push(...destination.stream.getAudioTracks());
-    const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);this.$('meter').value=Math.min(1,Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length)*3);},100);
+    const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const level=Math.min(1,Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length)*3);for(const meter of this.element.querySelectorAll('meter'))meter.value=level;},100);
    }
    if(!current())throw Error('Preview cancelled');
    this.output=new MediaStream([...(mode==='audio'?[]:this.canvas.captureStream(30).getVideoTracks()),...audioTracks]);
@@ -183,14 +194,36 @@ export class RecorderPanel {
   const size=frameSize(source?.videoWidth||1280,source?.videoHeight||720,['screen','screen-camera'].includes(this.config.mode)?this.crop:{},this.config.quality,this.config.aspect);this.canvas.width=size.width;this.canvas.height=size.height;this.$('.recorder-frame-size').textContent=`${size.width} × ${size.height}`;this.positionBoxes();
  }
  draw(){
-  const ctx=this.canvas.getContext('2d'),w=this.canvas.width,h=this.canvas.height;ctx.fillStyle='#111827';ctx.fillRect(0,0,w,h);
-  const screen=['screen','screen-camera'].includes(this.config.mode);
-  if(screen&&this.screenVideo?.videoWidth){const v=this.screenVideo,r=this.crop,sw=r.width*v.videoWidth,sh=r.height*v.videoHeight,fit=containedRect({left:0,top:0,width:w,height:h},sw,sh);ctx.drawImage(v,r.x*v.videoWidth,r.y*v.videoHeight,sw,sh,fit.left,fit.top,fit.width,fit.height);}
-  if(this.cameraVideo?.videoWidth&&['camera','screen-camera'].includes(this.config.mode)){
-   const v=this.cameraVideo,r=this.config.mode==='camera'?{x:0,y:0,width:w,height:h}:cameraRect(this.cameraPosition,w,h),sourceRatio=v.videoWidth/v.videoHeight,targetRatio=r.width/r.height;
-   const sw=sourceRatio>targetRatio?v.videoHeight*targetRatio:v.videoWidth,sh=sourceRatio>targetRatio?v.videoHeight:v.videoWidth/targetRatio;
-   ctx.drawImage(v,(v.videoWidth-sw)/2,(v.videoHeight-sh)/2,sw,sh,r.x,r.y,r.width,r.height);
+  const ctx=this.canvas.getContext('2d'),w=this.canvas.width,h=this.canvas.height;
+  const fit=(video,x,y,width,height)=>{if(!video?.videoWidth)return;const box=containedRect({left:x,top:y,width,height},video.videoWidth,video.videoHeight);ctx.drawImage(video,box.left,box.top,box.width,box.height);};
+  if(this.production)this.production.draw(ctx,w,h,this.cameraVideo,this.screenVideo,fit,(context,width,height,values)=>this.drawSources(context,width,height,values));
+  else{ctx.fillStyle='#111827';ctx.fillRect(0,0,w,h);this.drawSources(ctx,w,h);}
+ }
+ drawSources(ctx,w,h,values={layout:'pip',mirror:false}){
+  const screen=['screen','screen-camera'].includes(this.config.mode)&&Boolean(this.screenVideo?.videoWidth),camera=['camera','screen-camera'].includes(this.config.mode)&&Boolean(this.cameraVideo?.videoWidth);
+  const rectangles=layoutRects(values.layout,w,h,camera,screen);
+  for(const rect of rectangles){
+   if(rect.source==='screen'){const video=this.screenVideo,r=this.crop,sw=r.width*video.videoWidth,sh=r.height*video.videoHeight,fit=containedRect({left:rect.x,top:rect.y,width:rect.w,height:rect.h},sw,sh);ctx.drawImage(video,r.x*video.videoWidth,r.y*video.videoHeight,sw,sh,fit.left,fit.top,fit.width,fit.height);continue;}
+   const video=this.cameraVideo,r=screen&&values.layout==='pip'?cameraRect(this.cameraPosition,w,h):{x:rect.x,y:rect.y,width:rect.w,height:rect.h},ratio=video.videoWidth/video.videoHeight,target=r.width/r.height,sw=ratio>target?video.videoHeight*target:video.videoWidth,sh=ratio>target?video.videoHeight:video.videoWidth/target;
+   if(values.mirror){ctx.save();ctx.translate(r.x+r.width,r.y);ctx.scale(-1,1);ctx.drawImage(video,(video.videoWidth-sw)/2,(video.videoHeight-sh)/2,sw,sh,0,0,r.width,r.height);ctx.restore();}
+   else ctx.drawImage(video,(video.videoWidth-sw)/2,(video.videoHeight-sh)/2,sw,sh,r.x,r.y,r.width,r.height);
   }
+ }
+ inputVolume(name){const value=Number(this.production?.element?.querySelector(`[name="${name}"]`)?.value??1);return Number.isFinite(value)?Math.max(0,Math.min(1.5,value)):1;}
+ setInputVolume(name,value){for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=this.clipAudio?0:Math.max(0,Math.min(1.5,value))*(this.audioInputScale||1);}
+ setClipAudio(video){
+  this.clipAudio?.disconnect();this.clipAudio=null;
+  if(video){video.muted=!this.audio||!this.audioMix;if(!video.muted){this.clipAudio=this.audio.createMediaElementSource(video);this.clipAudio.connect(this.audioMix);}}
+  for(const input of this.audioInputs||[])input.gain.gain.value=this.clipAudio?0:this.inputVolume(input.name)*(this.audioInputScale||1);
+ }
+ async snapshot(){
+  if(!this.canvas||!this.output||this.config?.mode==='audio'){this.toast(t('Open a video preview first.','Abra primeiro uma pré-visualização de vídeo.'),true);return;}
+  this.draw();
+  const canvas=document.createElement('canvas');canvas.width=this.canvas.width;canvas.height=this.canvas.height;const ctx=canvas.getContext('2d');ctx.drawImage(this.canvas,0,0);
+  const mark=this.$('.recorder-watermark');if(!mark?.complete||!mark.naturalWidth)await mark?.decode();
+  if(mark?.complete&&mark.naturalWidth){const r=watermarkRect(canvas.width,canvas.height);ctx.globalAlpha=.5;ctx.drawImage(mark,r.x,r.y,r.width,r.height);ctx.globalAlpha=1;}
+  const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error(t('The PNG image could not be created. Try again.','Não foi possível criar a imagem PNG. Tente novamente.'))),'image/png'));
+  const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='GoStreams-frame-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';try{link.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),10000);}
  }
  syncCrop(){for(const name of ['x','y','width','height'])this.$(`[name="crop-${name}"]`).value=Math.round(this.crop[name]*100);this.positionBoxes();}
  syncCamera(){this.cameraPosition=normalizedCameraPosition(this.cameraPosition);for(const [field,key]of [['cameraSize','size'],['cameraX','x'],['cameraY','y']])this.$(`[name="${field}"]`).value=Math.round(this.cameraPosition[key]*100);this.positionBoxes();}
@@ -257,9 +290,10 @@ export class RecorderPanel {
  async recover(id){await this.api(`/api/recordings/${id}/finish`,{});await this.reloadFiles();const message=t('Recording recovered.','Gravação recuperada.');this.status(message);this.toast(message);}
  releaseDevices(){
   clearInterval(this.drawTimer);clearInterval(this.meterTimer);clearInterval(this.elapsedTimer);
+  this.production?.stopVisuals();this.clipAudio?.disconnect();this.clipAudio=null;this.audioInputs=[];this.audioMix=null;
   for(const stream of [...this.streams,...(this.output?[this.output]:[])])for(const track of stream.getTracks())track.stop();
   for(const video of this.videoElements||[]){video.pause();video.srcObject=null;}this.videoElements=[];this.streams=[];void this.audio?.close().catch(()=>{});this.audio=null;this.output=null;this.screen=null;this.device=null;this.screenVideo=null;this.cameraVideo=null;
-  if(this.element){this.$('.recorder-preview').srcObject=null;this.$('.recorder-source').srcObject=null;this.$('meter').value=0;}
+  if(this.element){this.$('.recorder-preview').srcObject=null;this.$('.recorder-source').srcObject=null;for(const meter of this.element.querySelectorAll?.('meter')||[this.$('meter')])if(meter)meter.value=0;}
  }
  async release(){
   if(this.releaseDone)return this.releaseDone;

@@ -197,10 +197,11 @@ test('failed MediaRecorder start does not wait for a stop event that cannot arri
 function replaceGlobal(t,name,value){const previous=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});t.after(()=>{if(previous)Object.defineProperty(globalThis,name,previous);else delete globalThis[name];});}
 
 test('first recorder mount lists permitted devices once and tracks later device changes without opening them',t=>{
- const nodes=new Map(),listeners=new Map(),calls=[],element={addEventListener(){},querySelector(selector){if(!nodes.has(selector))nodes.set(selector,{addEventListener(){}});return nodes.get(selector);}};
+ const nodes=new Map(),listeners=new Map(),calls=[],element={addEventListener(){},querySelector(selector){if(!nodes.has(selector))nodes.set(selector,{addEventListener(){},before(){}});return nodes.get(selector);}};
  replaceGlobal(t,'document',{createElement:()=>element});replaceGlobal(t,'window',{addEventListener(){}});
  replaceGlobal(t,'navigator',{mediaDevices:{getUserMedia(){assert.fail('Enumeration must not open devices');},addEventListener(name,callback){assert.ok(!listeners.has(name));listeners.set(name,callback);}}});
  const panel=new RecorderPanel({api(){},toast(){}}),container={appendChild(child){child.parentNode=this;}};
+ panel.production={mount(){},element:{querySelector:()=>({})}};
  panel.listDevices=async generation=>calls.push(generation);panel.update=()=>{};panel.positionBoxes=()=>{};
  panel.mount(container,{});panel.mount(container,{});assert.deepEqual(calls,[0]);assert.equal(listeners.size,1);
  panel.generation=3;listeners.get('devicechange')();assert.deepEqual(calls,[0,3]);

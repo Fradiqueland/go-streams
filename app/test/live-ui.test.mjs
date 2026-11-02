@@ -68,6 +68,22 @@ test('adjusting volumes during a clip keeps live audio muted and restores the se
  panel.setClipAudio(null);assert.equal(gain.gain.value,.45);assert.equal(disconnected,true);
 });
 
+test('releasing live devices stops production playback before audio teardown and clears every audio meter',t=>{
+ const events=[],timers=new Set([11,22,33]),panel=capturePanel(async()=>{}),meters=[{value:.75},{value:.4}],preview={srcObject:{}},gain={gain:{value:0}};
+ replaceGlobal(t,'clearInterval',id=>{timers.delete(id);events.push(['timer',id]);});t.mock.method(URL,'revokeObjectURL',url=>events.push(['url',url]));
+ panel.element={querySelector:()=>preview,querySelectorAll:selector=>selector==='meter'?meters:[]};panel.drawTimer=11;panel.meterTimer=22;panel.drawFrame=()=>{};
+ panel.audio={close:async()=>{events.push(['audio-close']);}};panel.audioInputs=[{name:'micVolume',gain}];panel.clipAudio={disconnect(){events.push(['clip-disconnect']);}};
+ const track=name=>({stops:0,stop(){this.stops++;events.push(['track',name]);}}),device=track('device'),output=track('output');panel.streams=[{getTracks:()=>[device]}];panel.output={getTracks:()=>[output]};
+ const video=name=>({srcObject:{},pause(){events.push(['pause',name]);}}),camera=panel.cameraVideo=video('camera'),screen=panel.screenVideo=video('screen');
+ const tools=panel.production=new ProductionTools({recordingControls:false,setClipAudio:value=>panel.setClipAudio(value)});tools.element={querySelector:()=>({value:'.45'})};tools.values.banner='Keep scene';tools.scrollTimer=33;
+ const clip=tools.clip={src:'blob:live-clip',onended(){},onerror(){},pause(){events.push(['pause','clip']);}};tools.clipUrl='blob:live-clip';panel.releaseDevices();
+ assert.deepEqual(meters.map(meter=>meter.value),[0,0]);assert.equal(timers.size,0);assert.equal(device.stops,1);assert.equal(output.stops,1);assert.equal(preview.srcObject,null);
+ assert.equal(clip.src,'');assert.equal(clip.onended,null);assert.equal(clip.onerror,null);assert.equal(tools.clip,null);assert.equal(tools.clipUrl,null);assert.equal(tools.scrollTimer,null);assert.equal(tools.values.banner,'Keep scene');
+ assert.equal(camera.srcObject,null);assert.equal(screen.srcObject,null);assert.equal(panel.output,null);assert.equal(panel.audio,null);assert.equal(panel.clipAudio,null);assert.equal(panel.drawFrame,null);assert.deepEqual(panel.audioInputs,[]);
+ const closed=events.findIndex(event=>event[0]==='audio-close');for(const event of [['pause','clip'],['clip-disconnect'],['timer',33],['url','blob:live-clip']]){const index=events.findIndex(candidate=>JSON.stringify(candidate)===JSON.stringify(event));assert.ok(index>=0&&index<closed);}
+ assert.equal(events.filter(event=>event[0]==='clip-disconnect').length,1);
+});
+
 test('chat send locks the draft and reply destination while a provider response is pending',async()=>{
  const panel=new ChatPanel({api(){},toast(){},onFeature(){}});
  const controls={'.chat-compose select':{value:'room-a'},'.chat-compose button':{},'.chat-compose textarea':{},'[data-chat="cancel-reply"]':{},'.chat-reply-target':{}};
@@ -288,6 +304,28 @@ test('closing a preview prevents another recording from starting while live shut
  try{await panel.production.startRecording();assert.equal(panel.production.recordingId,undefined);assert.deepEqual(calls,['/api/live/active/stop']);}
  finally{stopped.resolve();await closing;}
  assert.equal(panel.output,null);
+});
+
+test('closing live preview releases devices before a pending recording folder picker returns',async t=>{
+ const selected=deferred(),calls=[],panel=capturePanel(async route=>{calls.push(route);if(route==='/api/recordings/pick-directory')return selected.promise;assert.fail('Closing preview must not start a recording');});
+ let stops=0;panel.output={getTracks:()=>[{stop(){stops++;}}]};panel.acquireFeed=()=>assert.fail('A closed preview cannot acquire a capture feed');panel.update=()=>{};
+ t.mock.method(ProductionTools.prototype,'mount',()=>{});panel.mount({appendChild(){}},{});
+ const fields={'[name="recordingDirectory"]':{value:''},'[name="askRecordingFolder"]':{checked:true}};panel.production.element={querySelector:selector=>fields[selector]||{}};panel.production.update=()=>{};
+ const starting=panel.production.startRecording();assert.deepEqual(calls,['/api/recordings/pick-directory']);const closing=panel.release();
+ assert.equal(stops,1);assert.equal(panel.output,null);assert.equal(panel.production.getStream(),null);assert.equal(panel.production.starting,true);
+ selected.resolve({directory:'/chosen-after-close'});await Promise.all([starting,closing]);assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(stops,1);assert.equal(panel.production.recording,false);assert.equal(panel.releasing,null);
+});
+
+test('closing an active shared recording keeps capture devices until finalization finishes',async()=>{
+ const saved=deferred(),events=[],panel=capturePanel(async()=>{});panel.output={getTracks:()=>[{stop(){events.push('device-stop');}}]};panel.feedSession={id:'active-feed'};
+ panel.production={stopRecording:async()=>{await saved.promise;events.push('recording-saved');},stopClip(){},stopVisuals(){}};panel.releaseFeed=async()=>{panel.feedSession=null;};
+ const closing=panel.release();assert.ok(panel.output);assert.deepEqual(events,[]);saved.resolve();await closing;assert.deepEqual(events,['recording-saved','device-stop']);assert.equal(panel.output,null);
+});
+
+test('snapshot actions stay disabled during asynchronous image creation and report its rejected promise',async()=>{
+ const image=deferred(),errors=[],tools=new ProductionTools({recordingControls:false,snapshot:()=>image.promise,toast:(message,error)=>errors.push({message,error})}),button={dataset:{production:'snapshot'}};
+ const creating=tools.action(button);assert.equal(button.disabled,true);assert.deepEqual(errors,[]);image.reject(Error('PNG could not be created'));await creating;
+ assert.equal(button.disabled,false);assert.deepEqual(errors,[{message:'PNG could not be created',error:true}]);
 });
 
 test('loading a saved scene clears branding pickers so the previous file can be selected again',async()=>{

@@ -1,5 +1,6 @@
 import {language} from './i18n.js';
 import {ProductionTools} from './live-production.js';
+import {videoAspects,videoDimensions} from './video-geometry.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const text=(en,pt)=>language()==='pt-PT'?pt:en;
 export const LIVE_BUFFER_LIMIT=8*1024*1024;
@@ -28,13 +29,14 @@ export class LiveCapturePanel {
   Object.assign(this,{api,toast,getState});this.streams=[];this.session=null;this.preparing=false;this.stopping=false;this.muted=false;this.captureEpoch=0;
  }
  get busy(){return this.preparing||Boolean(this.output)||Boolean(this.session)||Boolean(this.releasing);}
+ get formatLocked(){return Boolean(this.preparing||this.stopping||this.releasing||this.session||this.feedStarting||this.feedSession||this.feedClosing||this.production?.recording);}
  mount(container,state){
   if(!this.element){
    this.element=document.createElement('section');this.element.className='live-capture-studio';
    this.element.innerHTML=`<div class="page-heading"><div><h1>${text('Live camera & screen','Câmara e ecrã ao vivo')}</h1><p>${text('Preview locally, then send the same live feed to your selected destinations.','Pré-visualize localmente e envie o mesmo direto para os destinos selecionados.')}</p></div></div>
     <div class="capture-layout"><section class="panel"><h2>${text('1. Prepare your source','1. Preparar a origem')}</h2><form id="capture-form">
     <label>${text('Source','Origem')}<select name="source"><option value="camera">${text('Camera','Câmara')}</option><option value="microphone">${text('Microphone only','Apenas microfone')}</option><option value="screen">${text('Screen or window','Ecrã ou janela')}</option><option value="screen-camera">${text('Screen + camera','Ecrã + câmara')}</option></select></label>
-    <div class="form-row"><label>${text('Quality','Qualidade')}<select name="quality"><option value="720p">720p</option><option value="1080p">1080p</option></select></label><label>${text('Orientation','Orientação')}<select name="aspect"><option value="16:9">16:9 — ${text('Landscape','Horizontal')}</option><option value="9:16">9:16 — ${text('Portrait','Vertical')}</option></select></label></div>
+    <div class="form-row"><label>${text('Quality','Qualidade')}<select name="quality"><option value="720p">720p</option><option value="1080p">1080p</option></select></label><label>${text('Output aspect ratio','Proporção do vídeo')}<select name="aspect">${videoAspects.map(aspect=>`<option value="${aspect}">${aspect}</option>`).join('')}</select></label></div><p class="form-hint">${text('Choose the output shape before broadcasting or recording. Change a local preview without reopening devices.','Escolha o formato antes de transmitir ou gravar. Pode alterar a pré-visualização sem voltar a abrir os dispositivos.')} <span class="capture-frame-size"></span></p>
     <label>${text('Camera','Câmara')}<select name="camera"><option value="">${text('Default camera','Câmara predefinida')}</option></select></label><label>${text('Microphone','Microfone')}<select name="microphone"><option value="">${text('Default microphone','Microfone predefinido')}</option></select></label>
     <label class="check"><input type="checkbox" name="useMic" checked> ${text('Include microphone','Incluir microfone')}</label>
     <label class="check"><input type="checkbox" name="systemAudio"> ${text('Request shared screen/tab audio when supported','Pedir áudio do ecrã/separador quando suportado')}</label>
@@ -50,14 +52,14 @@ export class LiveCapturePanel {
     if(button.dataset.capture==='release')void this.release();
     if(button.dataset.capture==='mute')this.toggleMute();
    });
-   this.element.addEventListener('change',()=>this.controls());
+   this.element.addEventListener('change',event=>{if(event.target.closest?.('#capture-form')&&['aspect','quality'].includes(event.target.name))this.changeFormat(event.target.name,event.target.value);this.controls();});
    window.addEventListener('beforeunload',event=>{if(this.busy){event.preventDefault();event.returnValue='';}});
    window.addEventListener('pagehide',()=>{
     this.releaseDevices();
     if(this.session)void fetch(`/api/live/${this.session.id}/stop`,{method:'POST',headers:{'Content-Type':'application/json','X-Go-Streams':'1'},body:'{}',keepalive:true}).catch(()=>{});
    });
   }
-  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.releasing?null:this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>{
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.releasing?null:this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),onRecordingStateChange:()=>this.syncFormatControls(),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>{
    if(!this.canvas||!this.output){this.toast(text('Open a local preview first.','Abra primeiro a pré-visualização local.'),true);return;}
    this.canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},'image/png');
   }});
@@ -69,6 +71,7 @@ export class LiveCapturePanel {
  controls(){
   const active=Boolean(this.session)||this.preparing||this.stopping||Boolean(this.releasing);
   for(const input of this.element.querySelectorAll('#capture-form input,#capture-form select'))input.disabled=active||Boolean(this.output);
+  this.syncFormatControls();
   const source=this.element.querySelector('[name="source"]')?.value,microphoneOnly=source==='microphone';
   for(const [name,disabled]of [['camera',!['camera','screen-camera'].includes(source)],['systemAudio',!['screen','screen-camera'].includes(source)],['useMic',microphoneOnly]]){
    const input=this.element.querySelector(`[name="${name}"]`);if(input){input.disabled=active||Boolean(this.output)||disabled;if(name==='useMic'&&microphoneOnly)input.checked=true;}
@@ -80,6 +83,23 @@ export class LiveCapturePanel {
   const hasDestinations=Boolean(this.element.querySelector('.capture-destinations input:checked:not(:disabled)'));
   this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
   this.production?.update(this.recordings||[],this.recordingPreferences);
+ }
+ syncFormatControls(){
+  const fields={};for(const name of ['aspect','quality']){const input=this.element?.querySelector(`#capture-form [name="${name}"]`);if(input){input.disabled=this.formatLocked;fields[name]=input.value;}}
+  const label=this.element?.querySelector('.capture-frame-size');if(!label)return;
+  const dimensions=this.output&&this.canvas?[this.canvas.width,this.canvas.height]:videoDimensions(fields.quality,videoAspects.includes(fields.aspect)?fields.aspect:'16:9'),value=dimensions.join(' × ');
+  if(label.textContent!==value)label.textContent=value;
+ }
+ changeFormat(name,value){
+  if(!['aspect','quality'].includes(name))return false;
+  const input=this.element?.querySelector(`#capture-form [name="${name}"]`),allowed=name==='aspect'?videoAspects:['720p','1080p'];
+  if(this.formatLocked||!allowed.includes(value)){if(input)input.value=this.config?.[name]||(name==='aspect'?'16:9':'720p');return false;}
+  if(this.output&&this.config){this.config[name]=value;this.resizePreview();this.drawFrame?.();}return true;
+ }
+ resizePreview(){
+  if(!this.canvas||!this.config)return;
+  [this.canvas.width,this.canvas.height]=videoDimensions(this.config.quality,this.config.aspect);
+  const label=this.element?.querySelector('.capture-frame-size');if(label)label.textContent=`${this.canvas.width} × ${this.canvas.height}`;
  }
  update(state){
   if(!this.element)return;
@@ -116,6 +136,7 @@ export class LiveCapturePanel {
   try{
    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw Error(text('Live capture requires Chrome, Edge, Safari 18.4+ or the Electron edition, with media permissions enabled.','A captação requer Chrome, Edge, Safari 18.4+ ou a edição Electron, com permissões de multimédia.'));
    this.config={source:form.get('source'),quality:form.get('quality'),aspect:form.get('aspect')};
+   if(!['720p','1080p'].includes(this.config.quality)||!videoAspects.includes(this.config.aspect))throw Error(text('Choose a supported live video format.','Escolha um formato de vídeo ao vivo suportado.'));
    const device=value=>value?{deviceId:{exact:value}}:true;
    if(['screen','screen-camera'].includes(this.config.source)){
     if(!navigator.mediaDevices.getDisplayMedia)throw Error('Screen sharing is unavailable in this browser.');
@@ -132,8 +153,7 @@ export class LiveCapturePanel {
    this.captureMimeType=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
    if(!this.captureMimeType)throw Error('Live WebM capture is unavailable. Use Chrome, Edge or Safari 18.4+.');
    this.canvas=document.createElement('canvas');
-   const height=this.config.quality==='1080p'?1080:720;
-   [this.canvas.width,this.canvas.height]=this.config.aspect==='9:16'?[height,Math.round(height*16/9/2)*2]:[Math.round(height*16/9/2)*2,height];
+   this.resizePreview();
    // VP8 needs a stable canvas color path: WebM records the first frame's tags.
    const ctx=this.canvas.getContext('2d',this.captureMimeType.includes('vp9')?undefined:{colorSpace:'srgb',willReadFrequently:true});
    const draw=()=>{
@@ -145,7 +165,7 @@ export class LiveCapturePanel {
      const words=this.featuredComment.text.split(/\s+/);let line='',row=0;for(const word of words){if(ctx.measureText(line+' '+word).width>w*.86){ctx.fillText(line,w*.06,h*(.84+row*.045));line=word;if(++row>=2)break;}else line+=(line?' ':'')+word;}if(row<2)ctx.fillText(line,w*.06,h*(.84+row*.045),w*.86);
     }
    };
-   draw();this.drawTimer=setInterval(draw,1000/30);
+   this.drawFrame=draw;draw();this.drawTimer=setInterval(draw,1000/30);
    this.audio=new AudioContext();await this.audio.resume();check();const destination=this.audio.createMediaStreamDestination();
    this.master=this.audio.createGain();this.master.connect(destination);this.analyser=this.audio.createAnalyser();this.master.connect(this.analyser);this.audioInputs=[];
    // Keep the audio rendering clock active on Windows Chromium without playing
@@ -225,6 +245,8 @@ export class LiveCapturePanel {
  releaseDevices(){
   this.captureEpoch++;
   clearInterval(this.drawTimer);
+  this.production?.stopVisuals?.();
+  this.drawFrame=null;
   clearInterval(this.meterTimer);this.audioInputs=[];
   this.clipAudio?.disconnect();this.clipAudio=null;
   for(const stream of [...this.streams,this.output].filter(Boolean))for(const track of stream.getTracks())track.stop();
@@ -232,11 +254,13 @@ export class LiveCapturePanel {
   for(const v of [this.cameraVideo,this.screenVideo])if(v){v.pause();v.srcObject=null;}
   this.cameraVideo=null;this.screenVideo=null;
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
-  if(this.element)this.element.querySelector('.capture-preview').srcObject=null;
+  if(this.element){this.element.querySelector('.capture-preview').srcObject=null;for(const meter of this.element.querySelectorAll?.('meter')||[])meter.value=0;}
  }
  async release(){
   if(this.releasing)return this.releasing;
-  this.captureEpoch++;this.releasing=(async()=>{
+  this.captureEpoch++;
+  if(!this.session&&!this.feedSession&&!this.feedStarting)this.releaseDevices();
+  this.releasing=(async()=>{
    try{await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));}
    finally{this.releasing=null;this.controls();}
   })();this.controls();return this.releasing;

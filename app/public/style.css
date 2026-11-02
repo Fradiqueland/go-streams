@@ -118,3 +118,5 @@ html[data-compact-nav="true"] .nav-section-title{height:12px;margin:8px 7px;padd
 .recorder-camera-box>.control-info-overlay{display:inline-flex;pointer-events:auto;touch-action:manipulation;align-items:center;justify-content:center;width:28px;min-height:28px;padding:0;border-radius:50%;font:600 15px Georgia,serif;background:#edf2f8;color:#33475f;line-height:1}
 .media-card>.control-info-pair:has(>.thumbnail){display:flex;width:100%}.media-card>.control-info-pair>.thumbnail{flex:1;min-width:0}.media-card>.control-info-pair>.control-info{margin-inline-end:6px}
 @media(max-width:500px){.recorder-record-actions>.control-info-pair,.start-card>.control-info-pair{width:100%}.recorder-record-actions>.control-info-pair>button,.start-card>.control-info-pair>.button{flex:1;width:auto}.recorder-studio .actions>.control-info-pair{width:100%}.recorder-studio .actions>.control-info-pair>button{flex:1;width:auto}}
+.production-emoji-tools .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(40px,1fr));gap:8px}
+.production-emoji-tools .actions>button{width:100%;min-width:0;min-height:40px;padding:6px}

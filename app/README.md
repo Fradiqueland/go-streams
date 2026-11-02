@@ -1,8 +1,16 @@
-# Go Streams 1.1.3
+# Go Streams 1.1.4
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Produção no gravador e formatos ao vivo (1.1.4)
+
+O ícone **i** aparece apenas junto dos controlos relevantes do sistema. Não acompanha a navegação do menu lateral, a marca da aplicação, o site nem as ligações das redes sociais. A explicação abre por clique, toque ou ativação do ícone pelo teclado; passar o rato sobre o controlo original não abre a ajuda.
+
+O gravador de vídeo inclui as ferramentas de produção do estúdio ao vivo: imagem na imagem e apresentação lado a lado, câmara espelhada, logótipo, imagem e cor de fundo, cor da marca, nome/título do apresentador, faixas, texto em movimento e inserção de emojis. Pode ajustar separadamente os volumes do microfone e do áudio partilhado, guardar/carregar quatro cenas, reproduzir clips locais de introdução/encerramento e guardar o fotograma composto em PNG. As cenas do gravador ficam separadas das cenas do direto, no perfil local do navegador. Os clips substituem temporariamente a imagem e o áudio selecionado, regressando depois à câmara/ao ecrã; a opção de vídeo sem som mantém também os clips sem áudio. As notas privadas e o teleponto não são desenhados no vídeo, mas a partilha da própria janela da aplicação pode mostrar a interface. As ferramentas de imagem ficam ocultas no modo de gravação só de áudio.
+
+A captação ao vivo permite escolher **16:9, 9:16, 1:1, 4:3, 3:4 ou 21:9**, em 720p ou 1080p. Pode alterar a proporção de uma pré-visualização preparada antes de iniciar a saída, sem voltar a abrir os dispositivos. As dimensões ficam bloqueadas durante a transmissão ou gravação local para manter o formato do vídeo codificado. Estas opções utilizam os componentes incluídos e não exigem instalações adicionais no Windows ou Mac.
 
 ## Recuperação e persistência (1.1.3)
 

@@ -81,10 +81,9 @@ try {
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await prepareInfo.getAttribute('aria-expanded'),'false');checks++;
   await prepareInfo.focus();await page.keyboard.press('Space');await help.waitFor({state:'visible'});await prepareInfo.click();assert.equal(await help.isVisible(),false);checks++;
   const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();assert.equal(await help.isVisible(),false);
-  const studioInfo=await infoFor(studioLink);await studioInfo.click();await help.waitFor({state:'visible'});
-  assert.equal(await studioInfo.getAttribute('aria-describedby'),'control-help');assert.equal(await page.locator('#crumb').textContent(),'Overview');
-  await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);checks++;
-  await page.getByRole('heading',{name:'Overview',exact:true}).click();assert.equal(await help.isVisible(),false);checks++;
+  await studioLink.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);assert.equal(await navigation.locator('.control-info').count(),0);assert.equal(await studioLink.evaluate(el=>el.parentElement.id),'nav');checks++;
+  assert.equal(await page.locator('.creator-social-links a').count(),9);assert.equal(await page.locator('.creator-social-links .control-info,.creator-credit .control-info').count(),0);
+  assert.ok(await page.locator('.sidebar a').evaluateAll(links=>links.every(link=>!link.dataset.helpId&&!link.hasAttribute('title')&&!link.parentElement.classList.contains('control-info-pair'))));assert.equal(await page.locator('#crumb').textContent(),'Overview');checks++;
   await page.locator('.dashboard-start [data-action=channel-new]').click();
   assert.equal(await help.isVisible(),false);checks++;
   const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();assert.equal(await help.isVisible(),false);
@@ -351,7 +350,8 @@ try {
       if(name==='Gravador de vídeo e áudio')for(const action of ['prepare','start','stop','folder','release'])assert.equal(await page.locator('[data-recorder='+action+']').count(),1,'cached recorder controls survive navigation');
       assert.ok(await page.evaluate(()=>{
         const icons=[...document.querySelectorAll('.control-info')];
-        return icons.length>0&&icons.every(icon=>{
+        const plainLinks=[...document.querySelectorAll('.sidebar a,a[href^="https://"],a[href^="http://"],a[href^="#"]')];
+        return plainLinks.every(link=>!link.dataset.helpId&&!link.hasAttribute('title')&&!link.parentElement.classList.contains('control-info-pair'))&&icons.length>0&&icons.every(icon=>{
           const controls=[...document.querySelectorAll('[data-help-id]')].filter(control=>control.dataset.helpId===icon.dataset.helpFor);
           return controls.length===1&&icon.getAttribute('aria-label')?.trim()&&icon.getAttribute('aria-controls')==='control-help'&&!icon.hasAttribute('title')&&!controls[0].hasAttribute('title');
         });
@@ -388,6 +388,7 @@ finally {
     finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
   }
    const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
+   report.relevantControlHelpOnly=report.passed;
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');
 }

@@ -13,12 +13,14 @@ const candidates=process.platform==='darwin'?['/Applications/Google Chrome.app/C
 const binary=process.env.GO_STREAMS_BROWSER||candidates.find(p=>fs.existsSync(p));
 if(!binary)throw Error('Set GO_STREAMS_BROWSER to an installed Chromium browser.');
 const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const directory=fs.mkdtempSync(path.join(parent,'live-browser-'));
-let app,browser,socket,evaluate;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
+let app,browser,socket,evaluate,releaseFinalization;const receivers=[],pagesErrors=[],chatPosts=[];let passed=false;
+const expectedLiveAspectDimensions=[{aspect:'16:9',width:1280,height:720},{aspect:'9:16',width:720,height:1280},{aspect:'1:1',width:720,height:720},{aspect:'4:3',width:960,height:720},{aspect:'3:4',width:720,height:960},{aspect:'21:9',width:1680,height:720}];
+let finalizationGate=null,enteredFinalization=false;
 let phase='startup';
 const watchdog=setTimeout(()=>{
  console.error(JSON.stringify({testTimedOut:true,phase,jobs:app?.studio.state().jobs,recordings:app?.recordings.state(),receivers:receivers.map(r=>({pid:r.child.pid,exitCode:r.child.exitCode,stderr:r.diagnostics()})),pageErrors:pagesErrors}));
  socket?.close();browser?.kill();for(const receiver of receivers)receiver.child.kill();for(const job of app?.studio.jobs.values()||[])job.child?.kill();process.exit(1);
-},90000).unref();
+},120000).unref();
 async function freePort(){const s=net.createServer();await new Promise((resolve,reject)=>{s.once('error',reject);s.listen(0,'127.0.0.1',resolve);});const port=s.address().port;await new Promise(resolve=>s.close(resolve));return port;}
 try{
  app=await createApplication({directory:path.join(directory,'data'),port:0,portableVault:true,folderPicker:async()=>path.join(directory,'chosen-recordings'),chatOptions:{request:async(url,options)=>{
@@ -27,6 +29,7 @@ try{
   else value={pollingIntervalMillis:30000,nextPageToken:'mock-next',items:[{id:'mock-viewer',authorDetails:{displayName:'Test viewer',channelId:'viewer'},snippet:{displayMessage:'Hello <script>not executable</script>',publishedAt:new Date().toISOString()}}]};
   return new Response(JSON.stringify(value),{status:200});
  }}});
+ const executeRecording=app.recordings.execute;app.recordings.execute=async(...args)=>{if(finalizationGate){enteredFinalization=true;await finalizationGate;}return executeRecording(...args);};
  app.studio.chat.auth.data.settings.YouTube={clientId:'123-test.apps.googleusercontent.com'};
  app.studio.chat.auth.data.accounts.YouTube={id:'host',name:'Test host',accessToken:'synthetic-test-token',expires:Date.now()+3600000};
  const {ffmpeg,ffprobe}=toolsFor(app.store.data.settings);
@@ -50,6 +53,7 @@ try{
  const {targetId}=await command('Target.createTarget',{url:'about:blank'}),{sessionId}=await command('Target.attachToTarget',{targetId,flatten:true});
  await command('Page.enable',{},sessionId);
  await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__mediaRequests=[];window.__inputStreams=[];const nativeMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=constraints=>{window.__mediaRequests.push(constraints);return nativeMedia(constraints).then(stream=>{window.__inputStreams.push(stream);return stream;});};`},sessionId);
+ await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__screenRequests=[];window.__screenStreams=[];navigator.mediaDevices.getDisplayMedia=async constraints=>{window.__screenRequests.push(constraints);const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;const context=canvas.getContext('2d'),draw=()=>{context.fillStyle='#111827';context.fillRect(0,0,640,360);context.fillStyle='#00ff00';context.fillRect(128,128,64,64);};draw();const timer=setInterval(draw,33),stream=canvas.captureStream(30),track=stream.getVideoTracks()[0],stop=track.stop.bind(track);track.stop=()=>{clearInterval(timer);stop();};window.__screenStreams.push(stream);return stream;};`},sessionId);
  await command('Page.addScriptToEvaluateOnNewDocument',{source:`window.__captureTest=[];const NativeRecorder=window.MediaRecorder;window.MediaRecorder=class extends NativeRecorder{constructor(...args){super(...args);const stats={mime:this.mimeType,chunks:0,bytes:0,errors:[]};window.__captureTest.push(stats);this.addEventListener('dataavailable',e=>{stats.chunks++;stats.bytes+=e.data.size;});this.addEventListener('error',e=>stats.errors.push(String(e.error)));}};`},sessionId);
  await command('Page.navigate',{url:app.url+'#capture'},sessionId);
  await command('Runtime.enable',{},sessionId);
@@ -59,12 +63,30 @@ try{
   return result.result.value;
  };
  const waitFor=async(expression,timeout=20000)=>{const start=Date.now();while(!await evaluate(expression)){if(Date.now()-start>timeout)throw Error('Browser condition timed out: '+expression);await delay(100);}};
+ const formatDisabled=()=>evaluate("['aspect','quality'].every(name=>document.querySelector('#capture-form [name='+name+']').disabled)");
+ const setFormat=async(aspect,width,height,quality='720p')=>{
+  assert.equal(await evaluate("['aspect','quality'].every(name=>!document.querySelector('#capture-form [name='+name+']').disabled)"),true,'Both format controls must remain editable during a prepared preview');
+  await evaluate(`(()=>{for(const [name,value]of [['quality',${JSON.stringify(quality)}],['aspect',${JSON.stringify(aspect)}]]){const input=document.querySelector('#capture-form [name='+name+']');input.value=value;input.dispatchEvent(new Event('change',{bubbles:true}));}})()`);
+  await waitFor(`(()=>{const size=document.querySelector('.capture-preview').srcObject.getVideoTracks()[0].getSettings();return size.width===${width}&&size.height===${height};})()`);
+  assert.equal(await evaluate("document.querySelector('.capture-frame-size').textContent"),`${width} × ${height}`);
+ };
+ const verifyPreviewFormats=async()=>{
+  await waitFor("['aspect','quality'].every(name=>!document.querySelector('#capture-form [name='+name+']').disabled)");
+  const before=await evaluate("({media:window.__mediaRequests.length,screens:window.__screenRequests.length})");
+  await evaluate("window.__formatOutput=document.querySelector('.capture-preview').srcObject;window.__formatTrack=window.__formatOutput.getVideoTracks()[0];");
+  assert.deepEqual(await evaluate("[...document.querySelector('#capture-form [name=aspect]').options].map(option=>option.value)"),expectedLiveAspectDimensions.map(item=>item.aspect));
+  for(const {aspect,width,height}of expectedLiveAspectDimensions){await setFormat(aspect,width,height);assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject===window.__formatOutput&&document.querySelector('.capture-preview').srcObject.getVideoTracks()[0]===window.__formatTrack"),true);}
+  await setFormat('3:4',1080,1440,'1080p');
+  assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject===window.__formatOutput&&document.querySelector('.capture-preview').srcObject.getVideoTracks()[0]===window.__formatTrack"),true);
+  assert.deepEqual(await evaluate("({media:window.__mediaRequests.length,screens:window.__screenRequests.length})"),before);
+ };
  await waitFor("Boolean(document.querySelector('[data-capture=preview]'))");
  await evaluate("document.querySelector('[data-capture=preview]').click()");
  await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");
  phase='preview-ready';console.log(JSON.stringify({phase}));
  assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject.getVideoTracks().length"),1);
  assert.equal(app.studio.jobs.size,0,'Preview must not create a broadcast');
+ phase='camera-preview-formats';console.log(JSON.stringify({phase}));await verifyPreviewFormats();await setFormat('1:1',720,720);
  await evaluate("const chat=document.querySelector('.chat-connect');chat.querySelector('[name=resource]').value='abcdefghijk';chat.querySelector('[name=confirmed]').checked=true;chat.querySelector('button').click();");
  await waitFor("document.querySelectorAll('.chat-message').length===1");
  assert.equal(await evaluate("document.querySelectorAll('.chat-messages script').length"),0);
@@ -73,6 +95,7 @@ try{
  phase='chat-ready';console.log(JSON.stringify({phase}));
  await evaluate("const name=document.querySelector('.production-tools [name=name]');name.value='Test presenter';name.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-production=record]').click();");
  await waitFor("!document.querySelector('[data-production=stop-record]').disabled");
+ assert.equal(await formatDisabled(),true,'Starting local recording must lock the shared frame geometry');
  phase='local-recording-started';console.log(JSON.stringify({phase}));
  await evaluate("document.querySelectorAll('.capture-destinations input').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));});const consent=document.querySelector('[data-capture=consent]');consent.checked=true;consent.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-capture=start]').click();");
  phase='waiting-live-frames';console.log(JSON.stringify({phase}));
@@ -80,11 +103,13 @@ try{
   if(Date.now()-started>30000){const diagnostics={jobs:app.studio.state().jobs,renderer:await evaluate('window.__captureTest'),pageErrors:pagesErrors,liveInputs:[...app.studio.liveCapture.sessions.values()].map(s=>({sequence:s.sequence,age:Date.now()-s.lastInput})),recordings:app.recordings.state()};throw Error('Live destinations did not receive frames: '+JSON.stringify(diagnostics));}await delay(200);
  }
  assert.equal(app.studio.jobs.size,2);
+ assert.equal(await formatDisabled(),true,'Live destinations must retain the shared frame geometry');
  assert.equal(await evaluate('window.__captureTest.length'),1,'Recording and live output must share one browser encoder');
  phase='live-frames-received';console.log(JSON.stringify({phase}));
  await evaluate("document.querySelector('[data-production=stop-record]').click()");
  await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
  assert.ok([...app.studio.jobs.values()].every(j=>!j.ended),'Stopping recording must preserve live destinations');
+ assert.equal(await formatDisabled(),true,'Stopping local recording cannot resize the feed still used by live destinations');
  await evaluate("document.querySelector('[data-production=record]').click()");
  await waitFor("!document.querySelector('[data-production=stop-record]').disabled");await delay(4000);
  await evaluate("location.hash='live'");await waitFor("document.querySelectorAll('.job').length===2");
@@ -96,20 +121,37 @@ try{
  await Promise.all([...app.studio.jobs.values()].map(j=>j.completion));
  assert.ok([...app.studio.jobs.values()].every(j=>j.status==='stopped'));
  assert.equal(app.recordings.active.size,1,'Stopping live destinations must not discard local recording');
+ assert.equal(await formatDisabled(),true,'A remaining local recording must keep its frame geometry');
+ finalizationGate=new Promise(resolve=>{releaseFinalization=resolve;});enteredFinalization=false;
  await evaluate("document.querySelector('[data-production=stop-record]').click()");
+ const finalizationDeadline=Date.now()+10000;while(!enteredFinalization){if(Date.now()>finalizationDeadline)throw Error('Local recording did not enter finalization.');await delay(25);}
+ assert.equal(await formatDisabled(),true,'Geometry must remain locked while the recording is being finalized');
+ await evaluate("(()=>{for(const [name,value]of [['aspect','3:4'],['quality','1080p']]){const input=document.querySelector('#capture-form [name='+name+']');input.value=value;input.dispatchEvent(new Event('change',{bubbles:true}));}})()");
+ assert.deepEqual(await evaluate("({aspect:document.querySelector('#capture-form [name=aspect]').value,quality:document.querySelector('#capture-form [name=quality]').value,width:document.querySelector('.capture-preview').srcObject.getVideoTracks()[0].getSettings().width,height:document.querySelector('.capture-preview').srcObject.getVideoTracks()[0].getSettings().height})"),{aspect:'1:1',quality:'720p',width:720,height:720});
+ finalizationGate=null;releaseFinalization();releaseFinalization=null;
  await waitFor("document.querySelector('.recording-status').textContent.includes('saved locally')",30000);
+ await waitFor("['aspect','quality'].every(name=>!document.querySelector('#capture-form [name='+name+']').disabled)");
  phase='recording-saved';console.log(JSON.stringify({phase}));
  assert.equal(app.recordings.state()[0].status,'completed');
  phase='validating-recording';console.log(JSON.stringify({phase}));
- const localMedia=await runProcess(ffprobe,['-v','error','-show_format','-of','json',app.recordings.media(app.recordings.state()[0].id)]);
- assert.ok(Number(JSON.parse(localMedia.stdout).format.duration)>1);
+ for(const [index,recording]of app.recordings.state().entries()){
+  const localMedia=JSON.parse((await runProcess(ffprobe,['-v','error','-show_format','-show_streams','-of','json',app.recordings.media(recording.id)])).stdout),video=localMedia.streams.find(stream=>stream.codec_type==='video');
+  assert.equal(video.codec_name,'h264');assert.deepEqual([video.width,video.height],[720,720]);if(index===0)assert.ok(Number(localMedia.format.duration)>1);
+ }
+ await setFormat('3:4',720,960);assert.equal(await evaluate("document.querySelector('.capture-preview').srcObject===window.__formatOutput"),true);
  phase='releasing-preview';console.log(JSON.stringify({phase}));
  await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
  for(const [index,receiver]of receivers.entries()){
   phase=`validating-destination-${index+1}`;console.log(JSON.stringify({phase}));
   let timer;try{await Promise.race([receiver.done,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(`RTMP test receiver did not close: ${receiver.diagnostics()}`)),25000);})]);}finally{clearTimeout(timer);}
-  const {stdout}=await runProcess(ffprobe,['-v','error','-count_packets','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.ok(Number(streams.find(s=>s.codec_type==='video').nb_read_packets)>10);assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');
+  const {stdout}=await runProcess(ffprobe,['-v','error','-count_packets','-show_streams','-of','json',receiver.output]);const streams=JSON.parse(stdout).streams;assert.equal(streams.find(s=>s.codec_type==='video').codec_name,'h264');assert.deepEqual([streams.find(s=>s.codec_type==='video').width,streams.find(s=>s.codec_type==='video').height],[720,720]);assert.ok(Number(streams.find(s=>s.codec_type==='video').nb_read_packets)>10);assert.equal(streams.find(s=>s.codec_type==='audio').codec_name,'aac');
  }
+ phase='screen-preview-formats';console.log(JSON.stringify({phase}));
+ const mediaRequestsBeforeScreen=await evaluate('window.__mediaRequests.length');
+ await evaluate("(()=>{const source=document.querySelector('#capture-form [name=source]');source.value='screen';source.dispatchEvent(new Event('change',{bubbles:true}));for(const name of ['useMic','systemAudio'])document.querySelector('#capture-form [name='+name+']').checked=false;document.querySelector('[data-capture=preview]').click();})()");
+ await waitFor("Boolean(document.querySelector('.capture-preview').srcObject)");assert.equal(await evaluate('window.__screenRequests.length'),1);assert.equal(await evaluate('window.__mediaRequests.length'),mediaRequestsBeforeScreen);
+ await verifyPreviewFormats();await setFormat('16:9',1280,720);
+ await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");assert.equal(await evaluate('window.__screenStreams.every(stream=>stream.getTracks().every(track=>track.readyState==="ended"))'),true);
  phase='microphone-only-preview';console.log(JSON.stringify({phase}));
  assert.equal(await evaluate('window.__inputStreams.every(stream=>stream.getVideoTracks().every(track=>track.readyState==="ended"))'),true);
  await evaluate('window.__mediaRequests=[];const source=document.querySelector("#capture-form [name=source]");source.value="microphone";source.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("[data-capture=preview]").click();');
@@ -130,7 +172,7 @@ try{
  const audioOnly=JSON.parse((await runProcess(ffprobe,['-v','error','-show_streams','-of','json',app.recordings.media(app.recordings.state()[0].id)])).stdout).streams;assert.equal(audioOnly.find(s=>s.codec_type==='audio').codec_name,'aac');assert.equal(audioOnly.find(s=>s.codec_type==='video').codec_name,'h264');
  await evaluate("document.querySelector('[data-capture=release]').click()");await waitFor("!document.querySelector('.capture-preview').srcObject");
  assert.deepEqual(pagesErrors,[]);passed=true;
- const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false,microphoneOnlyWithoutCamera:true,recordingsWrittenToChosenFolder:true};
+ const proof={passed:true,platform:process.platform,syntheticCameraAndMicrophone:true,destinations:2,nativeRTMP:true,previewDoesNotBroadcast:true,previewSurvivesNavigation:true,stopAndRelease:true,localRecording:true,sharedCaptureEncoder:true,independentRecordStartStop:true,cloudRecording:false,unifiedChatWithSimulatedProvider:true,realChatAccountsVerified:false,realHardwareVerified:false,nativeScreenPickerVerified:false,microphoneOnlyWithoutCamera:true,recordingsWrittenToChosenFolder:true,liveAspectFormats:true,previewFormatWithoutReacquisition:true,expectedLiveAspectDimensions,screenPreviewFormats:true,liveRecordingDimensions:[720,720],liveFormatLockedDuringOutputs:true,liveFormatLockedDuringFinalization:true,liveFormatUnlockedAfterStop:true};
  const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;fs.mkdirSync('release',{recursive:true});fs.writeFileSync(`release/GoStreams-${version}-live-studio-${process.platform}-verification.json`,JSON.stringify(proof,null,2));console.log(JSON.stringify(proof));
  await command('Browser.close').catch(()=>{});
  }catch(error){
@@ -140,6 +182,7 @@ try{
   throw error;
  }finally{
  phase='cleanup';
+ releaseFinalization?.();finalizationGate=null;
  socket?.close();if(browser&&browser.exitCode===null)browser.kill();
  await app?.close();for(const r of receivers)if(r.child.exitCode===null)r.child.kill();await Promise.allSettled(receivers.map(r=>r.done));
  if(!passed)console.error('Browser test evidence directory: '+directory);
