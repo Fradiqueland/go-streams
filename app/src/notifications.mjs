@@ -3,6 +3,10 @@ import {sendSmtp, isMailbox} from './smtp.mjs';
 export {sendSmtp} from './smtp.mjs';
 
 const email = isMailbox;
+function sameSmtpAccount(config, previous) {
+  const previousPort=Number(previous.port??587);
+  return typeof previous.host==='string'&&config.host.toLowerCase()===previous.host.trim().toLowerCase()&&config.port===previousPort&&config.security===(previous.security||(previousPort===465?'tls':'starttls'))&&config.username===previous.username?.trim();
+}
 export function validateNotifications(input, previous = {}) {
   if (!input || typeof input.enabled !== 'boolean') throw new AppError('Configuração de notificações inválida.');
   if (input.enabled && (!email(input.from) || !email(input.to))) throw new AppError('Introduza endereços válidos para o remetente e o destinatário.');
@@ -14,15 +18,19 @@ export function validateNotifications(input, previous = {}) {
   if (input.host && !/^[a-zA-Z0-9.-]+$/.test(input.host)) throw new AppError('Indique apenas o nome do servidor SMTP.');
   if (input.enabled && !input.host) throw new AppError('Configure o servidor SMTP.');
   if (typeof input.password !== 'string' || input.password.length > 1000 || /[\r\n\x00]/.test(input.password)) throw new AppError('Palavra-passe SMTP inválida.');
-  if (input.enabled && input.username && !input.password && !previous.secret) throw new AppError('Introduza a palavra-passe SMTP ou palavra-passe de aplicação.');
-  return { enabled: input.enabled, security, host: input.host.trim(), port, username: input.username.trim(), from: input.from.trim(), to: input.to.trim(), password: input.password };
+  const valid={ enabled: input.enabled, security, host: input.host.trim(), port, username: input.username.trim(), from: input.from.trim(), to: input.to.trim(), password: input.password };
+  if (valid.enabled && valid.username && !valid.password) {
+    if(!previous.secret)throw new AppError('Introduza a palavra-passe SMTP ou palavra-passe de aplicação.');
+    if(!sameSmtpAccount(valid,previous))throw new AppError('Ao alterar o servidor, a porta, a segurança ou o utilizador SMTP, introduza novamente a palavra-passe.');
+  }
+  return valid;
 }
 export class Notifications {
   constructor(studio,{send=sendSmtp}={}) { this.studio=studio;this.store=studio.store;this.send=send;this.pending=[];this.processing=null;this.closing=false;this.controller=new AbortController(); }
   publicSettings() { const {secret,...config}=this.store.data.notifications||{enabled:false,host:'',port:587,username:'',from:'',to:''};return {...config,hasPassword:Boolean(secret)}; }
   save(input) {
     const old=this.store.data.notifications||{};const {password,...valid}=validateNotifications(input,old);
-    this.store.update(s=>{s.notifications={...valid,secret:password?this.studio.vault.encrypt(password):old.secret||''};});
+    this.store.update(s=>{s.notifications={...valid,secret:password?this.studio.vault.encrypt(password):sameSmtpAccount(valid,old)?old.secret||'':''};});
     if(!valid.enabled)this.pending=[];
     return this.publicSettings();
   }

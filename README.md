@@ -2,7 +2,13 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.4**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.5**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Capture and settings reliability (1.1.5)
+
+Saving a production scene waits for selected images to finish loading and preserves PNG/WebP transparency. Very narrow images retain valid dimensions. Unsaved production edits remain protected when changing language. Recording downloads are also checked inside the packaged Electron application, including matching file bytes and keeping the studio page open.
+
+Capture startup rejects previews that were cancelled or replaced, and stopping a feed drains accepted uploads once while preserving finalization errors. Actions for removed media, playlists or schedules no longer select a different item. Saved SMTP passwords are reused only for the same server, port, security mode and user; changing that identity requires a new password when authenticated notifications are enabled. Project imports reject invalid schedule date types.
 
 ## Recorder production tools and live formats (1.1.4)
 
@@ -118,7 +124,7 @@ node scripts/prepare-portable.mjs --platform=darwin
 python scripts/package-mac-portable.py --destination release/GoStreams-0.15.5-Mac-Portable/Mac-Portable
 ```
 
-The universal native Mac launcher is included under `app/vendor/mac-launcher/`, with its checksum, Go source and license notices. Rebuilding that launcher also requires a Go toolchain. The generated `GoStreams.app` contains both processor runtimes and requires macOS 13.5 or later. Native execution on a Mac is not yet verified; no Developer ID signing or notarization is claimed.
+The universal native Mac launcher is included under `app/vendor/mac-launcher/`, with its checksum, Go source and license notices. Rebuilding that launcher also requires a Go toolchain. The generated `GoStreams.app` contains both processor runtimes and requires macOS 13.5 or later. Native execution is verified on Apple Silicon in CI; the included Intel runtime has not been executed on Intel hardware. No Developer ID signing or notarization is claimed.
 
 ## Verification
 

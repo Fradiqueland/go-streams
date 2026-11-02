@@ -636,5 +636,7 @@
   "Aguarde o restauro da cópia de segurança.": "Please wait for the backup restore to finish.",
   ". Encerre a aplicação e execute o instalador. Os projetos, as definições e as sessões existentes são conservados.": ". Close the application and run the installer. Your existing projects, settings and sessions are preserved.",
   "Preservar resolução e fps do vídeo original": "Preserve source resolution and frame rate",
-  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Without active overlays, keeps the file's resolution and frame rate. Video and audio bitrates still apply."
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Without active overlays, keeps the file's resolution and frame rate. Video and audio bitrates still apply.",
+  "Deixe vazio para manter na mesma configuração SMTP": "Leave blank to keep it for the same SMTP configuration",
+  "Deixar a palavra-passe vazia só mantém a guardada se servidor, porta, segurança e utilizador SMTP não mudarem. Ao mudar estes dados com notificações e autenticação ativas, introduza uma nova palavra-passe.": "Leaving the password blank keeps the saved password only if the SMTP server, port, security and username are unchanged. If you change these details with notifications and authentication enabled, enter a new password."
 }

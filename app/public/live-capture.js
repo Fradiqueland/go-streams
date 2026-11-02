@@ -9,10 +9,10 @@ export const LIVE_BUFFER_LIMIT=8*1024*1024;
 export class LiveUploader {
  constructor({fetchChunk,stopRemote,onError,limit=LIVE_BUFFER_LIMIT}){
   Object.assign(this,{fetchChunk,stopRemote,onError,limit});
-  this.pending=Promise.resolve();this.bytes=0;this.sequence=0;this.closed=false;
+  this.pending=Promise.resolve();this.bytes=0;this.sequence=0;this.closed=false;this.ending=false;this.error=null;
  }
  push(blob){
-  if(this.closed||!blob.size)return;
+  if(this.closed||this.ending||!blob.size)return;
   if(this.bytes+blob.size>this.limit){this.fail(Error('Live upload is too slow. The broadcast was stopped to avoid accumulating a recording.'));return;}
   this.bytes+=blob.size;
   this.pending=this.pending.then(async()=>{
@@ -20,8 +20,12 @@ export class LiveUploader {
    await this.fetchChunk(blob,this.sequence++);
   }).catch(error=>this.fail(error)).finally(()=>{this.bytes-=blob.size;});
  }
- fail(error){if(this.closed)return;this.closed=true;void this.stopRemote().catch(()=>{});this.onError(error);}
- async finish(){await this.pending;this.closed=true;await this.stopRemote();}
+ stopOnce(){return this.stopPromise ||= Promise.resolve().then(()=>this.stopRemote());}
+ fail(error){if(this.closed)return;this.error=error;this.closed=true;void this.stopOnce().catch(()=>{});this.onError(error);}
+ finish(){
+  if(this.finishing)return this.finishing;this.ending=true;
+  this.finishing=(async()=>{try{await this.pending;}catch(error){this.error ||= error;}this.closed=true;try{await this.stopOnce();}catch(error){this.error ||= error;}if(this.error)throw this.error;})();return this.finishing;
+ }
 }
 
 export class LiveCapturePanel {
@@ -192,7 +196,9 @@ export class LiveCapturePanel {
   for(const input of this.audioInputs||[])input.gain.gain.value=this.clipAudio?0:Number(this.production.element.querySelector(`[name="${input.name}"]`).value);
  }
  async acquireFeed(role){
-  if(this.feedClosing)await this.feedClosing;
+  const source=this.output,epoch=this.captureEpoch,current=()=>Boolean(source)&&this.output===source&&this.captureEpoch===epoch&&!this.releasing;
+  const check=()=>{if(!current())throw Error(text('Local preview was cancelled before capture could start.','A pré-visualização foi cancelada antes de iniciar a captação.'));};
+  check();if(this.feedClosing)await this.feedClosing;check();
   this.feedUsers ||= new Set();this.feedUsers.add(role);
   try{
   if(this.feedStarting)return await this.feedStarting;
@@ -201,9 +207,11 @@ export class LiveCapturePanel {
    try{
    const mimeType=this.captureMimeType||['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
    if(!mimeType)throw Error('Live WebM capture is unavailable. Use Chrome, Edge or Safari 18.4+.');
-   const recorder=new MediaRecorder(this.output,{mimeType,videoBitsPerSecond:this.config.quality==='1080p'?4500000:2500000,audioBitsPerSecond:128000});
-   this.feedSession=await this.api('/api/capture/start',{...this.config,confirmed:true});this.feedMime=mimeType;const id=this.feedSession.id;
-   this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop();void this.production.stopRecording();},fetchChunk:async(blob,sequence)=>{
+   const recorder=new MediaRecorder(source,{mimeType,videoBitsPerSecond:this.config.quality==='1080p'?4500000:2500000,audioBitsPerSecond:128000});
+   const session=await this.api('/api/capture/start',{...this.config,confirmed:true});
+   if(!current()){await this.api(`/api/capture/${session.id}/stop`,{}).catch(()=>{});check();}
+   this.feedSession=session;this.feedMime=mimeType;const id=session.id;
+   this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop(error);void this.production.stopRecording();},fetchChunk:async(blob,sequence)=>{
     const response=await fetch(`/api/capture/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
    }});
    this.feedRecorder=recorder;recorder.ondataavailable=event=>this.feedUploader?.push(event.data);recorder.onerror=()=>this.feedUploader?.fail(Error('Live capture failed. Start a new capture.'));recorder.start(1000);return id;
@@ -234,13 +242,16 @@ export class LiveCapturePanel {
   }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
   finally{if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
  }
- async stop(){
+ async stop(reason){
   this.liveStart=null;
-  if(this.stopping)return;this.stopping=true;this.controls();
-  let stopped=!this.session;
-  try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});stopped=true;this.status(text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'));}
-  catch(error){this.status(error.message,true);}
-  finally{try{await this.releaseFeed('live');}catch(error){this.status(error.message,true);}if(stopped)this.session=null;this.stopping=false;this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();}
+  if(this.stopping){if(reason)this.stopFailure ||= reason;return this.stopDone;}
+  this.stopFailure=reason||null;this.stopping=true;this.controls();
+  this.stopDone=(async()=>{
+   let stopped=!this.session;
+   try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});stopped=true;}
+   catch(error){this.stopFailure ||= error;}
+   finally{try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}if(stopped)this.session=null;this.stopping=false;this.status(this.stopFailure?.message||text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'),Boolean(this.stopFailure));this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();this.stopDone=null;}
+  })();return this.stopDone;
  }
  releaseDevices(){
   this.captureEpoch++;

@@ -1,8 +1,14 @@
-# Go Streams 1.1.4
+# Go Streams 1.1.5
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Fiabilidade da captação e das definições (1.1.5)
+
+Guardar uma cena aguarda o carregamento das imagens selecionadas e preserva a transparência PNG/WebP. Imagens muito estreitas mantêm dimensões válidas. A mudança de idioma protege alterações de produção ainda por guardar. A verificação nativa do Electron descarrega gravações a partir dos dois estúdios, compara os ficheiros e confirma que a página permanece aberta.
+
+O início da captação rejeita pré-visualizações canceladas ou substituídas. A paragem escoa os dados já aceites uma única vez e mantém visíveis os erros de finalização. Ações sobre vídeos, playlists ou agendamentos removidos deixam de selecionar outro elemento. A palavra-passe SMTP só é reutilizada para o mesmo servidor, porta, modo de segurança e utilizador; uma nova identidade exige uma nova palavra-passe quando as notificações autenticadas estão ativas. A importação de projetos rejeita tipos inválidos nas datas dos agendamentos.
 
 ## Produção no gravador e formatos ao vivo (1.1.4)
 

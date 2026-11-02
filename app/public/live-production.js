@@ -10,7 +10,7 @@ export function layoutRects(layout,width,height,hasCamera,hasScreen){
 }
 export class ProductionTools {
  constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed,recordingControls=true,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey='go-streams-scenes'}){
-  Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed,recordingControls,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.images={};this.scenes=this.readScenes()||{};this.level=0;this.emojiTarget='banner';
+  Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed,recordingControls,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.cleanComposition=JSON.stringify(this.values);this.images={};this.scenes=this.readScenes()||{};this.level=0;this.emojiTarget='banner';
  }
  readScenes(){try{const saved=JSON.parse(localStorage.getItem(this.sceneStorageKey)||'{}');return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};}catch{return null;}}
  notifyRecordingState(){const active=this.recording;if(active!==this.lastRecordingState){this.lastRecordingState=active;this.onRecordingStateChange?.(active);}}
@@ -36,6 +36,7 @@ export class ProductionTools {
   this.values[name]=field.value;field.dispatchEvent?.(new Event('input',{bubbles:true}));field.focus?.({preventScroll:true});this.rememberTextSelection(field);
  }
 
+ get hasUnsavedChanges(){return JSON.stringify(this.values)!==this.cleanComposition||Object.values(this.imageLoads||{}).some(load=>load.pending);}
  get recording(){return Boolean(this.recordingId)||Boolean(this.finishing)||Boolean(this.starting);}
  mount(parent){
   if(this.element)return;
@@ -72,14 +73,15 @@ export class ProductionTools {
  }
  async loadImage(name,file){
   if(!file)return;
-  const token={};this.imageLoads ||= {};this.imageLoads[name]=token;
+  let resolveImage,loaded=false;const token={pending:true,done:new Promise(resolve=>{resolveImage=resolve;})};this.imageLoads ||= {};this.imageLoads[name]=token;
   try{
    if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024)throw Error(t('Choose a PNG, JPEG or WebP image up to 2 MB.','Escolha uma imagem PNG, JPEG ou WebP até 2 MB.'));
    const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
    if(this.imageLoads[name]!==token)return;
-   const image=new Image();image.src=data;await image.decode();if(this.imageLoads[name]!==token)return;const canvas=document.createElement('canvas'),max=name==='logo'?600:1600,ratio=Math.min(1,max/Math.max(image.width,image.height));canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
-   this.values[name]=canvas.toDataURL(name==='logo'?'image/png':'image/jpeg',.85);this.images[name]=image;this.onChange?.();
+   const image=new Image();image.src=data;await image.decode();if(this.imageLoads[name]!==token)return;const canvas=document.createElement('canvas'),max=name==='logo'?600:1600,ratio=Math.min(1,max/Math.max(image.width,image.height));canvas.width=Math.max(1,Math.round(image.width*ratio));canvas.height=Math.max(1,Math.round(image.height*ratio));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+   this.values[name]=canvas.toDataURL(name==='logo'?'image/png':file.type,.85);this.images[name]=canvas;loaded=true;this.onChange?.();
   }catch(error){if(this.imageLoads[name]===token)this.toast(error.message||'Image could not be opened.',true);}
+  finally{token.pending=false;resolveImage(loaded||this.imageLoads[name]!==token);}
  }
  draw(ctx,w,h,camera,screen,fit,drawBase){
   const v=this.values;ctx.fillStyle=v.background;ctx.fillRect(0,0,w,h);if(this.images.backgroundImage)ctx.drawImage(this.images.backgroundImage,0,0,w,h);
@@ -123,15 +125,15 @@ export class ProductionTools {
   }
   this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
-  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${item.id}/file">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
+  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${item.id}/file" download>${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
   this.notifyRecordingState();
  }
  async startRecording(){
   if(!this.getStream()||this.recording||this.preferencesBusy)return;
   this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
   try{let {directory,askEveryTime}=this.recordingOptions();if(askEveryTime||!directory){directory=await this.chooseRecordingDirectory();if(directory===null)return;}
-   if(!this.getStream())throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
-   const feedId=await this.acquireFeed('recording');const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId,directory});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;}
+   const stream=this.getStream();if(!stream)throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
+   const feedId=await this.acquireFeed('recording');if(this.getStream()!==stream)throw Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId,directory});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;}
   catch(error){await this.releaseFeed('recording').catch(()=>{});this.recordingId=null;this.toast(error.message,true);}
   finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
  }
@@ -161,8 +163,14 @@ export class ProductionTools {
     const file=this.element.querySelector('[name=clipFile]').files[0];if(!file||!['video/mp4','video/webm'].includes(file.type))throw Error(t('Choose a local MP4 or WebM video.','Escolha um vídeo local MP4 ou WebM.'));
     this.stopClip();this.clipUrl=URL.createObjectURL(file);const clip=this.clip=document.createElement('video');clip.playsInline=true;clip.muted=!this.setClipAudio;clip.src=this.clipUrl;clip.onended=()=>{if(this.clip===clip)this.stopClip();};clip.onerror=()=>{if(this.clip!==clip)return;this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};try{this.setClipAudio?.(clip);await clip.play();if(this.clip===clip)this.onChange?.();}catch(error){if(this.clip!==clip)return;this.stopClip();throw error;}
    }
-   if(action==='save-scene'){const scenes={...(this.readScenes()||this.scenes),[this.element.querySelector('[name=scene]').value]:{...this.values}};try{localStorage.setItem(this.sceneStorageKey,JSON.stringify(scenes));this.scenes=scenes;this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}}
-   if(action==='load-scene'){this.scenes=this.readScenes()||this.scenes;const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.values={...defaults,...values};const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
+   if(action==='save-scene'){
+    const sceneId=this.element.querySelector('[name=scene]').value;
+    // Keep the selected slot, but save the current composition after its images settle.
+    // New text edits are never overwritten by an older pending image request.
+    let pending;while((pending=Object.values(this.imageLoads||{}).filter(load=>load.pending)).length)if((await Promise.all(pending.map(load=>load.done))).some(loaded=>!loaded))throw Error(t('The selected image could not be loaded. Choose another image before saving the scene.','Não foi possível carregar a imagem selecionada. Escolha outra imagem antes de guardar a cena.'));
+    const snapshot={...this.values},scenes={...(this.readScenes()||this.scenes),[sceneId]:snapshot};try{localStorage.setItem(this.sceneStorageKey,JSON.stringify(scenes));this.scenes=scenes;this.cleanComposition=JSON.stringify(snapshot);this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}
+   }
+   if(action==='load-scene'){this.scenes=this.readScenes()||this.scenes;const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.values={...defaults,...values};this.cleanComposition=JSON.stringify(this.values);const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
    if(action==='teleprompter'){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}else this.scrollTimer=setInterval(()=>{const el=this.element.querySelector('.teleprompter');el.scrollTop+=1;},50);}
   }catch(error){this.toast?.(error.message,true);}finally{button.disabled=false;this.update();this.onChange?.();}
  }

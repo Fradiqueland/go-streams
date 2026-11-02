@@ -348,6 +348,7 @@ export class Studio {
         if (!(s.mediaId ? mediaIds.has(s.mediaId) && !s.playlistId : playlistIds.has(s.playlistId)) || !Array.isArray(s.channelIds) || !s.channelIds.length || new Set(s.channelIds).size !== s.channelIds.length || s.channelIds.some(cid => !channelIds.has(cid))) fail('O projeto contém um agendamento com referências inválidas.');
         const historical=['triggered','cancelled','interrupted','error','missed'].includes(s.status);
         if(!historical&&s.playlistId&&!playablePlaylistIds.has(s.playlistId))fail('O projeto contém um agendamento com uma playlist vazia.');
+        if(typeof s.at!=='string')fail('Data de agendamento inválida.');
         const date = new Date(s.at); if (!Number.isFinite(date.getTime())) fail('Data de agendamento inválida.');
         const timeZone = s.timeZone || 'UTC';
         try { if (typeof timeZone !== 'string') throw Error(); new Intl.DateTimeFormat('pt-PT', { timeZone }); } catch { fail('Fuso horário inválido.'); }

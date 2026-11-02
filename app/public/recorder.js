@@ -30,7 +30,7 @@ export function countdown(seconds,onTick,signal){
 export class RecorderPanel {
  constructor({api,toast}){Object.assign(this,{api,toast});this.streams=[];this.crop=cropRect();this.cameraPosition={x:.96,y:.96,size:.28};this.generation=0;this.preferences={directory:'',askEveryTime:true};}
  get busy(){return Boolean(this.output||this.preparing||this.starting||this.id||this.finishing||this.folderBusy);}
- get hasUnsavedChanges(){return Boolean(this.folderDirty);}
+ get hasUnsavedChanges(){return Boolean(this.folderDirty||this.production?.hasUnsavedChanges);}
  $(selector){return this.element.querySelector(selector);}
  mount(container,state){
   if(!this.element){
@@ -88,7 +88,7 @@ export class RecorderPanel {
   if(!this.element)return;
   if(state.recordingPreferences&&(state.recordingPreferences.revision||0)>=(this.preferences.revision||0)){this.preferences={...state.recordingPreferences};if(!this.folderDirty&&!this.folderBusy&&!this.starting&&!this.id)this.applyPreferences(this.preferences);}
   if(state.recordings){
-   const signature=JSON.stringify(state.recordings);if(signature!==this.filesSignature){this.filesSignature=signature;this.$('.recorder-files').innerHTML=state.recordings.slice(0,20).map(item=>`<div class="recorder-file"><strong>${item.kind==='audio'?t('Audio','Áudio'):t('Video','Vídeo')} · ${esc(new Date(item.created).toLocaleString(localeTag()))} · ${esc(item.format||'webm')}</strong><p>${item.status==='completed'?`<a href="/api/recordings/${esc(item.id)}/file">${t('Download','Transferir')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-recorder="recover" data-id="${esc(item.id)}">${t('Recover recording','Recuperar gravação')}</button>`:esc(item.status)}</p><small>${esc(item.directory||this.preferences.directory)} / ${esc(item.id)}.${esc(item.format||'webm')}</small></div>`).join('')||`<p>${t('No recordings yet.','Ainda não existem gravações.')}</p>`;}
+   const signature=JSON.stringify(state.recordings);if(signature!==this.filesSignature){this.filesSignature=signature;this.$('.recorder-files').innerHTML=state.recordings.slice(0,20).map(item=>`<div class="recorder-file"><strong>${item.kind==='audio'?t('Audio','Áudio'):t('Video','Vídeo')} · ${esc(new Date(item.created).toLocaleString(localeTag()))} · ${esc(item.format||'webm')}</strong><p>${item.status==='completed'?`<a href="/api/recordings/${esc(item.id)}/file" download>${t('Download','Transferir')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-recorder="recover" data-id="${esc(item.id)}">${t('Recover recording','Recuperar gravação')}</button>`:esc(item.status)}</p><small>${esc(item.directory||this.preferences.directory)} / ${esc(item.id)}.${esc(item.format||'webm')}</small></div>`).join('')||`<p>${t('No recordings yet.','Ainda não existem gravações.')}</p>`;}
    const own=state.recordings.find(item=>item.id===this.id);if(own&&!this.finishing&&!this.starting&&['completed','interrupted'].includes(own.status))this.recordingFailed(Error(own.error||t('Recording ended.','A gravação terminou.')));
   }
   this.controls();

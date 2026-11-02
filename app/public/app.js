@@ -278,6 +278,10 @@ function playlistForm(playlistId) {
   render();
 }
 function liveForm(schedule = false, scheduleId = null, mode = null, selectedMediaId = null, planChannelId = null) {
+  if(scheduleId&&!state.schedules.some(item=>item.id===scheduleId))throw Error(uiText('This schedule is no longer available. Refresh the page.','Este agendamento já não está disponível. Atualize a página.'));
+  if(planChannelId&&!state.channels.some(item=>item.id===planChannelId))throw Error(uiText('This channel is no longer available. Refresh the page.','Este canal já não está disponível. Atualize a página.'));
+  if(selectedMediaId&&mode==='video'&&!state.media.some(item=>item.id===selectedMediaId))throw Error(uiText('This video is no longer available. Refresh the page.','Este vídeo já não está disponível. Atualize a página.'));
+  if(selectedMediaId&&mode==='playlist'){const playlist=state.playlists.find(item=>item.id===selectedMediaId);if(!playlist)throw Error(tr('Playlist indisponível.'));if(!playlist.mediaIds.length)throw Error(uiText('This playlist is empty. Add a video before preparing a broadcast.','Esta playlist está vazia. Adicione um vídeo antes de preparar a transmissão.'));}
   const previous = planChannelId ? {...state.channelPlans?.[planChannelId],channelIds:[planChannelId]} : state.schedules.find(s=>s.id===scheduleId); const zone=previous?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (!state.media.length) { toast(tr("Importe primeiro um vídeo."),true);navigate('media');return; }
   const sourceMode=previous?.mediaId?'video':previous?.playlistId?'playlist':mode||(state.playlists.some(p=>p.mediaIds.length)?'playlist':'video');
@@ -341,7 +345,7 @@ document.addEventListener('click', async event => {
     else if(action==='plan-channel')liveForm(false,null,null,null,id);
     else if(action==='plan-schedule')liveForm(true,null,null,null,id);
     else if(action==='overlays')overlaysForm();
-    else if(action==='plan-start'){const channel=state.channels.find(c=>c.id===id);if(confirm(`${tr("Iniciar a transmissão preparada para")} ${channel.name}?`)){await api(`/api/channels/${id}/start`,{confirmed:true});navigate('live');await refresh();}}
+    else if(action==='plan-start'){const channel=state.channels.find(c=>c.id===id);if(!channel)throw Error(uiText('This channel is no longer available. Refresh the page.','Este canal já não está disponível. Atualize a página.'));if(confirm(`${tr("Iniciar a transmissão preparada para")} ${channel.name}?`)){await api(`/api/channels/${id}/start`,{confirmed:true});navigate('live');await refresh();}}
     else if(action==='job-settings')jobSettings(id);
     else if(action==='job-queue')queueForm(id);
     else if(action==='download-import'){await api(`/api/downloads/${id}/import`,{});await refresh();toast(tr("Vídeo adicionado à biblioteca."));}
@@ -399,6 +403,7 @@ document.addEventListener('click', async event => {
     }
     else if (action === 'rename-media') {
       const media = state.media.find(m => m.id === id);
+      if(!media)throw Error(uiText('This video is no longer available. Refresh the page.','Este vídeo já não está disponível. Atualize a página.'));
       dialog(tr("Renomear vídeo"), `<label>${tr("Título")}<input name="title" value="${esc(media.title)}" maxlength="200" required></label>`, async form => { await api(`/api/media/${id}`, { title: form.get('title') }, 'PUT'); toast(tr("Título atualizado.")); });
     }
     else if (action === 'pause-job') { await api(`/api/jobs/${id}/pause`, {}); await refresh(); }
@@ -412,6 +417,7 @@ document.addEventListener('click', async event => {
     else if (action === 'stop-all') { if (confirm(tr("Parar todas as transmissões e testes em curso?"))) { await api('/api/stop-all', {}); await refresh(); } }
     else if (action === 'arm') {
       const schedule = state.schedules.find(s => s.id === id);
+      if(!schedule)throw Error(uiText('This schedule is no longer available. Refresh the page.','Este agendamento já não está disponível. Atualize a página.'));
       if (schedule.armed || confirm(tr("Ativar a transmissão automática para este horário e estes canais?"))) { await api(`/api/schedules/${id}/arm`, { armed: !schedule.armed, confirmed: true }); await refresh(); }
     }
     else if(action==='cancel-conversion'){await api(`/api/media-operations/${id}/cancel`,{});await refresh();toast(tr("Cancelamento da conversão pedido. O original será preservado."));}
@@ -460,7 +466,7 @@ window.addEventListener('hashchange', () => { page = location.hash.slice(1) || '
 function showHealth() { $('.version').textContent=health?.version?'v'+health.version:''; const ok = health?.tools?.ffmpeg?.available && health?.tools?.ffprobe?.available; $('#engine-status').textContent = ok ? tr("● Motor disponível") : tr("● Configurar motor"); $('#engine-status').className = `badge ${ok ? 'ready' : 'error'}`; }
 applyLocale();
 const contextualHelp=installContextHelp(document,window);
-$('#language-select').onchange=event=>{const select=event.target;if(modalSubmissions||chatPanel?.busy||capturePanel?.production?.preferencesBusy||recorderPanel?.busy){select.value=language();toast(tr('Aguarde a conclusão da operação antes de mudar o idioma.'),true);return;}if(chatPanel?.hasUnsavedChanges){select.value=language();toast(uiText('Send or clear the chat draft and save its account settings before changing language.','Envie ou apague o rascunho do chat e guarde a configuração das contas antes de mudar o idioma.'),true);return;}if($('#dialog').open||settingsDrafts.size||settingsSaving||capturePanel?.busy||capturePanel?.production?.recordingPreferencesDirty||recorderPanel?.hasUnsavedChanges){select.value=language();toast(tr('Guarde as alterações e feche a janela antes de mudar o idioma.'),true);return;}try{setLanguage(select.value);location.reload();}catch(error){select.value=language();toast(error.message,true);}};
+$('#language-select').onchange=event=>{const select=event.target;if(modalSubmissions||chatPanel?.busy||capturePanel?.production?.preferencesBusy||recorderPanel?.busy){select.value=language();toast(tr('Aguarde a conclusão da operação antes de mudar o idioma.'),true);return;}if(chatPanel?.hasUnsavedChanges){select.value=language();toast(uiText('Send or clear the chat draft and save its account settings before changing language.','Envie ou apague o rascunho do chat e guarde a configuração das contas antes de mudar o idioma.'),true);return;}if($('#dialog').open||settingsDrafts.size||settingsSaving||capturePanel?.busy||capturePanel?.production?.recordingPreferencesDirty||capturePanel?.production?.hasUnsavedChanges||recorderPanel?.hasUnsavedChanges){select.value=language();toast(tr('Guarde as alterações e feche a janela antes de mudar o idioma.'),true);return;}try{setLanguage(select.value);location.reload();}catch(error){select.value=language();toast(error.message,true);}};
 try { await refresh(); health = await api('/api/health'); showHealth(); if (['settings','help'].includes(page)) draw(); } catch(e) { $('#content').innerHTML = empty('!', tr("Não foi possível abrir o estúdio"), e.message,btn('reconnect',tr("Tentar novamente")));connectionFailed(); }
 const poll = setInterval(async () => { if (loading) return; loading = true; try { await refresh(()=>!contextualHelp?.isReading() && !$('#dialog').open && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName) && ['dashboard','golive','live','schedules','history','tools'].includes(page)); } catch {connectionFailed();} finally { loading = false; } $('#clock').textContent = new Date().toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }); }, 2000);
 

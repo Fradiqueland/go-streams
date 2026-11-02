@@ -161,7 +161,7 @@ test('cancelling the recording folder question starts neither a shared encoder n
 });
 
 test('a predefined recording folder bypasses the picker and is sent to the independent recording worker',async()=>{
- const requests=[],tools=new ProductionTools({getStream:()=>({}),api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},acquireFeed:async()=> 'shared-feed',releaseFeed:async()=>{},toast(){}});
+ const requests=[],stream={},tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},acquireFeed:async()=> 'shared-feed',releaseFeed:async()=>{},toast(){}});
  tools.update=()=>{};const status={};tools.element={querySelector:selector=>selector==='.recording-status'?status:null};tools.recordingPreferences={directory:'/chosen/recordings',askEveryTime:false};
  await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,feedId:'shared-feed',directory:'/chosen/recordings'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);
 });

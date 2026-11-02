@@ -40,6 +40,11 @@ jobs:
           $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           node scripts/check.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify review 15 regressions
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          node --test --test-concurrency=1 test/review15-recorder.test.mjs test/review15-live.test.mjs test/review15-ui.test.mjs test/review15-backend.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native media and late destination joining
         run: |
           $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"

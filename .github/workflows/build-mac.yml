@@ -37,6 +37,9 @@ jobs:
       - name: Check application syntax
         run: |
           node scripts/check.mjs
+      - name: Verify review 15 regressions
+        run: |
+          node --test --test-concurrency=1 test/review15-recorder.test.mjs test/review15-live.test.mjs test/review15-ui.test.mjs test/review15-backend.test.mjs
       - name: Verify native media and late destination joining
         run: |
           npm run test:live

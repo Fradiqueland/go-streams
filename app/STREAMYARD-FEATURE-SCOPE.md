@@ -1,4 +1,4 @@
-# Go Streams live studio scope - 1.1.4
+# Go Streams live studio scope - 1.1.5
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -14,7 +14,7 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 | Branding | Logo, background image, colors, mirrored camera | User-provided PNG/JPEG/WebP images; local processing |
 | Lower thirds and banners | Presenter name/title, banner, moving ticker and emoji insertion | Rendered into the composed video in both the live studio and video recorder |
 | Intro/outro and clips | Local MP4/WebM clip replaces the live picture and ducks source audio | Returns to camera/screen when ended; compatible browser codecs required |
-| Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; not a shared online studio |
+| Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; saving waits for pending image loads and preserves PNG/WebP transparency; not a shared online studio |
 | Presenter notes | Private notes and scrolling teleprompter | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
 | Microphone-only live mode | Capture microphone audio without requesting camera or screen access | Sends the selected background, image and studio composition as the video picture; supports the same RTMP destinations and local recording |

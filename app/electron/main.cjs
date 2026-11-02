@@ -82,6 +82,45 @@ async function start(){
  await window.loadURL(backend.url);
  if(smoke)await smokeCheck(browserSession);
 }
+async function smokeRecordingDownloads(browserSession,runProcess){
+ const id=require('node:crypto').randomUUID(),recordings=backend.recordings,source=path.join(recordings.root,id+'.mp4'),downloads=[];
+ const {toolsFor}=await import(pathToFileURL(path.join(path.resolve(__dirname,'..'),'src','core.mjs')).href);
+ const pause=()=>new Promise(resolve=>setTimeout(resolve,50));
+ try{
+  await runProcess(toolsFor(backend.store.data.settings).ffmpeg,['-v','error','-f','lavfi','-i','color=c=blue:s=160x90:r=10','-t','0.5','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-y',source],{timeout:15000});
+  const expected=fs.readFileSync(source),created=new Date().toISOString();
+  recordings.items.unshift({id,created,ended:created,status:'completed',format:'mp4',kind:'video',bytes:expected.length,error:''});recordings.save();
+  for(const [route,scope]of [['recorder','.recorder-files'],['capture','.recording-files']]){
+   const href='/api/recordings/'+id+'/file',selector=scope+' a[href="'+href+'"]',destination=path.join(recordings.root,id+'-'+route+'-download.mp4');downloads.push(destination);
+   await window.webContents.executeJavaScript('location.hash='+JSON.stringify(route));
+   const deadline=Date.now()+15000;
+   while(!await window.webContents.executeJavaScript('Boolean(document.querySelector('+JSON.stringify(selector)+'))')){
+    if(Date.now()>deadline)throw Error('Recording download link did not appear: '+route);
+    await pause();
+   }
+   const before=window.webContents.getURL();
+   let handler,timer,downloadItem;
+   const received=new Promise((resolve,reject)=>{
+    timer=setTimeout(()=>{downloadItem?.cancel();reject(Error('Recording download did not finish: '+route));},15000);
+    handler=(event,item)=>{
+     if(item.getURL()!==backend.base+href)return;
+     downloadItem=item;
+     try{item.setSavePath(destination);item.once('done',(_,state)=>state==='completed'?resolve():reject(Error('Recording download failed: '+state)));}catch(error){item.cancel();reject(error);}
+    };
+    browserSession.on('will-download',handler);
+   });
+   try{
+    await Promise.all([received,window.webContents.executeJavaScript('document.querySelector('+JSON.stringify(selector)+').click()',true)]);
+    if(window.webContents.getURL()!==before)throw Error('Recording download navigated away from the studio.');
+    if(!fs.readFileSync(destination).equals(expected))throw Error('Recording download bytes differ: '+route);
+   }finally{clearTimeout(timer);browserSession.removeListener('will-download',handler);}
+  }
+  return {recorder:true,liveStudio:true,bytesVerified:true,navigationPreserved:true};
+ }finally{
+  recordings.items=recordings.items.filter(item=>item.id!==id);recordings.save();
+  for(const file of [source,...downloads])try{fs.unlinkSync(file);}catch(error){if(error.code!=='ENOENT')throw error;}
+ }
+}
 async function smokeCheck(browserSession){
  const root=path.resolve(__dirname,'..');
  const {runProcess}=await import(pathToFileURL(path.join(root,'src','core.mjs')).href);
@@ -107,8 +146,9 @@ async function smokeCheck(browserSession){
   backend.studio.saveChannel({name:'Electron persistence check',url:'rtmp://127.0.0.1:9/live',key:'LOCAL-ELECTRON-SMOKE-SECRET'});
   await window.webContents.executeJavaScript("localStorage.setItem('electron-persistence-smoke','preserved')");
  }
+ const recordingDownloads=await smokeRecordingDownloads(browserSession,runProcess);
  await browserSession.flushStorageData();await browserSession.cookies.flushStore();
- const proof={version:app.getVersion(),electron:process.versions.electron,chromium:process.versions.chrome,node:process.versions.node,sandbox:true,nodeHidden:renderer.nodeHidden,socialIcons:renderer.icons,priorSessionPreserved:prior,protectedProjectPreserved:prior,downloaderJavaScriptRuntimeVerified:true};
+ const proof={version:app.getVersion(),electron:process.versions.electron,chromium:process.versions.chrome,node:process.versions.node,sandbox:true,nodeHidden:renderer.nodeHidden,socialIcons:renderer.icons,priorSessionPreserved:prior,protectedProjectPreserved:prior,downloaderJavaScriptRuntimeVerified:true,recordingDownloads};
  fs.writeFileSync(path.join(paths.data,prior?'electron-second-launch.json':'electron-first-launch.json'),JSON.stringify(proof,null,2));
  await requestQuit();
 }
