@@ -42,6 +42,13 @@ try {
     await navigation.getByRole('link',{name,exact:true}).click();
     await page.waitForFunction(expected=>document.querySelector('#crumb')?.textContent===expected,name);
   }
+  async function infoFor(control){
+    const id=await control.getAttribute('data-help-id');assert.ok(id,'control has a contextual information association');
+    const info=page.locator('.control-info[data-help-for='+JSON.stringify(id)+']');
+    assert.equal(await info.count(),1);assert.equal(await info.getAttribute('role'),'button');assert.equal(await info.getAttribute('tabindex'),'0');
+    assert.equal(await info.getAttribute('aria-controls'),'control-help');assert.ok(await info.getAttribute('aria-label'));
+    return info;
+  }
 
   await page.goto(app.base + '/');
   await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();
@@ -54,21 +61,31 @@ try {
   const products=page.locator('.creator-credit a');assert.equal(await products.getAttribute('href'),'https://AntonioFradique.net');assert.equal(await products.getAttribute('target'),'_blank');checks++;
   assert.equal(await page.locator('.dashboard-actions .start-card').count(),2);assert.equal(await navigation.locator('.nav-section-title').count(),3);checks++;
   const help=page.locator('#control-help'),prepare=page.locator('.dashboard-start [data-action=go-live]');
-  await prepare.hover();await help.waitFor({state:'visible'});
+  let prepareInfo=await infoFor(prepare);
+  await prepare.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);checks++;
+  await prepare.focus();await page.waitForTimeout(2400);assert.equal(await help.isVisible(),false);assert.equal(await prepare.evaluate(el=>el===document.activeElement),true);checks++;
+  prepareInfo=await infoFor(prepare);await prepareInfo.hover();await prepareInfo.focus();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);
+  assert.equal(await prepare.getAttribute('title'),null);assert.equal(await prepareInfo.getAttribute('title'),null);checks++;
+  await page.keyboard.press('Enter');await help.waitFor({state:'visible'});
   assert.match(await help.textContent(),/Nothing is broadcast until you confirm/);checks++;
   await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);
-  assert.equal(await prepare.getAttribute('aria-describedby'),'control-help');checks++;
+  assert.equal(await prepareInfo.getAttribute('aria-expanded'),'true');assert.equal(await prepareInfo.getAttribute('aria-describedby'),'control-help');assert.equal(await prepare.getAttribute('aria-describedby'),'control-help');checks++;
   assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;}));checks++;
   await capture('dashboard-help-1440.png','context-help',false);
   await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
-  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);checks++;
-  const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();await help.waitFor({state:'visible'});
-  assert.equal(await studioLink.getAttribute('aria-describedby'),'control-help');
-  await page.waitForTimeout(2400);assert.equal(await studioLink.evaluate(el=>el===document.activeElement),true);assert.equal(await help.isVisible(),true);checks++;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await prepareInfo.getAttribute('aria-expanded'),'false');checks++;
+  await prepareInfo.focus();await page.keyboard.press('Space');await help.waitFor({state:'visible'});await prepareInfo.click();assert.equal(await help.isVisible(),false);checks++;
+  const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();assert.equal(await help.isVisible(),false);
+  const studioInfo=await infoFor(studioLink);await studioInfo.click();await help.waitFor({state:'visible'});
+  assert.equal(await studioInfo.getAttribute('aria-describedby'),'control-help');assert.equal(await page.locator('#crumb').textContent(),'Overview');
+  await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);checks++;
+  await page.getByRole('heading',{name:'Overview',exact:true}).click();assert.equal(await help.isVisible(),false);checks++;
   await page.locator('.dashboard-start [data-action=channel-new]').click();
-  const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();await help.waitFor({state:'visible'});
+  assert.equal(await help.isVisible(),false);checks++;
+  const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();assert.equal(await help.isVisible(),false);
+  const modalInfo=await infoFor(modalName);await modalInfo.click();await help.waitFor({state:'visible'});
   assert.equal(await help.evaluate(el=>el.parentElement.id),'dialog');
+  assert.equal(await page.locator('#modal-form').count(),1);assert.equal(await modalName.inputValue(),'');assert.equal(app.store.data.channels.length,0);checks++;
   await capture('dialog-help-1440.png','context-help',false);await help.waitFor({state:'visible'});checks++;
   await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await page.locator('#dialog').isVisible(),true);
   await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
@@ -76,7 +93,7 @@ try {
   await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
   await prepare.scrollIntoViewIfNeeded();await prepare.focus();
   await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
-  await prepare.hover();await help.waitFor({state:'visible'});
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});
   await page.waitForFunction(()=>{const tip=document.querySelector('#control-help');return !tip.hidden&&tip.textContent.startsWith('Long contextual explanation.')&&tip.scrollHeight>tip.clientHeight;});
   assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
   await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
@@ -88,6 +105,10 @@ try {
     assert.equal(await page.locator('html').getAttribute('dir'),dir);
     assert.equal(await page.locator('#language-select').inputValue(),code);checks++;
   }
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/Nada é transmitido/);checks++;
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();assert.equal(await help.isVisible(),false);
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/Nothing is broadcast/);checks++;
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();assert.equal(await help.isVisible(),false);checks++;
   await page.reload();await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();checks++;
 
   assert.equal(await page.locator('header').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(225, 10, 81)');checks++;
@@ -102,15 +123,25 @@ try {
   assert.equal(app.store.data.media.length,0);
   await page.getByRole('button',{name:'Fechar',exact:true}).click();checks++;
   await page.locator('[data-action="import"]').first().click();
-  await page.getByLabel('Caminhos locais').fill(clip);
+  await page.getByLabel('Caminhos locais',{exact:true}).fill(clip);
   await page.locator('#modal-form').getByRole('button', { name: 'Importar vídeos', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   await page.locator('.media-table').getByText('Ensaio de emissão',{exact:true}).waitFor(); checks++;
+  await page.locator('[data-action="media-grid"]').click();await page.locator('.media-grid .thumbnail').waitFor();
+  const thumbnailInfo=await infoFor(page.locator('.media-grid .thumbnail').first());await thumbnailInfo.click();await help.waitFor({state:'visible'});
+  assert.equal(await page.locator('#dialog').isVisible(),false,'thumbnail information must not start a video preview');checks++;
+  await page.keyboard.press('Escape');
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});
+    assert.ok(await page.locator('.media-card').first().evaluate(el=>el.scrollWidth<=el.clientWidth+1),'thumbnail and adjacent information fit the media card');checks++;
+    await capture(`media-grid-info-${width}.png`,'media-grid');
+  }
+  await page.setViewportSize({width:1440,height:1000});await page.locator('[data-action="media-list"]').click();await page.locator('.media-table').waitFor();
   await goTo('Canais');
   await page.locator('[data-action="channel-new"]').first().click();
-  await page.getByLabel('Nome do canal').fill('Canal de ensaio');
-  await page.getByLabel('Servidor RTMP / RTMPS').fill('rtmp://127.0.0.1:9/live');
-  await page.getByLabel('Chave de transmissão').fill('LOCAL-UI-TEST-SECRET');
+  await page.getByLabel('Nome do canal',{exact:true}).fill('Canal de ensaio');
+  await page.getByLabel('Servidor RTMP / RTMPS',{exact:true}).fill('rtmp://127.0.0.1:9/live');
+  await page.getByLabel('Chave de transmissão',{exact:true}).fill('LOCAL-UI-TEST-SECRET');
   await page.locator('#modal-form').getByRole('button', { name: 'Guardar', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   assert.ok(!(await page.content()).includes('LOCAL-UI-TEST-SECRET')); checks++;
@@ -119,7 +150,7 @@ try {
   await page.getByLabel('Nome', { exact: true }).fill('Programação de ensaio');
   await page.locator('#add-media-button').click();
   await page.locator('#add-media-button').click();
-  await page.getByRole('button', { name: 'Subir vídeo' }).nth(1).click();
+  await page.getByRole('button', { name: 'Subir vídeo',exact:true }).nth(1).click();
   await page.locator('#modal-form').getByRole('button', { name: 'Guardar', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' }); checks++;
   await page.locator('[data-action=playlist-rename]').first().click();
@@ -138,8 +169,8 @@ try {
   await goTo('Agendamento');
   await page.locator('[data-action="schedule-new"]').first().click();
   await page.locator('#source-mode').selectOption('playlist');
-  await page.getByLabel('Canal de ensaio').check();
-  await page.getByLabel('Confirmo os canais e o horário selecionados.').check();
+  await page.getByRole('checkbox',{name:/^Canal de ensaio/}).check();
+  await page.getByLabel('Confirmo os canais e o horário selecionados.',{exact:true}).check();
   await page.getByRole('button', { name: 'Guardar agendamento', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   await page.getByText('Pausado', { exact: true }).waitFor(); checks++;
@@ -152,7 +183,7 @@ try {
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.studio.jobs.size,1); // Only the completed local preview exists.
   await page.locator('[data-action="plan-schedule"]').first().click();
-  await page.getByLabel('Confirmo os canais e o horário selecionados.').check();
+  await page.getByLabel('Confirmo os canais e o horário selecionados.',{exact:true}).check();
   await page.getByRole('button',{name:'Guardar agendamento',exact:true}).click();
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.store.data.schedules.length,2);checks++;
@@ -252,7 +283,9 @@ try {
   assert.equal(await page.locator('[data-production=choose-recording-folder]').isVisible(),true);checks++;
   await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),true);
   await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),false);checks++;
-  await page.locator('[data-capture=start]').hover();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/destino livre/);checks++;
+  const captureStart=page.locator('[data-capture=start]');assert.equal(await captureStart.isDisabled(),true);
+  await captureStart.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);
+  const captureInfo=await infoFor(captureStart);assert.notEqual(await captureInfo.getAttribute('aria-disabled'),'true');await captureInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/destino livre/);checks++;
   await page.keyboard.press('Escape');
   await page.locator('#capture-form [name=source]').selectOption('microphone');
   assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
@@ -293,10 +326,20 @@ try {
   await capture('dashboard-populated.png');
   for(const width of [1440,800,390]){
     await page.setViewportSize({width,height:1000});
-    for(const name of ['Visão geral','Entrar em direto','Câmara e ecrã ao vivo','Chat unificado','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
+    for(const name of ['Visão geral','Entrar em direto','Câmara e ecrã ao vivo','Gravador de vídeo e áudio','Chat unificado','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
       await goTo(name);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${name}: horizontal page overflow at ${width}px`);checks++;
-      if(name==='Câmara e ecrã ao vivo'||name==='Chat unificado')assert.ok(await page.locator('#content').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${name}: clipped panel content at ${width}px`);
+      if(name==='Câmara e ecrã ao vivo'||name==='Chat unificado'||name==='Gravador de vídeo e áudio')assert.ok(await page.locator('#content').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${name}: clipped panel content at ${width}px`);
+      if(name==='Câmara e ecrã ao vivo')for(const action of ['preview','start','stop','release'])assert.equal(await page.locator('[data-capture='+action+']').count(),1,'cached live capture controls survive navigation');
+      if(name==='Gravador de vídeo e áudio')for(const action of ['prepare','start','stop','folder','release'])assert.equal(await page.locator('[data-recorder='+action+']').count(),1,'cached recorder controls survive navigation');
+      assert.ok(await page.evaluate(()=>{
+        const icons=[...document.querySelectorAll('.control-info')];
+        return icons.length>0&&icons.every(icon=>{
+          const controls=[...document.querySelectorAll('[data-help-id]')].filter(control=>control.dataset.helpId===icon.dataset.helpFor);
+          return controls.length===1&&icon.getAttribute('aria-label')?.trim()&&icon.getAttribute('aria-controls')==='control-help'&&!icon.hasAttribute('title')&&!controls[0].hasAttribute('title');
+        });
+      }),`${name}: missing, duplicate or stale contextual information association at ${width}px`);
+      assert.equal(await help.isVisible(),false,`${name}: ordinary navigation must not open contextual information`);
       const section=await page.evaluate(()=>location.hash.slice(1)||'dashboard');
       await capture(`screen-${width}-${section}.png`,section);
     }

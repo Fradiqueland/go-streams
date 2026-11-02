@@ -80,6 +80,7 @@ const production={
  teleprompter:['Start or pause scrolling your private notes. Notes are not drawn into the broadcast.','Inicie ou pause o movimento das notas privadas. As notas não são desenhadas na transmissão.']
 };
 const routes={
+ recorder:['Prepare and save local video or audio recordings, with a selectable folder, countdown and optional camera overlay.','Prepare e guarde gravações locais de vídeo ou áudio, com pasta selecionável, contagem e câmara opcional.'],
  dashboard:['See status and choose between live capture and prepared videos.','Veja o estado e escolha entre captação ao vivo e vídeos preparados.'],
  capture:['Open the studio for camera, screen or microphone-only capture and optional local recording.','Abra o estúdio para câmara, ecrã ou apenas microfone, com gravação local opcional.'],
  golive:['Prepare prerecorded videos or playlists for your configured channels.','Prepare vídeos pré-gravados ou playlists para os canais configurados.'],
@@ -177,7 +178,14 @@ export function helpFor(control){
  if('move' in d)return uiText('Move this video one position in the playlist. Save the form to keep the new order.','Mova este vídeo uma posição na playlist. Guarde o formulário para manter a nova ordem.');
  if('remove' in d)return uiText('Remove this occurrence from the playlist. The library video is kept. Save to apply.','Retire esta ocorrência da playlist. O vídeo fica na biblioteca. Guarde para aplicar.');
  const id=control.id||'',name=control.name||'';
+ if(control.closest?.('.recorder-studio')){
+  const recorderFields={mode:['Choose screen, screen with camera, camera video or audio only.','Escolha ecrã, ecrã com câmara, vídeo da câmara ou apenas áudio.'],sound:['Choose microphone, computer sound, both, or silent video. Computer sound needs an audio-capable shared source.','Escolha microfone, som do computador, ambos ou vídeo sem som. O som do computador exige uma origem partilhada com áudio.'],aspect:['Choose the saved video shape before recording. Screen content fits without distortion; camera video fills the frame.','Escolha a proporção do vídeo antes de gravar. O ecrã ajusta-se sem distorção; o vídeo da câmara preenche a imagem.'],countdown:['Choose the delay before local recording starts. You can cancel before recording begins.','Escolha o intervalo antes de iniciar a gravação local. Pode cancelar antes de começar a gravar.'],directory:['The recording is written directly to this folder. Save it as default to reuse it later.','A gravação é escrita diretamente nesta pasta. Guarde como predefinição para a reutilizar.'],askFolder:['Ask where to save before each recording. Turn this off to use the displayed folder.','Pergunte onde guardar antes de cada gravação. Desative para usar a pasta apresentada.'],cameraSize:['Adjust the size of the square camera overlay. The overlay stays within the saved picture.','Ajuste o tamanho do quadrado da câmara. O quadrado permanece dentro da imagem gravada.'],cameraX:['Move the camera square horizontally within the recorded picture.','Mova o quadrado da câmara na horizontal dentro da imagem gravada.'],cameraY:['Move the camera square vertically within the recorded picture.','Mova o quadrado da câmara na vertical dentro da imagem gravada.']};
+  if(recorderFields[name])return say(recorderFields[name]);
+  if(name.startsWith('crop-'))return uiText('Set the selected screen region as a percentage of the source. Adjust it before starting the recording.','Defina a região selecionada em percentagem da origem. Ajuste-a antes de iniciar a gravação.');
+ }
  if(id==='add-media-button')return uiText('Append the selected video to the playlist. The same video can appear more than once.','Adicione o vídeo selecionado ao fim da playlist. Pode adicionar o mesmo vídeo várias vezes.');
+ if(id==='queue-add-button')return uiText('Append the selected video to the upcoming queue. Save the queue to apply the change to this transmission.','Adicione o vídeo selecionado à fila seguinte. Guarde a fila para aplicar a alteração a esta transmissão.');
+ if(id==='pick-files')return uiText('Open the system file picker and place the chosen video paths in this form. Confirm the form to import them.','Abra o seletor de ficheiros do sistema e coloque os caminhos dos vídeos neste formulário. Confirme o formulário para os importar.');
  if(control.classList?.contains('close')||control.classList?.contains('cancel'))return uiText('Close this window and discard unsaved edits. An operation already submitted continues.','Feche esta janela e descarte as alterações por guardar. Uma operação já submetida continua.');
  if(id==='exit')return uiText('Close the studio. Active operations must be stopped before it exits.','Encerre o estúdio. As operações ativas têm de parar antes de sair.');
  if(id==='sidebar-toggle')return uiText('Expand or collapse the menu. Every section remains available.','Expanda ou recolha o menu. Todas as secções continuam disponíveis.');
@@ -188,6 +196,7 @@ export function helpFor(control){
  const href=control.getAttribute?.('href')||'';
  if(href.startsWith('#')&&routes[href.slice(1)])return say(routes[href.slice(1)]);
  if(href==='/api/export')return uiText('Download the project configuration without stream keys. Video files are not included.','Transfira a configuração do projeto sem chaves de transmissão. Os ficheiros de vídeo não são incluídos.');
+ if(href==='/api/history.csv')return uiText('Download the activity history as a CSV file for a spreadsheet.','Transfira o histórico de atividade num ficheiro CSV para uma folha de cálculo.');
  if(href.startsWith('/api/recordings/'))return uiText('Download a copy of this completed local recording. Its original stays in the recording folder.','Transfira uma cópia desta gravação concluída. O original fica na pasta das gravações.');
  if(href.startsWith('https://')||href.startsWith('http://'))return uiText('Open this address in the browser. This does not start a transmission.','Abra este endereço no navegador. Isto não inicia uma transmissão.');
  if(control.tagName==='SUMMARY')return uiText('Expand or collapse this group of optional settings. Your current selections are retained.','Expanda ou recolha este grupo de opções. As seleções atuais são mantidas.');
@@ -198,7 +207,9 @@ export function helpFor(control){
   return hint||uiText('Review the choices in this form, then save or confirm them.','Reveja as escolhas deste formulário e guarde ou confirme.');
  }
  if(['INPUT','SELECT','TEXTAREA'].includes(control.tagName))return uiText('Set this option before saving or starting the operation. Its label describes the value to enter.','Defina esta opção antes de guardar ou iniciar a operação. A etiqueta indica o valor a introduzir.');
- return control.getAttribute?.('title')||control.getAttribute?.('aria-label')||'';
+ const fallback=control.getAttribute?.('title')||control.dataset?.helpTitle||control.getAttribute?.('aria-label');if(fallback)return fallback;
+ const label=['BUTTON','A'].includes(control.tagName)?control.textContent?.replace(/\s+/g,' ').trim():'';
+ return label?uiText('Activate “'+label+'” to use this action.','Ative “'+label+'” para usar esta ação.'):'';
 }
 
 export function tooltipPosition(anchor,size,viewport){
@@ -213,53 +224,87 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  if(!doc?.body||!doc.createElement||!win?.addEventListener)return null;
  if(installations.has(doc))return installations.get(doc);
  const tip=doc.createElement('div');tip.id='control-help';tip.setAttribute('role','tooltip');tip.hidden=true;doc.body.appendChild(tip);
- let active=null,originalTitle=null,generatedLabel=null,showTimer,hideTimer,blocked=null,positionRule,pointerTarget=null,restoringFocus=false;
- const clear=()=>{win.clearTimeout(showTimer);win.clearTimeout(hideTimer);showTimer=hideTimer=null;};
+ const entries=new Map(),sources=new WeakMap();let active=null,positionRule,sequence=0,refreshing=false;
+ const selectors='button,a,input:not([type="hidden"]),select,textarea,summary,[data-help]';
+ const labelText=label=>{
+  if(!label)return '';
+  const copy=label.cloneNode?.(true);if(!copy)return label.textContent?.trim()||'';
+  for(const child of copy.querySelectorAll('input,select,textarea,button,.control-info,[aria-hidden="true"]'))child.remove();
+  return copy.textContent.replace(/\s+/g,' ').trim();
+ };
+ const controlLabel=control=>control.getAttribute('aria-label')||[...(control.labels||[])].map(labelText).join(' ')||control.dataset.helpTitle||(['BUTTON','A','SUMMARY'].includes(control.tagName)?labelText(control):'')||control.name||uiText('this option','esta opção');
+ function describe(element,include){
+  const ids=new Set((element.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));if(include)ids.add(tip.id);else ids.delete(tip.id);
+  if(ids.size)element.setAttribute('aria-describedby',[...ids].join(' '));else element.removeAttribute('aria-describedby');
+ }
  function hide(){
-  clear();tip.hidden=true;
+  tip.hidden=true;
   if(active){
-   const ids=(active.getAttribute('aria-describedby')||'').split(/\s+/).filter(id=>id&&id!==tip.id);
-   if(ids.length)active.setAttribute('aria-describedby',ids.join(' '));else active.removeAttribute('aria-describedby');
-   if(originalTitle!==null&&!active.hasAttribute('title'))active.setAttribute('title',originalTitle);
-   if(generatedLabel!==null&&active.getAttribute('aria-label')===generatedLabel)active.removeAttribute('aria-label');
+   describe(active,false);const icon=entries.get(active)?.icon;if(icon){describe(icon,false);icon.setAttribute('aria-expanded','false');}
   }
-  active=null;originalTitle=null;generatedLabel=null;
+  active=null;
  }
  function show(control){
-  clear();const content=helpFor(control);if(!content||!control.isConnected)return;
+  const content=helpFor(control),icon=entries.get(control)?.icon;if(!content||!control.isConnected||!icon)return;
   if(active===control&&!tip.hidden){if(content!==tip.textContent){tip.textContent=content;position();}return;}
-  hide();active=control;originalTitle=control.getAttribute('title');
-  if(originalTitle!==null){if(!control.getAttribute('aria-label')&&!control.textContent.trim()){generatedLabel=originalTitle;control.setAttribute('aria-label',generatedLabel);}control.removeAttribute('title');}
+  hide();active=control;
   const parent=control.closest('dialog[open]')||doc.body;if(tip.parentNode!==parent)parent.appendChild(tip);
   tip.textContent=content;tip.hidden=false;
-  const ids=new Set((control.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));ids.add(tip.id);control.setAttribute('aria-describedby',[...ids].join(' '));
+  describe(control,true);describe(icon,true);icon.setAttribute('aria-expanded','true');
   position();
  }
  function position(){
   if(!active||tip.hidden)return;
   // Change an existing external stylesheet rule; no inline styles or CSP exception.
   if(!positionRule)for(const sheet of doc.styleSheets)try{positionRule=[...sheet.cssRules].find(rule=>rule.selectorText==='#control-help');if(positionRule)break;}catch{}
-  if(positionRule){const viewport={width:doc.documentElement?.clientWidth||win.innerWidth,height:win.innerHeight};positionRule.style.setProperty('max-width',Math.max(1,Math.min(360,viewport.width-24))+'px');positionRule.style.setProperty('max-height',Math.max(1,viewport.height-24)+'px');const point=tooltipPosition(active.getBoundingClientRect(),tip.getBoundingClientRect(),viewport);positionRule.style.setProperty('left',point.left+'px');positionRule.style.setProperty('top',point.top+'px');}
+  if(positionRule){const viewport={width:doc.documentElement?.clientWidth||win.innerWidth,height:win.innerHeight};positionRule.style.setProperty('max-width',Math.max(1,Math.min(360,viewport.width-24))+'px');positionRule.style.setProperty('max-height',Math.max(1,viewport.height-24)+'px');const point=tooltipPosition(entries.get(active).icon.getBoundingClientRect(),tip.getBoundingClientRect(),viewport);positionRule.style.setProperty('left',point.left+'px');positionRule.style.setProperty('top',point.top+'px');}
  }
- const target=event=>event.target?.closest?.('button,a,input,select,textarea,summary,[data-help]');
- const laterHide=()=>{win.clearTimeout(hideTimer);hideTimer=win.setTimeout(()=>{if(doc.activeElement!==active)hide();},160);};
- doc.addEventListener('pointerover',event=>{
-  if(event.pointerType==='touch'||tip.contains(event.target)){win.clearTimeout(hideTimer);return;}
-  const control=target(event);if(!control||control===blocked||!helpFor(control))return;
-  pointerTarget=control;clear();showTimer=win.setTimeout(()=>show(control),350);
- });
- doc.addEventListener('pointerout',event=>{
-  const next=event.relatedTarget;
-  if(blocked&&!blocked.contains(next))blocked=null;
-  if(active&&(active.contains(next)||tip.contains(next)))return;
-  pointerTarget=null;
-  if(tip.contains(event.target)||active?.contains(event.target))laterHide();else win.clearTimeout(showTimer);
- });
- doc.addEventListener('focusin',event=>{const control=target(event);if(!restoringFocus&&control&&control!==blocked)show(control);});
- doc.addEventListener('focusout',event=>{if(blocked?.contains(event.target))blocked=null;if(active?.contains(event.target))hide();});
- doc.addEventListener('pointerdown',event=>{if(!tip.contains(event.target))hide();},true);
- doc.addEventListener('keydown',event=>{if(event.key==='Escape'&&!tip.hidden){blocked=active;event.preventDefault();event.stopPropagation();hide();}},true);
- doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))hide();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
- const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(()=>{if(active&&!active.isConnected)hide();else if(active&&!tip.hidden){const content=helpFor(active)||originalTitle||'';if(content!==tip.textContent){tip.textContent=content;position();}}}):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']});
- const installed={hide,tip,restoreFocus(control,wasReading=false){hide();restoringFocus=true;try{control.focus({preventScroll:true});}finally{restoringFocus=false;}if(wasReading)show(control);},isReading:()=>Boolean((pointerTarget?.isConnected&&(showTimer||(!tip.hidden&&active===pointerTarget)))||(!tip.hidden&&active===doc.activeElement))};installations.set(doc,installed);return installed;
+ function refresh(){
+  if(refreshing)return;refreshing=true;
+  try{
+   for(const [control,entry]of entries)if(!control.isConnected||!entry.icon.isConnected){
+    if(active===control)hide();
+    // Capture and recorder panels are detached on navigation, then reused.
+    // Unwrap their real controls before removing decoration.
+    if(entry.wrapper?.parentNode&&entry.wrapper.contains(control))entry.wrapper.replaceWith(control);else entry.wrapper?.remove();
+    entry.icon.remove();entries.delete(control);
+   }
+   for(const control of doc.querySelectorAll?.(selectors)||[]){
+    if(control.closest?.('#control-help,.control-info')||control.tagName==='INPUT'&&control.type==='hidden')continue;
+    const title=control.getAttribute('title');if(title!==null){control.dataset.helpTitle=title;if(!control.getAttribute('aria-label')&&!control.textContent.trim())control.setAttribute('aria-label',title);control.removeAttribute('title');}
+    if(!helpFor(control))continue;
+    let entry=entries.get(control);
+    if(!entry){
+     const icon=doc.createElement('span'),mark=doc.createElement('span');icon.className='control-info';icon.setAttribute('role','button');icon.tabIndex=0;icon.setAttribute('aria-controls',tip.id);icon.setAttribute('aria-expanded','false');mark.textContent='i';mark.setAttribute('aria-hidden','true');icon.appendChild(mark);
+     control.dataset.helpId='control-info-'+(++sequence);icon.dataset.helpFor=control.dataset.helpId;sources.set(icon,control);
+     let wrapper;const label=control.closest?.('label');
+     if(label&&['INPUT','SELECT','TEXTAREA'].includes(control.tagName)){
+      // Keep the field's accessible name independent of its new info control.
+      if(!control.getAttribute('aria-label')&&!control.getAttribute('aria-labelledby')){const name=[...(control.labels||[label])].map(labelText).join(' ');if(name)control.setAttribute('aria-label',name);}
+      label.classList.add('control-info-field');label.appendChild(icon);
+     }else if(control.tagName==='SUMMARY'){if(!control.getAttribute('aria-label')&&!control.getAttribute('aria-labelledby'))control.setAttribute('aria-label',labelText(control));icon.classList.add('control-info-summary');control.appendChild(icon);}
+     else if(control.dataset.recorder==='resize-camera'){icon.classList.add('control-info-overlay');control.after(icon);}
+     else{wrapper=doc.createElement('span');wrapper.className='control-info-pair'+(['INPUT','SELECT','TEXTAREA'].includes(control.tagName)?' control-info-input':'');control.before(wrapper);wrapper.appendChild(control);wrapper.appendChild(icon);}
+     entry={icon,wrapper};entries.set(control,entry);
+    }
+    entry.icon.setAttribute('aria-label',uiText('Information: ','Informação: ')+controlLabel(control));
+    const hidden=Boolean(control.hidden);if(entry.icon.hidden!==hidden)entry.icon.hidden=hidden;if(entry.wrapper&&entry.wrapper.hidden!==hidden)entry.wrapper.hidden=hidden;
+   }
+   if(active){if(!active.isConnected||active.hidden)hide();else show(active);}
+  }finally{refreshing=false;}
+ }
+ const target=event=>event.target?.closest?.('.control-info');
+ const activate=icon=>{const control=sources.get(icon);if(!control)return;if(active===control&&!tip.hidden)hide();else show(control);};
+ doc.addEventListener('click',event=>{const icon=target(event);if(icon&&sources.has(icon)){event.preventDefault();event.stopPropagation();icon.focus({preventScroll:true});activate(icon);}else if(!tip.contains(event.target))hide();},true);
+ doc.addEventListener('pointerdown',event=>{const icon=target(event);if(icon&&sources.has(icon)){event.stopPropagation();return;}if(!tip.contains(event.target))hide();},true);
+ doc.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!tip.hidden){event.preventDefault();event.stopPropagation();hide();return;}
+  const icon=target(event);if(icon&&sources.has(icon)&&['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();if(!event.repeat)activate(icon);}
+ },true);
+ doc.addEventListener('keyup',event=>{if(target(event)&&['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();}},true);
+ // A click may be followed by a delayed scroll event from bringing its icon
+ // into view. Keep explicitly opened information visible and track its anchor.
+ doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))position();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
+ const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(refresh):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','title','data-help']});
+ const installed={hide,tip,refresh,sourceFor:icon=>sources.get(icon),infoFor:control=>entries.get(control)?.icon,restoreFocus(control,wasReading=false,asInfo=false){hide();refresh();const target=asInfo?entries.get(control)?.icon:control;target?.focus({preventScroll:true});if(asInfo&&wasReading)show(control);},isReading:()=>Boolean(active&&!tip.hidden)};installations.set(doc,installed);refresh();return installed;
 }

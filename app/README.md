@@ -1,8 +1,14 @@
-# Go Streams 1.1.1
+# Go Streams 1.1.2
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Proporções do gravador e ajuda por clique (1.1.2)
+
+Os botões de iniciar/parar e o tempo decorrido ficam junto da pré-visualização. Escolha Original, 16:9, 9:16, 1:1, 4:3 ou 3:4 antes de gravar. Pode alterar a proporção da pré-visualização preparada sem voltar a abrir os dispositivos. A área do ecrã é ajustada sem deformação, com margens quando necessário; o vídeo só de câmara preenche o formato e a câmara sobreposta mantém-se quadrada.
+
+O ícone **i** junto de cada controlo abre a respetiva explicação apenas por clique, toque ou ativação pelo teclado. Passar o rato ou focar o controlo original não abre a ajuda. Feche pelo mesmo ícone, Escape ou clique fora.
 
 ## Revisão de fiabilidade (1.1.1)
 
@@ -24,7 +30,7 @@ A mudança de idioma aguarda as operações do chat e da pasta de gravação e p
 
 ## Interface e ajuda contextual 1.0.10
 
-O painel apresenta duas entradas: captação ao vivo e vídeos ou playlists preparados. O menu agrupa transmissão, conteúdos/destinos e aplicação. Passe o rato sobre os controlos ou selecione-os com o teclado para ler a explicação; use Escape para a fechar. As opções de imagem/apresentador e os clips expandem apenas quando necessário; a gravação local fica diretamente acessível.
+O painel apresenta duas entradas: captação ao vivo e vídeos ou playlists preparados. O menu agrupa transmissão, conteúdos/destinos e aplicação. Clique no ícone de informação junto do controlo, ou ative esse ícone pelo teclado, para ler a explicação; use Escape para a fechar. As opções de imagem/apresentador e os clips expandem apenas quando necessário; a gravação local fica diretamente acessível.
 
 ## Captação ao vivo 1.0.10
 

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {AppError,atomicWrite,runProcess,toolsFor} from './core.mjs';
+import {appendProgramOutput} from './program-output.mjs';
 
 export class LocalRecordings {
  constructor(studio,{clock=true,execute=runProcess}={}){
@@ -49,7 +50,15 @@ export class LocalRecordings {
   try{
   // Encode browser input while recording. Finishing only remuxes the index;
   // it never needs to transcode the whole recording after the user presses Stop.
-  child=format!=='webm'?this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0',...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k']),'-f','matroska','-n',path.join(destination,id+'.part')],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']}):null;
+  if(format!=='webm'){
+   const args=['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0'];
+   const encoding=[...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k'])];
+   // Shared capture is already branded by its encoder. Standalone video must
+   // apply the same foreground image after the browser's complete composition.
+   if(!feedId&&kind==='video')appendProgramOutput(args,encoding);else args.push(...encoding);
+   args.push('-f','matroska','-n',path.join(destination,id+'.part'));
+   child=this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});
+  }
   stream=child?child.stdin:fs.createWriteStream(path.join(destination,id+'.part'),{flags:'wx',mode:0o600});
   record={item,stream,feedId,sequence:0,receiving:false,lastInput:Date.now(),error:null,ownsPart:false};
   if(!child)stream.once('open',()=>{record.ownsPart=true;});

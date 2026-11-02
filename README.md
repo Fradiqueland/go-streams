@@ -2,7 +2,13 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.1**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.2**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Recorder proportions and explicit help (1.1.2)
+
+Recording controls and the elapsed timer sit beside the result preview. Choose Original, 16:9, 9:16, 1:1, 4:3 or 3:4 before recording; changing the ratio updates an already prepared preview without reopening devices. Screen selections fit inside the chosen frame without stretching, with margins when needed. Camera-only video fills the frame; the movable camera inset remains square.
+
+An adjacent **i** button opens contextual help only when activated by click, touch or keyboard. Hovering or focusing the original control does not open explanations. Close help with the same icon, Escape or a click outside.
 
 ## Reliability review (1.1.1)
 
@@ -24,7 +30,7 @@ Changing language waits for pending chat or recording-folder operations and pres
 
 ## Easier dashboard and contextual help (1.0.10)
 
-The overview separates live camera/microphone/screen streaming from prepared videos and playlists. The menu groups broadcasting, content/destinations and application settings. Hover over a control or focus it with the keyboard to read its explanation; press Escape to dismiss it. Picture/presenter settings and clips expand when needed, while local recording remains directly available. Preview, preparation, recording and public broadcast controls explain their different effects.
+The overview separates live camera/microphone/screen streaming from prepared videos and playlists. The menu groups broadcasting, content/destinations and application settings. Activate the adjacent information icon to read an explanation; press Escape to dismiss it. Picture/presenter settings and clips expand when needed, while local recording remains directly available. Preview, preparation, recording and public broadcast controls explain their different effects.
 
 ## Live camera and screen capture (1.0.10)
 

@@ -17,7 +17,7 @@ let recorderPanel;
 names.recorder=uiText('Video & audio recorder','Gravador de vídeo e áudio');
 names.chat=language()==='pt-PT'?'Chat unificado':'Unified chat';
 function mountChat(container){chatPanel ||= new ChatPanel({api,toast,onFeature:message=>{if(capturePanel)capturePanel.featuredComment=message;else toast(language()==='pt-PT'?'Abra a pré-visualização ao vivo para mostrar comentários.':'Open the live preview to feature comments.');}});chatPanel.mount(container,state.chat,state.channels);}
-let interfaceClosing=false,exitPending=false;
+let interfaceClosing=false,exitPending=false,navigationMarkup='';
 let downloadsQuery='';
 const pendingActions=new Set(), settingsDrafts=new Map();
 let refreshRequested=0, refreshApplied=0, dialogGeneration=0, modalSubmissions=0, settingsSaving=false, settingsSavingForm='';
@@ -82,14 +82,17 @@ function draw() {
   if(interfaceClosing)return;
   const focused=document.activeElement;
   const focusedHelp=Boolean(focused?.getAttribute?.('aria-describedby')?.split(/\s+/).includes('control-help'));
-  const focusKey=focused?.closest?.('#content')&&['BUTTON','A'].includes(focused.tagName)?{tag:focused.tagName,action:focused.dataset.action,id:focused.dataset.id,href:focused.getAttribute('href')}:null;
-  const matchesFocus=el=>focusKey&&el.tagName===focusKey.tag&&el.dataset.action===focusKey.action&&el.dataset.id===focusKey.id&&el.getAttribute('href')===focusKey.href;
-  const focusIndex=focusKey?[...document.querySelectorAll('#content button,#content a')].filter(matchesFocus).indexOf(focused):-1;
+  const focusedSource=contextualHelp?.sourceFor(focused)||focused,focusedInfo=focusedSource!==focused;
+  const focusSelector=focusedInfo?'#content button,#content a,#content input,#content select,#content textarea,#content summary':'#content button,#content a';
+  const identity=el=>JSON.stringify([el.tagName,el.id,el.name,el.getAttribute('href'),...['action','id','capture','recorder','production','chat','move','remove','pageKey','page','filter','key','secret'].map(key=>el.dataset[key])]);
+  const focusKey=focusedSource?.closest?.('#content')&&(focusedInfo||['BUTTON','A'].includes(focusedSource.tagName))?identity(focusedSource):null;
+  const matchesFocus=el=>focusKey&&identity(el)===focusKey;
+  const focusIndex=focusKey?[...document.querySelectorAll(focusSelector)].filter(matchesFocus).indexOf(focusedSource):-1;
   const retained = [...document.querySelectorAll('#normalize-select,#preview-select')].map(el => [el.id,el.value]);
   if (!names[page]) page = 'dashboard';
   $('#crumb').textContent = names[page];
   const navigation = [[uiText('BROADCAST','TRANSMISSÃO'),['dashboard','capture','recorder','golive','live','chat']],[uiText('CONTENT & DESTINATIONS','CONTEÚDO E DESTINOS'),['media','playlists','channels','schedules']],[uiText('APPLICATION','APLICAÇÃO'),['tools','history','settings','help']]].map(([title,keys])=>`<div class="nav-section-title">${title}</div>`+keys.map(key=>`<a href="#${key}" title="${esc(names[key])}" aria-label="${esc(names[key])}" ${key===page?'aria-current="page"':''} class="nav-item ${key===page?'selected':''}"><span>${icon(key)}</span>${names[key]}${key==='media'&&state.media.length?`<b>${state.media.length}</b>`:''}</a>`).join('')).join('');
-  if($('#nav').innerHTML!==navigation)$('#nav').innerHTML=navigation;
+  if(navigationMarkup!==navigation||!$('#nav').innerHTML){$('#nav').innerHTML=navigation;navigationMarkup=navigation;}
   if(page==='capture'){
     capturePanel ||= new LiveCapturePanel({api,toast,getState:()=>state});
     capturePanel.mount($('#content'),state);
@@ -103,7 +106,8 @@ function draw() {
   if(page==='settings')restoreSettings();
   applyBusyActions();
   for (const [id,value] of retained) { const el=document.getElementById(id); if(el&&[...el.options].some(o=>o.value===value))el.value=value; }
-  if(focusIndex>=0){const replacement=[...document.querySelectorAll('#content button,#content a')].filter(matchesFocus)[focusIndex];if(replacement){if(contextualHelp)contextualHelp.restoreFocus(replacement,focusedHelp);else replacement.focus({preventScroll:true});}}
+  contextualHelp?.refresh();
+  if(focusIndex>=0){const replacement=[...document.querySelectorAll(focusSelector)].filter(matchesFocus)[focusIndex];if(replacement){if(contextualHelp)contextualHelp.restoreFocus(replacement,focusedHelp,focusedInfo);else replacement.focus({preventScroll:true});}}
 }
 function dashboardStart(){
  const ready=state.channels.filter(channel=>channel.hasKey).length;

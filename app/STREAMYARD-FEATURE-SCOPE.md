@@ -6,7 +6,7 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 
 | Area | Go Streams implementation | Verification / limits |
 | --- | --- | --- |
-| Dashboard and help | Separate live/prepared-video entry points, grouped menu, expandable optional controls and hover/keyboard explanations | Escape dismisses help; enabled/disabled actions describe effects and prerequisites |
+| Dashboard and help | Separate live/prepared-video entry points, grouped menu, expandable optional controls and adjacent information icons with click/touch/keyboard activation | Escape dismisses help; enabled/disabled actions describe effects and prerequisites |
 | Multistream | One captured source to multiple configured RTMP/RTMPS destinations | Independent workers; shares channel reservations and concurrency limits with prerecorded streams |
 | Camera and microphone | Device selection, preview, microphone mute, mixed audio meter | Browser/OS media permission required; real device testing remains manual |
 | Screen sharing | Screen/window selection; screen with camera inset | Shared audio depends on OS, browser and chosen source |

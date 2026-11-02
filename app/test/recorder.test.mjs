@@ -5,7 +5,7 @@ import path from 'node:path';
 import {Readable} from 'node:stream';
 import {Store,Vault,Studio,runProcess} from '../src/core.mjs';
 import {LocalRecordings} from '../src/local-recordings.mjs';
-import {cropRect,cameraRect,cameraPosition,frameSize,containedRect,selectionRect} from '../public/recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from '../public/recorder-geometry.js';
 import {RecordingUpload,countdown,RecorderPanel} from '../public/recorder.js';
 import {uiHarness} from './ui-harness.mjs';
 
@@ -17,6 +17,50 @@ test('screen crops, camera squares and even output dimensions stay inside landsc
  }
  assert.deepEqual(containedRect({left:10,top:20,width:400,height:400},1600,900),{left:10,top:107.5,width:400,height:225});
  const selected=selectionRect({x:.9,y:.8},{x:.1,y:.2});assert.equal(selected.x,.1);assert.equal(selected.width,.8);assert.ok(Math.abs(selected.height-.6)<1e-12);
+});
+
+test('fixed recording aspect ratios produce exact even dimensions at both quality levels',()=>{
+ const expected={'16:9':[1920,1080],'9:16':[1080,1920],'1:1':[1080,1080],'4:3':[1440,1080],'3:4':[1080,1440]};
+ assert.deepEqual(recordingAspects,['original',...Object.keys(expected)]);
+ for(const [aspect,[width,height]]of Object.entries(expected))for(const quality of [720,1080])for(const source of [[640,360],[1080,1920]]){
+  const result=frameSize(...source,{x:.5,width:.5},quality,aspect);assert.deepEqual(result,{width:width*quality/1080,height:height*quality/1080});assert.equal(result.width%2,0);assert.equal(result.height%2,0);
+ }
+ assert.deepEqual(frameSize(640,360,{x:.5,width:.5},1080,'original'),{width:320,height:360});
+ assert.deepEqual(frameSize(640,360,{},1080,'unsupported'),frameSize(640,360,{},1080));
+});
+
+test('screen crops fit fixed portrait output without stretching while camera output fills it',()=>{
+ const calls=[],context={fillRect(){},drawImage(...args){calls.push(args);}},panel=new RecorderPanel({api(){},toast(){}});
+ panel.canvas={width:1080,height:1920,getContext:()=>context};panel.config={mode:'screen'};panel.screenVideo={videoWidth:640,videoHeight:360};panel.crop=cropRect({x:.5,width:.5});
+ panel.draw();assert.equal(calls.length,1);assert.deepEqual(calls[0],[panel.screenVideo,320,0,320,360,0,352.5,1080,1215]);
+ calls.length=0;panel.config.mode='camera';panel.cameraVideo={videoWidth:640,videoHeight:480};panel.draw();assert.equal(calls.length,1);assert.deepEqual(calls[0],[panel.cameraVideo,185,0,270,480,0,0,1080,1920]);
+});
+
+test('aspect changes update prepared output without reacquiring capture and lock for recording lifecycle',()=>{
+ const panel=new RecorderPanel({api(){},toast(){}}),fields=new Map(),output={},screen={videoWidth:640,videoHeight:360};let draws=0;
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.positionBoxes=()=>{};panel.draw=()=>draws++;
+ panel.canvas={};panel.config={mode:'screen',quality:720,aspect:'original'};panel.screenVideo=screen;panel.output=output;
+ panel.changeAspect('9:16');assert.deepEqual(panel.canvas,{width:720,height:1280});assert.equal(panel.output,output);assert.equal(panel.screenVideo,screen);assert.equal(draws,1);
+ for(const state of [{starting:true},{id:'recording'},{finishing:true},{preparing:true}]){Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false},state);panel.changeAspect('1:1');assert.equal(panel.config.aspect,'9:16');assert.equal(draws,1);}
+ Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false});panel.config.mode='audio';panel.changeAspect('1:1');assert.equal(panel.config.aspect,'9:16');
+});
+
+test('aspect selector is editable with prepared video and disabled for countdown, recording, saving and audio',()=>{
+ const fields=new Map(),panel=new RecorderPanel({api(){},toast(){}});panel.element={querySelectorAll:()=>[]};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};
+ panel.$('[name="mode"]').value='screen';panel.$('[name="sound"]').value='none';panel.config={mode:'screen'};panel.output={};
+ panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,false);
+ for(const state of [{starting:true},{id:'recording'},{finishing:true},{preparing:true}]){Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false},state);panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,true);}
+ Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false});panel.$('[name="mode"]').value='audio';panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,true);
+});
+
+test('preview watermark tracks the contained video rectangle for landscape, portrait and square output',()=>{
+ const panel=new RecorderPanel({api(){},toast(){}}),stage={left:10,top:20,width:640,height:360},fields=new Map();
+ panel.element={isConnected:true};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{style:{},getBoundingClientRect:()=>stage});return fields.get(selector);};
+ for(const [width,height]of [[1920,1080],[1080,1920],[1080,1080]]){
+  panel.canvas={width,height};panel.positionBoxes();const view=containedRect(stage,width,height),mark=watermarkRect(width,height),scale=view.width/width,style=panel.$('.recorder-watermark').style;
+  assert.equal(mark.width%2,0);assert.equal(mark.x+mark.width,width-Math.max(8,Math.round(Math.min(width,height)*.02)));
+  assert.equal(parseFloat(style.left),view.left-stage.left+mark.x*scale);assert.equal(parseFloat(style.top),view.top-stage.top+mark.y*scale);assert.equal(parseFloat(style.width),mark.width*scale);assert.equal(parseFloat(style.height),mark.height*scale);
+ }
 });
 
 test('cancelled countdown settles promptly without starting a recording',async()=>{
@@ -118,6 +162,21 @@ test('cancellation during the start API response discards only the newly created
  panel.output={};panel.config={mode:'audio',countdown:0};panel.controls=()=>{};panel.status=()=>{};panel.error=assert.fail;
  const pending=panel.start();await Promise.resolve();assert.equal(typeof startResponse,'function');panel.countdownAbort.abort();startResponse({id:'empty-recording'});await pending;
  assert.deepEqual(calls.at(-1),{route:'/api/recordings/empty-recording/finish',body:{discardEmpty:true}});assert.equal(mediaStarts,0);assert.equal(panel.starting,false);assert.ok(!panel.id);
+});
+
+for(const [mode,supported,expected]of [
+ ['screen',['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus'],'video/webm;codecs=vp9,opus'],
+ ['camera',['video/webm;codecs=vp8,opus'],'video/webm;codecs=vp8,opus'],
+ ['screen',['video/webm'],'video/webm'],
+ ['audio',['audio/webm;codecs=opus','audio/webm'],'audio/webm;codecs=opus']
+])test('recording chooses '+expected+' from available '+mode+' codecs and still closes its writer',async t=>{
+ let selected,starts=0,finishes=0;
+ class FakeRecorder extends EventTarget{static isTypeSupported(type){return supported.includes(type);}constructor(_stream,options){super();selected=options.mimeType;this.state='inactive';}start(){starts++;this.state='recording';}stop(){this.state='inactive';this.dispatchEvent(new Event('stop'));}}
+ replaceGlobal(t,'MediaRecorder',FakeRecorder);
+ const panel=new RecorderPanel({api:async(route)=>{if(route==='/api/recordings/start')return {id:'codec-recording'};if(route.endsWith('/finish'))finishes++;return {};},toast(){}}),fields=new Map();
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.$('[name="directory"]').value='chosen-directory';panel.$('[name="askFolder"]').checked=false;
+ panel.output={};panel.config={mode,countdown:0};panel.controls=()=>{};panel.status=()=>{};panel.error=assert.fail;
+ t.after(()=>panel.stopWriter());await panel.start();assert.equal(selected,expected);assert.equal(starts,1);await panel.stopWriter();assert.equal(finishes,1);assert.equal(panel.id,null);
 });
 
 test('recorder route exists and language switching retains a prepared recorder and folder draft',async()=>{
