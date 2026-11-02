@@ -59,9 +59,12 @@ test('an independent short recording retains its final frames while the live enc
  const video=info.streams.find(stream=>stream.codec_type==='video'),audio=info.streams.find(stream=>stream.codec_type==='audio');
  assert.equal(video.codec_name,'h264');assert.equal(audio.codec_name,'aac');
  assert.equal(Number(video.nb_read_frames),18,'All frames from the short recording must survive immediate Stop');assert.ok(Number(info.format.duration)>=.58);
- const pixelFile=path.join(directory,'last-pixel.rgb');
- await runProcess(ffmpeg,['-v','error','-sseof','-0.05','-i',media,'-vf','format=rgb24,crop=1:1:0:0','-an','-f','rawvideo','-y',pixelFile],{timeout:15000});
- const pixel=[...fs.readFileSync(pixelFile).subarray(-3)];assert.equal(pixel.length,3);
+ const pixelFile=path.join(directory,'frame-pixels.rgb');
+ // Decode every frame: seeking near EOF can round beyond the last frame in
+ // supported FFmpeg versions, even when the complete recording is present.
+ await runProcess(ffmpeg,['-v','error','-i',media,'-vf','format=rgb24,crop=1:1:0:0','-an','-f','rawvideo','-y',pixelFile],{timeout:15000});
+ const pixels=fs.readFileSync(pixelFile);assert.equal(pixels.length,18*3,'Every saved frame must decode to one RGB pixel');
+ const pixel=[...pixels.subarray(-3)];
  assert.ok(pixel[1]>pixel[0]+50&&pixel[1]>pixel[2]+50,'The final green frames must survive Stop');
  const beforeTail=liveBytes;await ingest(feeds,feed.id,1,liveData.subarray(split));await liveOutputAfter(beforeTail);
  assert.equal(liveEncoder.exitCode,null,'Saving the recording must leave live output running');

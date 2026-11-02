@@ -192,8 +192,8 @@ async function verifySmokeWindowClose(){
  const {stdout}=await runProcess(tools.ffprobe,['-v','error','-show_streams','-show_format','-of','json',file],{timeout:10000}),info=JSON.parse(stdout);
  if(!info.streams.some(stream=>stream.codec_type==='video'&&stream.codec_name==='h264')||Number(info.format.duration)<.5)throw Error('Native close produced an invalid or truncated MP4.');
  try{
-  await runProcess(tools.ffmpeg,['-v','error','-sseof','-0.12','-i',file,'-frames:v','1','-vf','crop=2:2:4:4','-pix_fmt','rgb24','-f','rawvideo','-y',pixels],{timeout:10000});
-  const rgb=fs.readFileSync(pixels);if(rgb.length!==12||[34,204,136].some((value,index)=>Math.abs(rgb[index]-value)>26))throw Error('Native close lost the final recording frame.');
+  await runProcess(tools.ffmpeg,['-v','error','-i',file,'-vf','crop=2:2:4:4','-pix_fmt','rgb24','-f','rawvideo','-y',pixels],{timeout:10000});
+  const frames=fs.readFileSync(pixels),rgb=frames.subarray(-12);if(!frames.length||frames.length%12!==0||[34,204,136].some((value,index)=>Math.abs(rgb[index]-value)>26))throw Error('Native close lost the final recording frame.');
  }finally{try{fs.unlinkSync(pixels);}catch(error){if(error.code!=='ENOENT')throw error;}}
  fixture.proof.nativeWindowClose={nativeCloseEvent:true,noChunksBeforeClose:true,rendererDrainedBeforeBackend:true,finalChunkUploaded:true,recordingFinalized:true,finalFramePreserved:true};
  fs.writeFileSync(fixture.proofPath,JSON.stringify(fixture.proof,null,2));
