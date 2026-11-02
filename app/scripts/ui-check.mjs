@@ -95,7 +95,6 @@ try {
   await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
   assert.equal(app.studio.jobs.size,0);assert.equal(app.store.data.channels.length,0);checks++;
   await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
-  await prepare.scrollIntoViewIfNeeded();await prepare.focus();
   prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});
   // Keep the control mounted while extending its help: dashboard polling pauses while help is open.
   await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
