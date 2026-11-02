@@ -66,12 +66,17 @@ test('shared live MP4 retains its existing watermark without applying it twice',
 });
 
 for(const range of ['pc','tv'])test('VP9 '+range+' canvas color metadata survives standalone MP4 encoding without crushing dark tones',async t=>{
- const {root,recordings}=fixture(t),source=path.join(root,'color.webm'),raw=path.join(root,'color.rgb');
- await runProcess('ffmpeg',['-v','error','-f','lavfi','-i','color=c=0x111827:s=640x360:r=20','-vf',`scale=in_color_matrix=bt601:out_color_matrix=bt709:out_range=${range}`,'-t','0.6','-c:v','libvpx-vp9','-deadline','realtime','-color_range',range,'-colorspace','bt709','-y',source]);
+ const {root,recordings}=fixture(t),source=path.join(root,'color.webm'),raw=path.join(root,'color.rgb'),reference=path.join(root,'color-source.rgb');
+ await runProcess('ffmpeg',['-v','error','-f','lavfi','-i','color=c=0x111827:s=640x360:r=20','-vf',`scale=in_color_matrix=bt601:out_color_matrix=bt709:out_range=${range}`,'-t','0.6','-c:v','libvpx-vp9','-lossless','1','-deadline','realtime','-color_range',range,'-colorspace','bt709','-y',source]);
  const sourceInfo=JSON.parse((await runProcess('ffprobe',['-v','error','-show_entries','stream=codec_name,color_range,color_space','-of','json',source])).stdout).streams[0];assert.equal(sourceInfo.codec_name,'vp9');assert.equal(sourceInfo.color_range,range);assert.equal(sourceInfo.color_space,'bt709');
+ // Compare to decoded source pixels: YUV conversion and codec builds can round
+ // the original RGB color differently before the recorder receives it.
+ await runProcess('ffmpeg',['-v','error','-i',source,'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-y',reference]);
+ const expected=[...fs.readFileSync(reference).subarray(0,3)],target=[17,24,39];
+ for(let channel=0;channel<3;channel++)assert.ok(Math.abs(expected[channel]-target[channel])<=8,`Source fixture must retain dark color, got ${expected}`);
  const {id}=recordings.start({confirmed:true,kind:'video',format:'mp4'}),request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};await recordings.ingest(id,'0',request);await recordings.finish(id);
  await runProcess('ffmpeg',['-v','error','-i',recordings.media(id),'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-y',raw]);
- const pixel=[...fs.readFileSync(raw).subarray(0,3)],expected=[17,24,39];for(let channel=0;channel<3;channel++)assert.ok(Math.abs(pixel[channel]-expected[channel])<=5,`Dark canvas ${expected} retains its range/matrix after recording, got ${pixel}`);
+ const pixel=[...fs.readFileSync(raw).subarray(0,3)];for(let channel=0;channel<3;channel++)assert.ok(Math.abs(pixel[channel]-expected[channel])<=5,`Decoded source ${expected} retains its range/matrix after recording, got ${pixel}`);
 });
 
 test('recorder preview exposes only the authenticated fixed branding asset for GET and HEAD',async t=>{
