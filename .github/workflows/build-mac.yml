@@ -51,6 +51,10 @@ jobs:
           qa="$RUNNER_TEMP/gostreams-ui-qa"
           npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
           GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
+      - name: Verify recorder composition and saved formats
+        timeout-minutes: 5
+        run: |
+          qa="$RUNNER_TEMP/gostreams-ui-qa"
           GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:recorder:browser
       - name: Complete ten regression review cycles
         run: |
