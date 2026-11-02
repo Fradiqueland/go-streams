@@ -61,7 +61,7 @@ export class CaptureFeeds {
    }
   });
   child.on('error',()=>this.stop(feed.id,'The capture encoder could not be started.'));
-  child.on('close',()=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])endSink(feed,sink,feed.error||(!feed.stopped?'Live capture encoder disconnected.':''));feed.resolve();});
+  child.on('close',code=>{clearTimeout(feed.timer);this.active.delete(feed.id);for(const sink of [...feed.sinks])endSink(feed,sink,feed.error||(!feed.stopped?'Live capture encoder disconnected.':code!==0?'The capture encoder could not finish cleanly.':''));feed.resolve();});
   return {id:feed.id};
  }
  get(id){const feed=this.active.get(id);if(!feed||feed.stopped)throw new AppError('The shared live capture has ended.',410);return feed;}
@@ -79,6 +79,6 @@ export class CaptureFeeds {
   try{const parts=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>8*1024*1024)throw new AppError('Capture chunk too large.',413);parts.push(Buffer.from(chunk));}if(!size||feed.stopped)throw new AppError('Capture has ended.',410);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new AppError('Capture encoder stopped accepting video.',502)),15000).unref();feed.child.stdin.write(Buffer.concat(parts),error=>{clearTimeout(timer);error?reject(feed.stopped||this.active.get(id)!==feed?new AppError('Capture has ended.',410):new AppError('Capture encoder disconnected.',502)):resolve();});});if(feed.stopped||this.active.get(id)!==feed)throw new AppError('Capture has ended.',410);feed.sequence++;feed.lastInput=Date.now();return {ok:true,sequence:feed.sequence};}
   catch(error){this.stop(id,'Capture input was interrupted.');throw error;}finally{clearTimeout(deadline);feed.receiving=false;}
  }
- stop(id,error=''){const feed=this.active.get(id);if(!feed||feed.stopped)return;feed.stopped=true;feed.error=error;feed.timer=setTimeout(()=>{try{feed.child.kill();}catch{}},5000).unref();feed.child.stdin.end();}
+ stop(id,error=''){const feed=this.active.get(id);if(!feed)return Promise.resolve();if(feed.stopped)return feed.completion;feed.stopped=true;feed.error=error;feed.timer=setTimeout(()=>{try{feed.child.kill();}catch{}},5000).unref();feed.child.stdin.end();return feed.completion;}
  async shutdown(){clearInterval(this.timer);for(const id of this.active.keys())this.stop(id);await Promise.all([...this.active.values()].map(f=>f.completion));}
 }

@@ -60,10 +60,11 @@ test('visual composition drafts become clean only after successful scene save or
  f.tools.values.ticker='Unsaved ticker';const save=localStorage.setItem;localStorage.setItem=()=>{throw Error('Quota exceeded');};await f.tools.action({dataset:{production:'save-scene'}});localStorage.setItem=save;assert.equal(panel.hasUnsavedChanges,true);
 });
 
-for(const changed of ['closed','replaced'])test('local recording rejects a '+changed+' preview while feed acquisition is pending',async()=>{
- let stream={};const feed=deferred(),requests=[],released=[],messages=[],tools=new ProductionTools({getStream:()=>stream,acquireFeed:()=>feed.promise,releaseFeed:async role=>released.push(role),api:async route=>{requests.push(route);return {id:'unexpected'};},toast:message=>messages.push(message)});
- tools.recordingOptions=()=>({directory:'/chosen/recordings',askEveryTime:false});tools.update=()=>{};tools.element={querySelector:()=>({})};const starting=tools.startRecording();stream=changed==='closed'?null:{};feed.resolve('feed');await starting;
- assert.deepEqual(requests,[]);assert.deepEqual(released,['recording']);assert.equal(tools.recordingId,null);assert.equal(tools.starting,false);assert.equal(tools.startDone,null);assert.ok(messages.some(message=>/preview changed/i.test(message)));
+for(const changed of ['closed','replaced'])test('local recording rejects a '+changed+' preview while backend recording creation is pending',async t=>{
+ const previous=globalThis.MediaRecorder;globalThis.MediaRecorder=class{static isTypeSupported(){return true;}constructor(){assert.fail('A stale preview cannot create a browser recorder');}};t.after(()=>{if(previous===undefined)delete globalThis.MediaRecorder;else globalThis.MediaRecorder=previous;});
+ let stream={};const pending=deferred(),requests=[],messages=[],tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{requests.push({route,body});return route==='/api/recordings/start'?pending.promise:{};},toast:message=>messages.push(message)});
+ tools.recordingOptions=()=>({directory:'/chosen/recordings',askEveryTime:false});tools.update=()=>{};tools.element={querySelector:()=>({})};const starting=tools.startRecording();stream=changed==='closed'?null:{};pending.resolve({id:'stale'});await starting;
+ assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/chosen/recordings',kind:'video',format:'mp4'}},{route:'/api/recordings/stale/finish',body:{discardEmpty:true}}]);assert.equal(tools.recordingId,null);assert.equal(tools.starting,false);assert.equal(tools.startDone,null);assert.ok(messages.some(message=>/preview changed/i.test(message)));
 });
 
 for(const format of ['image/png','image/webp','image/jpeg'])test('background scene preserves image encoding and transparency support: '+format,async t=>{

@@ -1,4 +1,4 @@
-# Go Streams live studio scope - 1.1.5
+# Go Streams live studio scope - 1.1.6
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
@@ -14,11 +14,11 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 | Branding | Logo, background image, colors, mirrored camera | User-provided PNG/JPEG/WebP images; local processing |
 | Lower thirds and banners | Presenter name/title, banner, moving ticker and emoji insertion | Rendered into the composed video in both the live studio and video recorder |
 | Intro/outro and clips | Local MP4/WebM clip replaces the live picture and ducks source audio | Returns to camera/screen when ended; compatible browser codecs required |
-| Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding and text; saving waits for pending image loads and preserves PNG/WebP transparency; not a shared online studio |
-| Presenter notes | Private notes and scrolling teleprompter | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
+| Reusable scenes | Four saved production presets | Kept in the browser's local profile; includes branding, text, private notes and microphone/shared-audio levels; saving waits for pending image loads and preserves PNG/WebP transparency; not a shared online studio |
+| Presenter notes | Private notes and scrolling teleprompter, retained in locally saved scenes | Not drawn into the program frame; screen sharing the application itself can still expose its UI |
 | Snapshots | Download a PNG of the composed frame | Requires an active local preview |
 | Microphone-only live mode | Capture microphone audio without requesting camera or screen access | Sends the selected background, image and studio composition as the video picture; supports the same RTMP destinations and local recording |
-| Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting; choose a folder each time or save a default | Files are written directly to the selected folder; preferences persist locally; bounded upload buffer, finalized index/duration, interrupted-file recovery |
+| Local recording | Record composed MP4 and mixed audio independently of RTMP broadcasting; choose a folder each time or save a default | Independent recording pipeline over the same prepared picture/audio; no device reacquisition. Final browser data and encoder output drain before completion. Simultaneous recording/broadcast uses an additional encoder. Files go directly to the selected folder; local preferences, bounded uploads and interrupted-file recovery |
 | Video recorder production | The live studio's layouts, logo/background/colors, camera mirroring, presenter text, banners/ticker/emojis, clips, separate microphone/shared-audio volumes, four scenes, PNG snapshots and private notes/teleprompter | Scenes use a separate local recorder profile key. Clips replace picture and selected audio, remain silent in silent-video mode, and return to camera/screen afterward. Picture tools are hidden in audio-only mode |
 | Chat aggregation | YouTube and Twitch messages in one panel with origin labels and filters | Official provider authorization and registered OAuth applications required |
 | Presenter replies | Explicit sends to one selected originating destination | YouTube uses a viewer mention; Twitch uses threaded reply IDs and may relay to linked channels in a Shared Chat session; rate limits, moderation and quotas apply |

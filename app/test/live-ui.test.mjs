@@ -108,12 +108,12 @@ test('clip audio initialization errors release the local video and object URL',a
  await tools.action({dataset:{production:'play-clip'}});assert.equal(tools.clip,null);assert.equal(tools.clipUrl,null);assert.equal(video.paused,true);assert.deepEqual(errors,['audio initialization failed']);
 });
 
-test('backend-interrupted recordings unlock the record controls and preserve the recovery listing',async()=>{
- const released=[],tools=new ProductionTools({getStream:()=>({}),toast(){},releaseFeed:async role=>released.push(role)});
+test('backend-interrupted recordings stop their browser writer, unlock controls and preserve the recovery listing',async()=>{
+ const events=[],tools=new ProductionTools({getStream:()=>({}),toast(){}});
  const controls={'[data-production="record"]':{},'[data-production="stop-record"]':{},'.recording-status':{},'.recording-files':{}};
- tools.element={querySelector:selector=>controls[selector]};tools.recordingId='recording-id';
+ tools.element={querySelector:selector=>controls[selector]};tools.recordingId='recording-id';tools.localRecorder={state:'recording',stop:()=>events.push('stop')};tools.localUpload={fail:error=>events.push(error.message)};
  const recordings=[{id:'recording-id',created:'2026-10-31T00:00:00Z',status:'interrupted',error:'Disk full',bytes:100}];tools.update(recordings);
- assert.equal(tools.recordingId,null);assert.equal(controls['[data-production="record"]'].disabled,false);assert.equal(controls['.recording-status'].textContent,'Disk full');assert.deepEqual(released,['recording']);
+ assert.equal(tools.recordingId,null);assert.equal(controls['[data-production="record"]'].disabled,false);assert.equal(controls['.recording-status'].textContent,'Disk full');assert.deepEqual(events,['Disk full','stop']);assert.equal(tools.localRecorder,null);
  const listing=controls['.recording-files'].innerHTML;assert.match(listing,/Recover local recording/);tools.update();assert.equal(controls['.recording-files'].innerHTML,listing);
 });
 
@@ -129,10 +129,10 @@ test('invalid saved scene container data does not break future scene saves',t=>{
 });
 
 test('recording finalization failures keep the active recording available for a retry',async()=>{
- let fail=true;const released=[],tools=new ProductionTools({api:async()=>{if(fail)throw Error('offline');},toast(){},releaseFeed:async role=>released.push(role)});
+ let fail=true;const requests=[],tools=new ProductionTools({api:async route=>{requests.push(route);if(fail)throw Error('offline');},toast(){}});
  const status={};tools.element={querySelector:()=>status};tools.update=()=>{};tools.recordingId='active-recording';
- await tools.stopRecording();assert.equal(tools.recordingId,'active-recording');assert.deepEqual(released,[]);assert.equal(status.textContent,'offline');assert.equal(tools.finishing,null);
- fail=false;await tools.stopRecording();assert.equal(tools.recordingId,null);assert.deepEqual(released,['recording']);assert.match(status.textContent,/saved locally/);
+ await tools.stopRecording();assert.equal(tools.recordingId,'active-recording');assert.deepEqual(requests,['/api/recordings/active-recording/finish']);assert.equal(status.textContent,'offline');assert.equal(tools.finishing,null);
+ fail=false;await tools.stopRecording();assert.equal(tools.recordingId,null);assert.deepEqual(requests,['/api/recordings/active-recording/finish','/api/recordings/active-recording/finish']);assert.match(status.textContent,/saved locally/);
 });
 
 test('permission results arriving after device release cannot revive a cancelled preview',async t=>{
@@ -154,16 +154,17 @@ test('denying microphone permission cannot fall back to camera capture',async t=
  await panel.preview();assert.equal(requests.length,1);assert.equal(requests[0].video,false);assert.equal(panel.output,null);assert.equal(panel.lastStatus.error,true);assert.match(panel.lastStatus.value,/denied/);
 });
 
-test('cancelling the recording folder question starts neither a shared encoder nor a recording',async()=>{
- const calls=[],tools=new ProductionTools({getStream:()=>({}),api:async route=>{calls.push(route);return {directory:null};},acquireFeed:()=>assert.fail('Cancelled folder choice must not acquire a feed'),releaseFeed:()=>assert.fail('There is no feed to release'),toast:()=>assert.fail('Cancellation is not an error')});
+test('cancelling the recording folder question starts neither a browser encoder nor a recording',async t=>{
+ replaceGlobal(t,'MediaRecorder',class{constructor(){assert.fail('Cancelled folder choice must not create an encoder');}});
+ const calls=[],tools=new ProductionTools({getStream:()=>({}),api:async route=>{calls.push(route);return {directory:null};},toast:()=>assert.fail('Cancellation is not an error')});
  tools.update=()=>{};tools.element={querySelector:()=>null};
  await tools.startRecording();assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(tools.recordingId,undefined);assert.equal(tools.starting,false);assert.equal(tools.startDone,null);
 });
 
-test('a predefined recording folder bypasses the picker and is sent to the independent recording worker',async()=>{
- const requests=[],stream={},tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},acquireFeed:async()=> 'shared-feed',releaseFeed:async()=>{},toast(){}});
+test('a predefined recording folder bypasses the picker and is sent to the independent recording worker',async t=>{
+ installRecorder(t);const requests=[],stream={},tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},toast(){}});
  tools.update=()=>{};const status={};tools.element={querySelector:selector=>selector==='.recording-status'?status:null};tools.recordingPreferences={directory:'/chosen/recordings',askEveryTime:false};
- await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,feedId:'shared-feed',directory:'/chosen/recordings'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);
+ await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/chosen/recordings',kind:'video',format:'mp4'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);await tools.stopRecording();
 });
 
 test('a stale state poll cannot replace freshly saved recording preferences',()=>{
@@ -175,9 +176,9 @@ test('a stale state poll cannot replace freshly saved recording preferences',()=
 
 test('a preview closed during folder selection cannot start a recording when the picker returns',async()=>{
  const pending=deferred(),calls=[];let stream={};const errors=[];
- const tools=new ProductionTools({getStream:()=>stream,api:async route=>{calls.push(route);return pending.promise;},acquireFeed:()=>assert.fail('The preview is already closed'),releaseFeed:async()=>{},toast:message=>errors.push(message)});
- tools.update=()=>{};tools.element={querySelector:()=>null};const start=tools.startRecording();stream=null;pending.resolve({directory:'/chosen'});await start;
- assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(tools.recordingId,null);assert.match(errors[0],/preview/);
+ const tools=new ProductionTools({getStream:()=>stream,api:async route=>{calls.push(route);return pending.promise;},toast:message=>errors.push(message)});
+ tools.update=()=>{};tools.element={querySelector:()=>({})};const start=tools.startRecording();stream=null;pending.resolve({directory:'/chosen'});await start;
+ assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(Boolean(tools.recordingId),false);assert.match(errors[0],/preview/);
 });
 
 test('ending screen sharing during microphone permission cancels the pending camera acquisition',async t=>{

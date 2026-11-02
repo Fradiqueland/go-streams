@@ -85,7 +85,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/ready' && req.method === 'GET') { res.setHeader('X-Go-Streams-Ready', '1'); return json(res, { ready: true }); }
       if(pathname==='/api/capture/start'&&req.method==='POST')return json(res,feeds.create(body),201);
       const captureStop=/^\/api\/capture\/([\w-]+)\/stop$/.exec(pathname);
-      if(captureStop&&req.method==='POST'){feeds.stop(captureStop[1]);return json(res,{ok:true});}
+      if(captureStop&&req.method==='POST'){await feeds.stop(captureStop[1]);return json(res,{ok:true});}
       if (pathname === '/api/live/start' && req.method === 'POST') return json(res, studio.liveCapture.start(body), 201);
       const liveStop = /^\/api\/live\/([\w-]+)\/stop$/.exec(pathname);
       if (liveStop && req.method === 'POST') { studio.liveCapture.stop(liveStop[1]); return json(res, {ok:true}); }
@@ -234,7 +234,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       }
       if (pathname === '/api/shutdown' && req.method === 'POST') { json(res, { ok: true }); setImmediate(() => close().catch(()=>{console.error('O encerramento terminou com falhas.');process.exitCode=1;})); return; }
       if(pathname==='/program.png'&&['GET','HEAD'].includes(req.method))return serveFile(req,res,path.join(root,'src','assets','program.png'));
-      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/recorder.js', '/recorder-geometry.js', '/video-geometry.js', '/live-capture.js', '/live-production.js', '/unified-chat.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/ui-help.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
+      if (['GET', 'HEAD'].includes(req.method) && ['/', '/boot.js', '/app.js', '/recorder.js', '/recording-upload.js', '/recorder-geometry.js', '/video-geometry.js', '/live-capture.js', '/live-production.js', '/unified-chat.js', '/extras.js', '/studio-ui.js', '/overlays-ui.js', '/timezones.js', '/i18n.js', '/i18n-data.js', '/ui-help.js', '/style.css', '/icon.svg', '/icon.ico', '/icon.webp', '/icon.png', '/antonio-fradique.webp'].includes(pathname)) return serveFile(req, res, path.join(root, 'public', pathname === '/' ? 'index.html' : pathname.slice(1)));
       throw new AppError('Não encontrado.', 404);
     } catch (e) { if (!res.headersSent) json(res, { error: e instanceof AppError ? e.message : 'Ocorreu um erro interno. Os dados existentes foram preservados.' }, e.status || 500); else res.destroy(); }
   };

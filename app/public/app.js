@@ -17,7 +17,7 @@ let recorderPanel;
 names.recorder=uiText('Video & audio recorder','Gravador de vídeo e áudio');
 names.chat=language()==='pt-PT'?'Chat unificado':'Unified chat';
 function mountChat(container){chatPanel ||= new ChatPanel({api,toast,onFeature:message=>{if(capturePanel)capturePanel.featuredComment=message;else toast(language()==='pt-PT'?'Abra a pré-visualização ao vivo para mostrar comentários.':'Open the live preview to feature comments.');}});chatPanel.mount(container,state.chat,state.channels);}
-let interfaceClosing=false,exitPending=false,navigationMarkup='';
+let interfaceClosing=false,exitPending=false,navigationMarkup='',poll=null,startupComplete=false,startupDeferred=false;
 let downloadsQuery='';
 const pendingActions=new Set(), settingsDrafts=new Map();
 let refreshRequested=0, refreshApplied=0, dialogGeneration=0, modalSubmissions=0, settingsSaving=false, settingsSavingForm='';
@@ -232,7 +232,7 @@ function dialog(title, content, onSubmit, options = {}) {
 }
 
 function overlaysForm(){
- const previous=structuredClone(state.settings.overlays||{});let selectedImage=previous.image?.asset?'/api/overlays/'+previous.image.asset:'';let generation=0;
+ const previous=structuredClone(state.settings.overlays||{}),savedImage=previous.image?.asset?'/api/overlays/'+previous.image.asset:'';let generation=0;
  dialog(tr('Banners e imagem'),overlayEditor(previous,esc),async form=>{
   const config=overlayValues(form,previous);
   for(const k of ['top','bottom'])if(config[k].enabled)config[k].data=await renderBanner(config[k]);
@@ -242,7 +242,8 @@ function overlaysForm(){
  const form=$('#modal-form');
  const update=async()=>{
   const request=++generation,values=new FormData(form),config=overlayValues(values,previous),file=values.get('overlayImage');
-  if(file?.size)try{selectedImage=await imageData(file);}catch(error){if(request===generation)toast(error.message,true);return;}
+  let selectedImage=savedImage;
+  if(file?.size)try{selectedImage=await imageData(file);}catch(error){if(request===generation&&form.isConnected)toast(error.message,true);return;}
   if(request!==generation||!form.isConnected)return;
   const preview=$('[data-overlay-preview]',form);preview.innerHTML=overlayPreview(config,selectedImage,esc);styleOverlayPreview(preview,config);
  };
@@ -461,14 +462,55 @@ document.addEventListener('submit',async event=>{
  finally{settingsSaving=false;settingsSavingForm='';for(const [el,disabled]of controls)el.disabled=disabled;draw();}
 });
 $('#dialog').addEventListener('close', () => { if(!$('#dialog').open){dialogGeneration++;$('#dialog-content').innerHTML='';} });
-$('#exit').onclick = async () => { if(exitPending||interfaceClosing)return; if (!confirm(tr("Encerrar o Go Streams? As transmissões ativas serão paradas."))) return; exitPending=true;$('#exit').disabled=true;try { if(capturePanel?.busy)await capturePanel.release();if(recorderPanel?.busy)await recorderPanel.release();await api('/api/shutdown', {});interfaceClosing=true; $('#content').innerHTML = empty('✓', tr("A encerrar o estúdio"), tr("As operações estão a terminar. Pode fechar esta janela; volte a abrir pelo iniciador Go Streams.")); clearInterval(poll); } catch(e) {exitPending=false;$('#exit').disabled=false; toast(e.message, true); } };
+let closePreparation=null,closeInterface=null;
+function cancelInterfaceClose(){
+  if(!closeInterface)return;
+  for(const [element,inert]of closeInterface.elements)element.inert=inert;
+  $('#exit').disabled=closeInterface.exitDisabled;
+  closeInterface.focused?.focus?.({preventScroll:true});
+  closeInterface=null;closePreparation=null;interfaceClosing=false;exitPending=false;
+  if(startupComplete&&startupDeferred){startupDeferred=false;void initializeStudio();}
+  startPolling();
+}
+function prepareInterfaceClose(){
+  if(closePreparation)return closePreparation;
+  closeInterface={elements:[$('body'),$('#dialog')].map(element=>[element,element.inert]),exitDisabled:$('#exit').disabled,focused:document.activeElement};
+  interfaceClosing=true;exitPending=true;$('#exit').disabled=true;
+  for(const [element]of closeInterface.elements)element.inert=true;
+  closePreparation=(async()=>{
+    const pending=[];
+    if(capturePanel?.busy||capturePanel?.production?.recording)pending.push(Promise.resolve().then(()=>capturePanel.release({throwOnError:true})));
+    if(recorderPanel?.busy)pending.push(Promise.resolve().then(()=>recorderPanel.release()));
+    const results=await Promise.allSettled(pending),failure=results.find(result=>result.status==='rejected');
+    if(failure)throw failure.reason;
+    if(capturePanel?.output||capturePanel?.session||capturePanel?.feedSession||capturePanel?.production?.recording||recorderPanel?.output||recorderPanel?.id||recorderPanel?.finishing)throw Error(uiText('The recording could not finish. Keep the studio open and retry saving it.','Não foi possível terminar a gravação. Mantenha o estúdio aberto e tente guardá-la novamente.'));
+  })().catch(error=>{cancelInterfaceClose();throw error;});
+  return closePreparation;
+}
+// The desktop shell can request the same drain as the in-app exit button.
+// These callbacks expose no native capabilities and do not stop the backend.
+window.GoStreamsPrepareClose=prepareInterfaceClose;
+window.GoStreamsCancelClose=cancelInterfaceClose;
+for(const type of ['click','keydown','submit','input','change','pointerdown'])window.addEventListener(type,event=>{if(interfaceClosing){event.preventDefault();event.stopImmediatePropagation();}},true);
+$('#exit').onclick = async () => { if(exitPending||interfaceClosing)return; if (!confirm(tr("Encerrar o Go Streams? As transmissões ativas serão paradas."))) return;try { await prepareInterfaceClose();await api('/api/shutdown', {}); $('#content').innerHTML = empty('✓', tr("A encerrar o estúdio"), tr("As operações estão a terminar. Pode fechar esta janela; volte a abrir pelo iniciador Go Streams.")); clearInterval(poll); } catch(e) {cancelInterfaceClose();toast(e.message, true); } };
 window.addEventListener('hashchange', () => { page = location.hash.slice(1) || 'dashboard'; query = ''; draw(); });
 function showHealth() { $('.version').textContent=health?.version?'v'+health.version:''; const ok = health?.tools?.ffmpeg?.available && health?.tools?.ffprobe?.available; $('#engine-status').textContent = ok ? tr("● Motor disponível") : tr("● Configurar motor"); $('#engine-status').className = `badge ${ok ? 'ready' : 'error'}`; }
 applyLocale();
 const contextualHelp=installContextHelp(document,window);
 $('#language-select').onchange=event=>{const select=event.target;if(modalSubmissions||chatPanel?.busy||capturePanel?.production?.preferencesBusy||recorderPanel?.busy){select.value=language();toast(tr('Aguarde a conclusão da operação antes de mudar o idioma.'),true);return;}if(chatPanel?.hasUnsavedChanges){select.value=language();toast(uiText('Send or clear the chat draft and save its account settings before changing language.','Envie ou apague o rascunho do chat e guarde a configuração das contas antes de mudar o idioma.'),true);return;}if($('#dialog').open||settingsDrafts.size||settingsSaving||capturePanel?.busy||capturePanel?.production?.recordingPreferencesDirty||capturePanel?.production?.hasUnsavedChanges||recorderPanel?.hasUnsavedChanges){select.value=language();toast(tr('Guarde as alterações e feche a janela antes de mudar o idioma.'),true);return;}try{setLanguage(select.value);location.reload();}catch(error){select.value=language();toast(error.message,true);}};
-try { await refresh(); health = await api('/api/health'); showHealth(); if (['settings','help'].includes(page)) draw(); } catch(e) { $('#content').innerHTML = empty('!', tr("Não foi possível abrir o estúdio"), e.message,btn('reconnect',tr("Tentar novamente")));connectionFailed(); }
-const poll = setInterval(async () => { if (loading) return; loading = true; try { await refresh(()=>!contextualHelp?.isReading() && !$('#dialog').open && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName) && ['dashboard','golive','live','schedules','history','tools'].includes(page)); } catch {connectionFailed();} finally { loading = false; } $('#clock').textContent = new Date().toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }); }, 2000);
+async function initializeStudio(){
+  try {
+    await refresh();if(interfaceClosing){startupDeferred=true;return;}
+    health=await api('/api/health');if(interfaceClosing){startupDeferred=true;return;}
+    showHealth();if (['settings','help'].includes(page)) draw();
+  } catch(e) { if(interfaceClosing)startupDeferred=true;else{$('#content').innerHTML = empty('!', tr("Não foi possível abrir o estúdio"), e.message,btn('reconnect',tr("Tentar novamente")));connectionFailed();} }
+}
+function startPolling(){
+  if(!startupComplete||interfaceClosing||poll!==null)return;
+  poll=setInterval(async () => { if (loading) return; loading = true; try { await refresh(()=>!contextualHelp?.isReading() && !$('#dialog').open && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName) && ['dashboard','golive','live','schedules','history','tools'].includes(page)); } catch {connectionFailed();} finally { loading = false; } $('#clock').textContent = new Date().toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' }); }, 2000);
+}
+await initializeStudio();
+startupComplete=true;startPolling();
 
 document.addEventListener('change',event=>{const target=event.target;if(target.dataset.filter){filters[target.dataset.filter][target.dataset.key]=target.value;if(paging[target.dataset.filter])paging[target.dataset.filter].page=1;draw();}});
 setInterval(()=>{document.querySelectorAll('[data-countdown]').forEach(el=>{el.textContent=Math.max(0,Math.ceil((Date.parse(el.dataset.countdown)-Date.now())/1000));});},250);

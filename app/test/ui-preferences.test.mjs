@@ -44,7 +44,7 @@ test('an outstanding refresh cannot replace the closing screen after exit',async
 
 test('repeated exit clicks share one shutdown request',async()=>{
  let release;const gate=new Promise(resolve=>{release=resolve;});const h=uiHarness({fetch:async()=>{await gate;return {ok:true,json:async()=>({ok:true})};}});
- const first=h.element('#exit').onclick(),second=h.element('#exit').onclick();try{assert.equal(h.requests.length,1);}finally{release();await Promise.all([first,second]);}
+ const first=h.element('#exit').onclick(),second=h.element('#exit').onclick();try{await new Promise(resolve=>setImmediate(resolve));assert.equal(h.requests.length,1);}finally{release();await Promise.all([first,second]);}
 });
 
 test('a failed exit request leaves the interface usable and allows retry',async()=>{

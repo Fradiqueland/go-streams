@@ -1,21 +1,11 @@
 import {language,localeTag} from './i18n.js';
 import {ProductionTools,layoutRects} from './live-production.js';
+import {RecordingUpload} from './recording-upload.js';
+export {RecordingUpload} from './recording-upload.js';
 import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
 const t=(en,pt)=>language()==='pt-PT'?pt:en;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
-
-export class RecordingUpload {
- constructor(send,onError,limit=8*1024*1024){Object.assign(this,{send,onError,limit});this.pending=Promise.resolve();this.bytes=0;this.sequence=0;this.error=null;}
- push(blob){
-  if(!blob.size||this.error)return;
-  if(this.bytes+blob.size>this.limit){this.fail(Error(t('The disk cannot keep up. Recording stopped; received data stays available for recovery.','O disco não acompanha a gravação. A gravação parou; os dados recebidos ficam disponíveis para recuperação.')));return;}
-  this.bytes+=blob.size;
-  this.pending=this.pending.then(async()=>{if(!this.error)await this.send(blob,this.sequence++);}).catch(error=>this.fail(error)).finally(()=>{this.bytes-=blob.size;});
- }
- fail(error){if(this.error)return;this.error=error;this.onError(error);}
- async finish(){await this.pending;if(this.error)throw this.error;}
-}
 
 export function countdown(seconds,onTick,signal){
  return new Promise(resolve=>{
@@ -263,31 +253,31 @@ export class RecorderPanel {
    const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4'});
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{discardEmpty:true}).catch(()=>{});return;}
    this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>this.recordingFailed(error));
-   const upload=this.upload;this.recorderStarted=false;
-   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>this.recordingFailed(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
+   const upload=this.upload;this.recorderStarted=false;this.writerStopping=false;
+   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.id===id&&this.recorder===recorder&&!this.finishing&&!this.writerStopping)void this.stop().catch(error=>this.error(error));});},{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>this.recordingFailed(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
    recorder.start(500);this.recorderStarted=true;this.startedAt=Date.now();this.$('.recorder-elapsed').textContent=elapsed(0);this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
    this.status(t('Recording to: ','A gravar para: ')+directory+' / '+id+(audio?'.m4a':'.mp4'));
   }catch(error){if(this.id)await this.stopWriter().catch(()=>{});this.error(error);}
   finally{this.starting=false;this.resolveStart();this.startDone=null;this.controls();}
  }
  async stopWriter(){
-  const id=this.id;if(!id)return;clearInterval(this.elapsedTimer);
+  const id=this.id;if(!id)return;this.writerStopping=true;clearInterval(this.elapsedTimer);
   // An error makes MediaRecorder inactive before its final dataavailable/stop events.
   // Drain that last event even when stop() is no longer necessary.
   if(this.recorderStarted){if(this.recorder.state!=='inactive')this.recorder.stop();await this.recorderDone;}
   let uploadError;try{await this.upload?.finish();}catch(error){uploadError=error;}
   try{await this.api(`/api/recordings/${id}/finish`,{});if(uploadError||this.recordingError)throw uploadError||this.recordingError;this.status(t('Recording saved locally.','Gravação guardada localmente.'));}
-  finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;this.recordingError=null;}
+  finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;this.recordingError=null;this.writerStopping=false;}
  }
  async stop(){
   if(this.stopDone)return this.stopDone;
   if(this.starting){this.countdownAbort?.abort();await this.startDone;}
   if(this.stopDone)return this.stopDone;
   if(!this.id)return;this.finishing=true;this.controls();this.status(t('Saving recording…','A guardar a gravação…'));
-  this.stopDone=(async()=>{try{await this.stopWriter();await this.reloadFiles();}catch(error){this.status(error.message);throw error;}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
+  this.stopDone=(async()=>{try{await this.stopWriter();try{await this.reloadFiles();}catch{this.toast(t('Recording saved, but the file list could not be refreshed. Open this page again to refresh it.','Gravação guardada, mas não foi possível atualizar a lista de ficheiros. Volte a abrir esta página para a atualizar.'),true);}}catch(error){this.status(error.message);throw error;}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
  }
  async reloadFiles(){const state=await this.api('/api/state');this.update(state);}
- async recover(id){await this.api(`/api/recordings/${id}/finish`,{});await this.reloadFiles();const message=t('Recording recovered.','Gravação recuperada.');this.status(message);this.toast(message);}
+ async recover(id){await this.api(`/api/recordings/${id}/finish`,{});const message=t('Recording recovered.','Gravação recuperada.');if(!this.id&&!this.starting&&!this.finishing)this.status(message);try{await this.reloadFiles();this.toast(message);}catch{this.toast(t('Recording recovered, but the file list could not be refreshed. Open this page again to refresh it.','Gravação recuperada, mas não foi possível atualizar a lista de ficheiros. Volte a abrir esta página para a atualizar.'),true);}}
  releaseDevices(){
   clearInterval(this.drawTimer);clearInterval(this.meterTimer);clearInterval(this.elapsedTimer);
   this.production?.stopVisuals();this.clipAudio?.disconnect();this.clipAudio=null;this.audioInputs=[];this.audioMix=null;

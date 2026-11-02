@@ -132,6 +132,6 @@ test('repeated Electron close requests share one confirmation and drain the back
  const b=backend();b.downloads.active.set('download',{});let release,asked=0,closed=0,finished=0;
  b.close=async()=>closed++;
  const quit=policy.shutdownCoordinator({backend:b,confirm:()=>{asked++;return new Promise(resolve=>release=resolve);},finish:async()=>finished++});
- const a=quit(),c=quit();release(true);assert.equal(await a,true);assert.equal(await c,true);
+ const a=quit(),c=quit();await Promise.resolve();release(true);assert.equal(await a,true);assert.equal(await c,true);
  assert.equal(asked,1);assert.equal(closed,1);assert.equal(finished,1);await quit();assert.equal(closed,1);
 });

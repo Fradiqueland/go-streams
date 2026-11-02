@@ -1,6 +1,6 @@
 {
   "name": "go-streams",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "private": true,
   "type": "module",
   "description": "Local video playout and RTMP streaming studio",

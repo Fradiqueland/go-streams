@@ -2,7 +2,17 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.5**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.6**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Recording finalization and scene persistence (1.1.6)
+
+Local studio recording now uses an independent recording pipeline over the same prepared picture and mixed audio. Stopping waits for the final browser data, ordered uploads and the recording encoder to finish, while a live broadcast keeps running. No devices are reopened and no additional software is required. Recording and broadcasting together use an additional encoder and therefore more CPU. Encoder shutdown failures remain visible and preserve recovery data. Saving a recording or recovering a file stays confirmed if only refreshing the file list fails.
+
+Production scenes now save private presenter notes and separate microphone/shared-audio levels alongside the picture settings. Loading a scene restores the teleprompter and audio gains, while older scenes receive compatible defaults. Unsaved notes and levels are protected when changing language. Notes remain in the local browser profile and are not drawn into the composed video; sharing the application's own window can still expose its interface.
+
+A browser-initiated recording stop also saves the final data automatically. Closing the Windows application or using the in-app exit action drains both recording panels before shutting down the server. A finalization error keeps the interface available for recovery and retry.
+
+Live PNG snapshots wait for image encoding and report failures. The prerecorded overlay editor keeps its preview consistent when an image selection is cleared or replaced and ignores late responses from a closed form. The Windows screen/window picker offers pages of sources so windows beyond the first twenty remain selectable, with explicit cancellation on every page.
 
 ## Capture and settings reliability (1.1.5)
 
@@ -60,7 +70,7 @@ Choose **Microphone only** to broadcast microphone audio with a selected backgro
 
 Open **Live camera & screen** to preview a camera, a screen/window, or a screen with a camera inset. Choose a microphone, 720p/1080p and landscape/portrait, then select one or more configured RTMP/RTMPS channels and explicitly confirm **Start live broadcast**. Preview alone never starts a broadcast. The original prerecorded single-video, playlist, repeat, schedule, queue and backup options remain available.
 
-Capture uses the browser's media APIs and a bounded in-memory WebM upload queue. The bundled FFmpeg encodes one shared H.264/AAC feed, which is reused by the RTMP destinations and local recording. Destination workers have independent status and failures, share the existing concurrency limit and channel reservations, and appear in the monitor/history. Stop individual destinations in the monitor or stop the live feed from the capture page. Live input cannot be paused, replayed or resumed from a saved position; start a fresh live session after an interruption.
+Capture uses the browser's media APIs and a bounded in-memory WebM upload queue. The bundled FFmpeg encodes one shared H.264/AAC feed for the RTMP destinations. Local recording uses its own encoder over the same composed browser stream so its final data can be drained independently. Destination workers have independent status and failures, share the existing concurrency limit and channel reservations, and appear in the monitor/history. Stop individual destinations in the monitor or stop the live feed from the capture page. Live input cannot be paused, replayed or resumed from a saved position; start a fresh live session after an interruption.
 
 Microphone mute, local preview and explicit device release are available. Camera/device permissions and screen/window selection require user consent. Windows Electron supplies a source picker; the Mac browser uses its native permission and sharing dialogs. Shared screen/tab audio depends on the browser, selected source and OS. WebM MediaRecorder support is required (the included Windows Electron browser, Chrome/Edge, or Safari 18.4+ on Mac). No separate Node.js, FFmpeg, FFprobe or yt-dlp installation is needed. The optional local recording saves the composed video/audio to this computer; cloud recording is excluded. Live input is never restored automatically on startup. Closing/reloading the capture page interrupts live capture; the backend stops idle/disconnected inputs after a bounded timeout. Navigation inside the app preserves the capture panel and preview.
 

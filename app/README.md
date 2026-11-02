@@ -1,8 +1,18 @@
-# Go Streams 1.1.5
+# Go Streams 1.1.6
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Finalização das gravações e persistência das cenas (1.1.6)
+
+A gravação local do estúdio passa a usar um processo independente sobre a mesma imagem preparada e o mesmo áudio misturado. Ao parar, aguarda os últimos dados do navegador, a fila de envios e a conclusão do encoder da gravação, enquanto o direto continua. Não volta a abrir dispositivos nem exige software adicional. Gravar e transmitir em simultâneo utiliza um encoder adicional e consome mais CPU. As falhas do encoder ficam visíveis e preservam os dados recuperáveis. Uma falha apenas na atualização da lista já não anula a confirmação de que a gravação foi guardada ou recuperada.
+
+As cenas passam a guardar as notas privadas e os volumes separados do microfone e do áudio partilhado, além das definições visuais. Carregar uma cena restaura o teleponto e os ganhos de áudio; as cenas antigas recebem valores compatíveis. A mudança de idioma protege notas e volumes ainda por guardar. As notas permanecem no perfil local do navegador e não são desenhadas no vídeo composto; partilhar a própria janela da aplicação pode mostrar a interface.
+
+Uma paragem iniciada pelo próprio navegador também guarda automaticamente os últimos dados. Fechar a aplicação Windows ou usar o botão Sair aguarda os dois gravadores antes de encerrar o servidor. Uma falha na finalização mantém a interface disponível para recuperação e nova tentativa.
+
+Os fotogramas PNG do live aguardam a criação da imagem e comunicam falhas. O editor de sobreposições mantém a pré-visualização coerente ao limpar ou substituir uma imagem e ignora respostas tardias de um formulário fechado. O seletor de ecrã/janela no Windows permite percorrer páginas, incluindo fontes além das primeiras vinte, sempre com opção de cancelar.
 
 ## Fiabilidade da captação e das definições (1.1.5)
 

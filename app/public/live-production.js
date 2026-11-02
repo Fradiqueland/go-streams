@@ -1,7 +1,21 @@
 import {language} from './i18n.js';
+import {RecordingUpload} from './recording-upload.js';
 const t=(en,pt)=>language()==='pt-PT'?pt:en;
 const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const defaults={layout:'pip',background:'#111827',accent:'#e70952',name:'',title:'',banner:'',ticker:'',mirror:false,logo:'',backgroundImage:''};
+const defaults={layout:'pip',background:'#111827',accent:'#e70952',name:'',title:'',banner:'',ticker:'',mirror:false,logo:'',backgroundImage:'',notes:'',micVolume:1,screenVolume:1};
+const volume=value=>Number.isFinite(value)?Math.max(0,Math.min(1.5,value)):1;
+const boundedText=(value,limit)=>value.slice(0,limit).replace(/[\uD800-\uDBFF]$/,'');
+function sceneValues(input){
+ if(!input||typeof input!=='object'||Array.isArray(input))return null;
+ const scene={...defaults};
+ if(['pip','split','camera','screen'].includes(input.layout))scene.layout=input.layout;
+ for(const name of ['background','accent'])if(typeof input[name]==='string'&&/^#[\da-f]{6}$/i.test(input[name]))scene[name]=input[name];
+ for(const [name,limit]of Object.entries({name:80,title:100,banner:160,ticker:500,notes:30000}))if(typeof input[name]==='string')scene[name]=boundedText(input[name],limit);
+ if(typeof input.mirror==='boolean')scene.mirror=input.mirror;
+ for(const name of ['logo','backgroundImage'])if(typeof input[name]==='string'&&/^data:image\/(png|jpeg|webp);base64,[\da-z+/]+=*$/i.test(input[name]))scene[name]=input[name];
+ for(const name of ['micVolume','screenVolume'])scene[name]=volume(input[name]);
+ return scene;
+}
 export function layoutRects(layout,width,height,hasCamera,hasScreen){
  if(!hasScreen)return hasCamera?[{source:'camera',x:0,y:0,w:width,h:height}]:[];
  if(!hasCamera||layout==='screen')return [{source:'screen',x:0,y:0,w:width,h:height}];
@@ -10,10 +24,10 @@ export function layoutRects(layout,width,height,hasCamera,hasScreen){
  return [{source:'screen',x:0,y:0,w:width,h:height},{source:'camera',x:width*.70,y:height*.70,w:width*.28,h:height*.28}];
 }
 export class ProductionTools {
- constructor({api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed,recordingControls=true,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey='go-streams-scenes'}){
-  Object.assign(this,{api,toast,getStream,uploaderClass,setVolume,setClipAudio,snapshot,acquireFeed,releaseFeed,recordingControls,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.cleanComposition=JSON.stringify(this.values);this.images={};this.scenes=this.readScenes()||{};this.level=0;this.emojiTarget='banner';
+ constructor({api,toast,getStream,getRecordingConfig,setVolume,setClipAudio,snapshot,recordingControls=true,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey='go-streams-scenes'}){
+  Object.assign(this,{api,toast,getStream,getRecordingConfig,setVolume,setClipAudio,snapshot,recordingControls,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.cleanComposition=JSON.stringify(this.values);this.images={};this.scenes=this.readScenes()||{};this.level=0;this.emojiTarget='banner';
  }
- readScenes(){try{const saved=JSON.parse(localStorage.getItem(this.sceneStorageKey)||'{}');return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};}catch{return null;}}
+ readScenes(){try{const saved=JSON.parse(localStorage.getItem(this.sceneStorageKey)||'{}');if(!saved||typeof saved!=='object'||Array.isArray(saved))return {};const scenes={};for(const name of ['intro','main','presentation','outro']){const scene=sceneValues(saved[name]);if(scene)scenes[name]=scene;}return scenes;}catch{return null;}}
  notifyRecordingState(){const active=this.recording;if(active!==this.lastRecordingState){this.lastRecordingState=active;this.onRecordingStateChange?.(active);}}
  isActive(){return Boolean(this.element?.isConnected&&!this.element.hidden&&(!this.element.getClientRects||this.element.getClientRects().length));}
  handleKeydown(event){
@@ -65,8 +79,8 @@ export class ProductionTools {
   this.element.addEventListener('input',event=>{
    const el=event.target;if(['background','accent','name','title','banner','ticker','layout'].includes(el.name))this.values[el.name]=el.value;if(el.name==='mirror')this.values.mirror=el.checked;
    if(['recordingDirectory','askRecordingFolder'].includes(el.name))this.recordingPreferencesDirty=true;
-   if(el.name==='micVolume'||el.name==='screenVolume')this.setVolume?.(el.name,Number(el.value));
-   if(el.name==='notes')this.element.querySelector('.teleprompter').textContent=el.value;
+   if(el.name==='micVolume'||el.name==='screenVolume'){const value=volume(Number(el.value));this.values[el.name]=value;el.value=value;this.setVolume?.(el.name,value);}
+   if(el.name==='notes'){this.values.notes=el.value;this.element.querySelector('.teleprompter').textContent=el.value;}
    if(['background','accent','name','title','banner','ticker','layout','mirror'].includes(el.name))this.onChange?.();
   });
   this.element.addEventListener('change',event=>{const el=event.target;if(el.type==='file'&&el.name!=='clipFile')void this.loadImage(el.name,el.files[0]);if(el.name==='layout'){this.values.layout=el.value;this.onChange?.();}if(el.name==='emojiTarget'){this.emojiTarget=el.value;if(this.emojiSelection?.name!==el.value)this.emojiSelection=null;}});
@@ -122,7 +136,7 @@ export class ProductionTools {
   this.recordings=recordings;
   const current=recordings.find(item=>item.id===this.recordingId);
   if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
-   this.recordingId=null;void this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
+   const recorder=this.localRecorder,upload=this.localUpload;this.recordingId=null;this.clearRecordingWriter();this.recordingFailure=null;upload?.fail(Error(current.error||'Recording ended.'));if(recorder&&recorder.state!=='inactive')recorder.stop();this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
   }
   this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
@@ -130,23 +144,48 @@ export class ProductionTools {
   this.notifyRecordingState();
  }
  async startRecording(){
-  if(!this.getStream()||this.recording||this.preferencesBusy)return;
+  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy)return;
+  const attempt={stream,cancelled:false};let cleanupAttempted=false;this.recordingAttempt=attempt;this.recordingFailure=null;
+  const current=()=>this.recordingAttempt===attempt&&!attempt.cancelled&&this.getStream()===stream;
+  const changed=()=>Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));
   this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
   try{let {directory,askEveryTime}=this.recordingOptions();if(askEveryTime||!directory){directory=await this.chooseRecordingDirectory();if(directory===null)return;}
-   const stream=this.getStream();if(!stream)throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
-   const feedId=await this.acquireFeed('recording');if(this.getStream()!==stream)throw Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));const {id}=await this.api('/api/recordings/start',{confirmed:true,feedId,directory});this.recordingId=id;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;}
-  catch(error){await this.releaseFeed('recording').catch(()=>{});this.recordingId=null;this.toast(error.message,true);}
-  finally{this.starting=false;this.resolveStart();this.startDone=null;this.update();}
+   if(!current()){if(attempt.cancelled)return;throw changed();}
+   const config=this.getRecordingConfig?.()||{},mimeType=typeof MediaRecorder==='function'?[config.mimeType,'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>type&&MediaRecorder.isTypeSupported(type)):null;
+   if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
+   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:'video',format:'mp4'});this.recordingId=id;this.discardRecordingEmpty=true;
+   if(!current()){cleanupAttempted=true;await this.finishRecordingWriter();if(!attempt.cancelled)throw changed();return;}
+   const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:config.videoBitsPerSecond||4500000,audioBitsPerSecond:config.audioBitsPerSecond||192000});this.localRecorder=recorder;
+   const fail=error=>{if(this.recordingAttempt!==attempt||this.recordingId!==id)return;this.recordingFailure ||= error;void this.stopRecording();};
+   const upload=this.localUpload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},fail);
+   this.localRecorderDone=new Promise(resolve=>recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.recordingAttempt===attempt&&this.recordingId===id&&!this.finishing&&!this.localWriterStopping)void this.stopRecording();});},{once:true}));recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>fail(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
+   recorder.start(500);this.localRecorderStarted=true;this.discardRecordingEmpty=false;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;
+  }catch(error){if(this.recordingId&&!cleanupAttempted)try{await this.finishRecordingWriter();}catch(cleanup){error=this.recordingFailure||cleanup;}this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
+  finally{this.starting=false;if(!this.recordingId)this.clearRecordingWriter();this.resolveStart();this.startDone=null;this.update();}
  }
- async stopRecording(){
-  if(this.startDone)await this.startDone;if(this.finishing)return this.finishing;if(!this.recordingId)return;
-  this.finishing=(async()=>{
-   this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
-   let saved=false;
-   try{await this.api(`/api/recordings/${this.recordingId}/finish`,{});saved=true;await this.releaseFeed('recording');this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');}
-   catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
-   finally{if(saved)this.recordingId=null;this.finishing=null;this.update();}
-  })();this.update();return this.finishing;
+ clearRecordingWriter(){this.localRecorder=null;this.localRecorderStarted=false;this.localRecorderDone=null;this.localUpload=null;this.recordingAttempt=null;this.localWriterStopping=false;if(!this.recordingId)this.discardRecordingEmpty=false;}
+ async finishRecordingWriter(){
+  const id=this.recordingId;if(!id)return;this.localWriterStopping=true;
+  // MediaRecorder becomes inactive before the final dataavailable/stop events
+  // when it fails. Keep collecting that last blob before finishing the file.
+  if(this.localRecorderStarted){if(this.localRecorder.state!=='inactive')this.localRecorder.stop();await this.localRecorderDone;}
+  let failure=this.recordingFailure;try{await this.localUpload?.finish();}catch(error){failure ||= error;}
+  try{await this.api(`/api/recordings/${id}/finish`,this.discardRecordingEmpty?{discardEmpty:true}:{});this.recordingId=null;if(failure)throw failure;}
+  catch(error){throw failure||error;}
+  finally{this.clearRecordingWriter();if(!this.recordingId)this.recordingFailure=null;}
+ }
+ async stopRecording({throwOnError=false}={}){
+  if(this.startDone){if(this.recordingAttempt)this.recordingAttempt.cancelled=true;await this.startDone;}
+  let finishing=this.finishing;
+  if(!finishing&&this.recordingId){
+   finishing=this.finishing=(async()=>{
+    this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
+    try{await this.finishRecordingWriter();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');return {};}
+    catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);return {error};}
+    finally{this.finishing=null;this.update();}
+   })();this.update();
+  }
+  const result=await finishing;if(throwOnError&&result?.error)throw result.error;return result;
  }
  async action(button){
   button.disabled=true;
@@ -173,7 +212,7 @@ export class ProductionTools {
     ensureCurrentScene();
     const snapshot={...this.values},scenes={...(this.readScenes()||this.scenes),[sceneId]:snapshot};try{localStorage.setItem(this.sceneStorageKey,JSON.stringify(scenes));this.scenes=scenes;this.cleanComposition=JSON.stringify(snapshot);this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}
    }
-   if(action==='load-scene'){this.scenes=this.readScenes()||this.scenes;const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.sceneGeneration=(this.sceneGeneration||0)+1;this.values={...defaults,...values};this.cleanComposition=JSON.stringify(this.values);const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=value;else el.value=value;}}this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
+   if(action==='load-scene'){this.scenes=this.readScenes()||this.scenes;const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.sceneGeneration=(this.sceneGeneration||0)+1;this.values=sceneValues(values);this.cleanComposition=JSON.stringify(this.values);const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=value;else el.value=value;}}const notes=this.element.querySelector('.teleprompter');if(notes)notes.textContent=scene.notes;for(const name of ['micVolume','screenVolume'])this.setVolume?.(name,scene[name]);this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
    if(action==='teleprompter'){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}else this.scrollTimer=setInterval(()=>{const el=this.element.querySelector('.teleprompter');el.scrollTop+=1;},50);}
   }catch(error){this.toast?.(error.message,true);}finally{button.disabled=false;this.update();this.onChange?.();}
  }

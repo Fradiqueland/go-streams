@@ -305,6 +305,16 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('#capture-form [name=source]').selectOption('microphone');
   assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
+  const liveProduction=page.locator('.live-capture-studio .production-tools'),liveProductionField=name=>liveProduction.locator(`[name="${name}"]`);
+  const setLiveVolume=async(name,value)=>liveProductionField(name).evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+  await liveProduction.locator('.studio-customization>summary').click();await liveProductionField('notes').locator('xpath=ancestor::details[1]').locator(':scope > summary').click();
+  await liveProductionField('notes').fill('Private live presenter notes');await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('notes').inputValue(),'Private live presenter notes');checks++;
+  await liveProductionField('notes').fill('');await setLiveVolume('micVolume',.55);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('micVolume').inputValue(),'0.55');checks++;
+  await setLiveVolume('micVolume',1);await setLiveVolume('screenVolume',.75);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('screenVolume').inputValue(),'0.75');checks++;
+  await liveProductionField('notes').fill('Private live presenter notes');await setLiveVolume('micVolume',.55);await liveProductionField('scene').selectOption('intro');await liveProduction.locator('[data-production=save-scene]').click();await page.waitForFunction(()=>!document.querySelector('.live-capture-studio [data-production=save-scene]').disabled);
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Live camera & screen',exact:true}).waitFor();
+  await liveProduction.locator('.studio-customization>summary').click();await liveProduction.locator('[data-production=load-scene]').click();assert.equal(await liveProductionField('notes').inputValue(),'Private live presenter notes');assert.equal(await liveProduction.locator('.teleprompter').textContent(),'Private live presenter notes');assert.equal(await liveProductionField('micVolume').inputValue(),'0.55');assert.equal(await liveProductionField('screenVolume').inputValue(),'0.75');
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Câmara e ecrã ao vivo',exact:true}).waitFor();checks++;
   let releaseFolderPicker;folderPickerWait=new Promise(resolve=>{releaseFolderPicker=resolve;});
   try{
     await page.locator('[data-production=choose-recording-folder]').click();
@@ -388,7 +398,7 @@ finally {
     finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
   }
    const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
-   report.relevantControlHelpOnly=report.passed;
+   report.relevantControlHelpOnly=report.passed;report.productionDraftLanguageProtection=report.passed;
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');
 }

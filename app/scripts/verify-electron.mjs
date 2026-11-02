@@ -40,7 +40,10 @@ try{
  await run([],{...environment,GO_STREAMS_ELECTRON_EXPECT_EXISTING:'1'});
  report.secondLaunch=JSON.parse(fs.readFileSync(path.join(data,'electron-second-launch.json'),'utf8'));
  assert.equal(report.secondLaunch.priorSessionPreserved,true);assert.equal(report.secondLaunch.protectedProjectPreserved,true);
- for(const launch of [report.firstLaunch,report.secondLaunch])assert.deepEqual(launch.recordingDownloads,{recorder:true,liveStudio:true,bytesVerified:true,navigationPreserved:true});
+ for(const launch of [report.firstLaunch,report.secondLaunch]){
+  assert.deepEqual(launch.recordingDownloads,{recorder:true,liveStudio:true,bytesVerified:true,navigationPreserved:true});
+  assert.deepEqual(launch.nativeWindowClose,{nativeCloseEvent:true,noChunksBeforeClose:true,rendererDrainedBeforeBackend:true,finalChunkUploaded:true,recordingFinalized:true,finalFramePreserved:true});
+ }
  report.passed=true;
 }catch(error){report.passed=false;report.error=error.message;console.error(error.message);process.exitCode=1;}
 fs.writeFileSync(path.join(root,'release','GoStreams-'+report.version+'-Electron-runtime-verification.json'),JSON.stringify(report,null,2));

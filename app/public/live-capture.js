@@ -63,9 +63,11 @@ export class LiveCapturePanel {
     if(this.session)void fetch(`/api/live/${this.session.id}/stop`,{method:'POST',headers:{'Content-Type':'application/json','X-Go-Streams':'1'},body:'{}',keepalive:true}).catch(()=>{});
    });
   }
-  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.releasing?null:this.output,uploaderClass:LiveUploader,acquireFeed:role=>this.acquireFeed(role),releaseFeed:role=>this.releaseFeed(role),onRecordingStateChange:()=>this.syncFormatControls(),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:()=>{
+  this.production ||= new ProductionTools({api:this.api,toast:this.toast,getStream:()=>this.releasing?null:this.output,getRecordingConfig:()=>({mimeType:this.captureMimeType,videoBitsPerSecond:this.config?.quality==='1080p'?4500000:2500000,audioBitsPerSecond:128000}),onRecordingStateChange:()=>this.syncFormatControls(),setVolume:(name,value)=>this.setInputVolume(name,value),setClipAudio:video=>this.setClipAudio(video),snapshot:async()=>{
    if(!this.canvas||!this.output){this.toast(text('Open a local preview first.','Abra primeiro a pré-visualização local.'),true);return;}
-   this.canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},'image/png');
+   this.drawFrame?.();
+   const blob=await new Promise((resolve,reject)=>this.canvas.toBlob(value=>value?resolve(value):reject(Error(text('The PNG image could not be created. Try again.','Não foi possível criar a imagem PNG. Tente novamente.'))),'image/png'));
+   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';try{a.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),10000);}
   }});
   this.production.mount(this.element);
   if(this.element.parentNode!==container){container.innerHTML='';container.appendChild(this.element);}
@@ -211,7 +213,7 @@ export class LiveCapturePanel {
    const session=await this.api('/api/capture/start',{...this.config,confirmed:true});
    if(!current()){await this.api(`/api/capture/${session.id}/stop`,{}).catch(()=>{});check();}
    this.feedSession=session;this.feedMime=mimeType;const id=session.id;
-   this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop(error);void this.production.stopRecording();},fetchChunk:async(blob,sequence)=>{
+   this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop(error);},fetchChunk:async(blob,sequence)=>{
     const response=await fetch(`/api/capture/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
    }});
    this.feedRecorder=recorder;recorder.ondataavailable=event=>this.feedUploader?.push(event.data);recorder.onerror=()=>this.feedUploader?.fail(Error('Live capture failed. Start a new capture.'));recorder.start(1000);return id;
@@ -267,13 +269,20 @@ export class LiveCapturePanel {
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
   if(this.element){this.element.querySelector('.capture-preview').srcObject=null;for(const meter of this.element.querySelectorAll?.('meter')||[])meter.value=0;}
  }
- async release(){
-  if(this.releasing)return this.releasing;
-  this.captureEpoch++;
-  if(!this.session&&!this.feedSession&&!this.feedStarting)this.releaseDevices();
-  this.releasing=(async()=>{
-   try{await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(this.stopFailure?.message||text('Camera and microphone are off.','A câmara e o microfone estão desligados.'),Boolean(this.stopFailure));}
-   finally{this.releasing=null;this.controls();}
-  })();this.controls();return this.releasing;
+ async release({throwOnError=false}={}){
+  if(!this.releasing){
+   this.captureEpoch++;
+   if(!this.session&&!this.feedSession&&!this.feedStarting&&!this.production?.recordingId&&!this.production?.finishing)this.releaseDevices();
+   this.releasing=(async()=>{
+    let error;
+    try{
+     try{await this.production?.stopRecording({throwOnError:true});}catch(failure){error=failure;}
+     try{this.production?.stopClip();await this.stop();error ||= this.stopFailure;}catch(failure){error ||= failure;}
+     this.releaseDevices();this.status(error?.message||text('Camera and microphone are off.','A câmara e o microfone estão desligados.'),Boolean(error));
+     return {error};
+    }finally{this.releasing=null;this.controls();}
+   })();this.controls();
+  }
+  const result=await this.releasing;if(throwOnError&&result?.error)throw result.error;
  }
 }
