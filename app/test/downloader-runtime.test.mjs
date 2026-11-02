@@ -40,6 +40,22 @@ test('YouTube downloads launch the bundled JavaScript engine as Node in Electron
  child.emit('close',1);await downloads.shutdown();
 });
 
+test('YouTube downloads preserve a configured FFmpeg executable with a custom filename',async t=>{
+ const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});
+ const directory=fs.mkdtempSync(path.join(parent,'downloader-custom-tool-')),store=new Store(directory);
+ const tool=path.join(directory,'Custom tools','ffmpeg-custom.exe');fs.mkdirSync(path.dirname(tool));fs.writeFileSync(tool,'controlled executable fixture');
+ store.update(s=>{s.settings.ffmpeg=tool;});let invocation,child;
+ const downloads=new Downloads({store},{spawnProcess:(command,args)=>{
+  invocation={command,args};child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>{};return child;
+ }});
+ t.after(async()=>{if(downloads.active.size)child.emit('close',1);await downloads.shutdown();assert.ok(directory.startsWith(parent+path.sep));fs.rmSync(directory,{recursive:true,force:true});});
+ downloads.start({url:'https://youtu.be/abcdefghijk'});
+ const location=invocation.args[invocation.args.indexOf('--ffmpeg-location')+1];
+ assert.equal(location,tool,'yt-dlp must receive the selected executable, including its custom filename');
+ assert.ok(fs.statSync(location).isFile());
+ child.emit('close',1);await downloads.shutdown();
+});
+
 test('online YouTube source resolution carries Node mode into the downloader subprocess',async t=>{
  electronHost(t);let invocation;
  const sources=new RemoteSources({base:'http://127.0.0.1:4317',settings:()=>({}),execute:async(command,args,options)=>{

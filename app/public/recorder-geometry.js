@@ -10,6 +10,11 @@ export function cameraRect(value={},width,height){
  const position=cameraPosition(value),side=position.size*Math.min(width,height);
  return {x:position.x*(width-side),y:position.y*(height-side),width:side,height:side};
 }
+export function resizedCameraPosition(value,width,height,dx,dy){
+ const start=cameraRect(value,width,height),short=Math.min(width,height),delta=Math.abs(dx)>=Math.abs(dy)?dx:dy;
+ const side=clamp(start.width+delta,short*.1,Math.min(short*.65,width-start.x,height-start.y));
+ return {x:start.x/(width-side),y:start.y/(height-side),size:side/short};
+}
 export const recordingAspects=Object.freeze(['original','16:9','9:16','1:1','4:3','3:4']);
 export function frameSize(width,height,crop={},quality=1080,aspect='original'){
  if(aspect!=='original'&&recordingAspects.includes(aspect)){

@@ -2,7 +2,15 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.1.2**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.1.3**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Recovery and persistence review (1.1.3)
+
+VP8 capture preserves explicitly declared color range and matrix metadata before encoding, including recording, shared live feeds and direct live capture. The bounded WebM header reader accepts fragmented uploads. Both capture panels prefer VP9; their VP8 fallback uses a software sRGB canvas to keep frame colors consistent during recording. Browser verification repeats the VP8 fallback and compares decoded output colors. Audio processing is unchanged.
+
+Cancelling a pending recording start releases preview devices immediately. The recorder preserves visible upload/finalization errors, reports successful recovery, rejects stale default-folder responses and supports horizontal or vertical camera resizing with a fixed upper-left corner. Browser checks exercise failed finalization, recovery, a real recording download, cancelled folder selection and a new recording after an upload failure.
+
+Contextual information closes when its source is hidden. Editing a removed channel or playlist cannot silently create a replacement. OAuth settings and replacement accounts become active only after successful persistence; revocation closes active chat sessions even if the disk write fails. Downloads preserve the exact configured FFmpeg executable path, including renamed executables.
 
 ## Recorder proportions and explicit help (1.1.2)
 

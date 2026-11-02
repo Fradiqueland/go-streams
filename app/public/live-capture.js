@@ -129,10 +129,13 @@ export class LiveCapturePanel {
    }
    const video=async stream=>{if(!stream)return null;const el=document.createElement('video');el.muted=true;el.playsInline=true;el.srcObject=stream;try{await el.play();check();return el;}catch(error){el.pause();el.srcObject=null;throw error;}};
    this.screenVideo=await video(this.screen);this.cameraVideo=await video(this.camera);
+   this.captureMimeType=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
+   if(!this.captureMimeType)throw Error('Live WebM capture is unavailable. Use Chrome, Edge or Safari 18.4+.');
    this.canvas=document.createElement('canvas');
    const height=this.config.quality==='1080p'?1080:720;
    [this.canvas.width,this.canvas.height]=this.config.aspect==='9:16'?[height,Math.round(height*16/9/2)*2]:[Math.round(height*16/9/2)*2,height];
-   const ctx=this.canvas.getContext('2d');
+   // VP8 needs a stable canvas color path: WebM records the first frame's tags.
+   const ctx=this.canvas.getContext('2d',this.captureMimeType.includes('vp9')?undefined:{colorSpace:'srgb',willReadFrequently:true});
    const draw=()=>{
     const w=this.canvas.width,h=this.canvas.height;
     const fit=(v,x,y,w,h)=>{if(!v?.videoWidth)return;const scale=Math.min(w/v.videoWidth,h/v.videoHeight),vw=v.videoWidth*scale,vh=v.videoHeight*scale;ctx.drawImage(v,x+(w-vw)/2,y+(h-vh)/2,vw,vh);};
@@ -159,7 +162,7 @@ export class LiveCapturePanel {
   finally{this.preparing=false;this.controls();}
  }
  async listDevices(epoch=this.captureEpoch){
-  try{const devices=await navigator.mediaDevices.enumerateDevices();if(epoch!==this.captureEpoch)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const select=this.element.querySelector(`[name="${name}"]`),previous=select.value;select.innerHTML='<option value="">'+text('Default device','Dispositivo predefinido')+'</option>'+devices.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||`${kind} ${i+1}`)}</option>`).join('');select.value=previous;}}catch{}
+  try{const devices=await navigator.mediaDevices.enumerateDevices();if(epoch!==this.captureEpoch)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const select=this.element.querySelector(`[name="${name}"]`),previous=select.value;select.innerHTML='<option value="">'+text('Default','Predefinido')+'</option>'+devices.filter(d=>d.kind===kind).map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||`${kind} ${i+1}`)}</option>`).join('');select.value=previous;}}catch{}
  }
  toggleMute(){if(!this.mic)return;this.muted=!this.muted;this.mic.enabled=!this.muted;this.element.querySelector('[data-capture="mute"]').textContent=this.muted?text('Unmute microphone','Ativar microfone'):text('Mute microphone','Silenciar microfone');}
  setInputVolume(name,value){for(const input of this.audioInputs||[])if(input.name===name)input.gain.gain.value=this.clipAudio?0:value;}
@@ -176,7 +179,7 @@ export class LiveCapturePanel {
   if(this.feedSession)return this.feedSession.id;
   this.feedStarting=(async()=>{
    try{
-   const mimeType=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
+   const mimeType=this.captureMimeType||['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
    if(!mimeType)throw Error('Live WebM capture is unavailable. Use Chrome, Edge or Safari 18.4+.');
    const recorder=new MediaRecorder(this.output,{mimeType,videoBitsPerSecond:this.config.quality==='1080p'?4500000:2500000,audioBitsPerSecond:128000});
    this.feedSession=await this.api('/api/capture/start',{...this.config,confirmed:true});this.feedMime=mimeType;const id=this.feedSession.id;

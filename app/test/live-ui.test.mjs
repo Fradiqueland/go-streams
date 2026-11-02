@@ -10,7 +10,7 @@ function previewEnvironment(t,source,mediaDevices){
  class Track extends EventTarget{constructor(kind='video'){super();this.kind=kind;this.readyState='live';}stop(){this.stopped=true;this.readyState='ended';}}
  class Stream{constructor(tracks=[]){this.tracks=tracks;}getTracks(){return this.tracks;}getAudioTracks(){return this.tracks.filter(t=>t.kind==='audio');}getVideoTracks(){return this.tracks.filter(t=>t.kind==='video');}}
  const node=()=>({gain:{value:1},connect(target){return target;},disconnect(){},start(){}});
- replaceGlobal(t,'navigator',{mediaDevices});replaceGlobal(t,'window',{MediaRecorder:{}});replaceGlobal(t,'MediaStream',Stream);
+ installRecorder(t);replaceGlobal(t,'navigator',{mediaDevices});replaceGlobal(t,'window',{MediaRecorder});replaceGlobal(t,'MediaStream',Stream);
  replaceGlobal(t,'FormData',class{get(name){return {source,quality:'720p',aspect:'16:9'}[name]||'';}has(){return true;}});
  replaceGlobal(t,'document',{createElement:tag=>tag==='video'?{videoWidth:640,videoHeight:360,async play(){},pause(){}}:{getContext:()=>({}),captureStream:()=>new Stream([new Track()])}});
  replaceGlobal(t,'AudioContext',class{destination=node();async resume(){}async close(){}createMediaStreamDestination(){return {stream:new Stream([new Track('audio')])};}createGain(){return node();}createAnalyser(){return {...node(),fftSize:32};}createOscillator(){return node();}createMediaStreamSource(){return node();}});

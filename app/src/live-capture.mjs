@@ -4,6 +4,7 @@ import {AppError} from './errors.mjs';
 import {toolsFor} from './core.mjs';
 import {encodingArgs} from './encoding.mjs';
 import {operationSettings} from './operations.mjs';
+import {WebmEncoder} from './webm-encoder.mjs';
 
 const MAX_CHUNK = 8 * 1024 * 1024;
 const fail = (message, status = 400) => { throw new AppError(message, status); };
@@ -59,9 +60,12 @@ export class LiveCapture {
   launch(session, job, channel, key, command, encoded) {
     const target = `${channel.url}/${key}`;
     job.secrets = [key, channel.url, target];
-    const args = session.feedId ? ['-hide_banner','-loglevel','warning','-nostdin','-progress','pipe:1','-stats_period','1','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target] : ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0'];
-    if(!session.feedId){appendProgramOutput(args,encoded.args,job.quality,encoded.profile.aspect);args.push('-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target);}
-    const child = this.studio.spawnProcess(command, args, {shell:false, windowsHide:true, stdio:['pipe','pipe','pipe']});
+    const launch=(colorFilter='')=>{
+     const args = session.feedId ? ['-hide_banner','-loglevel','warning','-nostdin','-progress','pipe:1','-stats_period','1','-probesize','1048576','-analyzeduration','1000000','-f','mpegts','-i','pipe:0','-map','0:v:0','-map','0:a:0?','-c','copy','-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target] : ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-progress', 'pipe:1', '-stats_period', '1', '-fflags', '+genpts', '-probesize', '1048576', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0'];
+     if(!session.feedId){const encoding=[...encoded.args],vf=encoding.indexOf('-vf');if(colorFilter){if(vf>=0)encoding[vf+1]=colorFilter+','+encoding[vf+1];else encoding.push('-vf',colorFilter);}appendProgramOutput(args,encoding,job.quality,encoded.profile.aspect);args.push('-rw_timeout','10000000','-flvflags','no_duration_filesize','-f','flv',target);}
+     return this.studio.spawnProcess(command, args, {shell:false, windowsHide:true, stdio:['pipe','pipe','pipe']});
+    };
+    const child = session.feedId?launch():new WebmEncoder(launch);
     job.child = child;
     let progress = '', stderr = '';
     child.stdin.on('error', () => {});

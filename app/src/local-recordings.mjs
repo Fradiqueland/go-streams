@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {AppError,atomicWrite,runProcess,toolsFor} from './core.mjs';
 import {appendProgramOutput} from './program-output.mjs';
+import {WebmEncoder} from './webm-encoder.mjs';
 
 export class LocalRecordings {
  constructor(studio,{clock=true,execute=runProcess}={}){
@@ -51,13 +52,17 @@ export class LocalRecordings {
   // Encode browser input while recording. Finishing only remuxes the index;
   // it never needs to transcode the whole recording after the user presses Stop.
   if(format!=='webm'){
+   const launch=(colorFilter='')=>{
    const args=['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0'];
    const encoding=[...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k'])];
+   if(colorFilter)encoding.push('-vf',colorFilter);
    // Shared capture is already branded by its encoder. Standalone video must
    // apply the same foreground image after the browser's complete composition.
    if(!feedId&&kind==='video')appendProgramOutput(args,encoding);else args.push(...encoding);
    args.push('-f','matroska','-n',path.join(destination,id+'.part'));
-   child=this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});
+   return this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});
+   };
+   child=!feedId&&kind==='video'?new WebmEncoder(launch):launch();
   }
   stream=child?child.stdin:fs.createWriteStream(path.join(destination,id+'.part'),{flags:'wx',mode:0o600});
   record={item,stream,feedId,sequence:0,receiving:false,lastInput:Date.now(),error:null,ownsPart:false};
@@ -87,7 +92,7 @@ export class LocalRecordings {
    const chunks=[];let size=0;for await(const data of req){size+=data.length;if(size>8*1024*1024)throw new AppError('Recording chunk too large.',413);chunks.push(Buffer.from(data));}
    if(!size||record.item.status!=='recording')throw new AppError('Recording ended before this chunk arrived.',409);
    this.checkSpace(this.location(record.item));if(record.error)throw new AppError(record.error,507);
-   await new Promise((resolve,reject)=>record.stream.write(Buffer.concat(chunks),error=>error?reject(new AppError('The recording could not be written.',507)):resolve()));
+   await new Promise((resolve,reject)=>record.stream.write(Buffer.concat(chunks),error=>error?reject(record.item.status!=='recording'||this.active.get(id)!==record?new AppError('Recording has ended.',410):new AppError('The recording could not be written.',507)):resolve()));
    if(record.item.status!=='recording'||this.active.get(id)!==record)throw new AppError('Recording has ended.',410);
    record.item.bytes+=size;record.sequence++;record.lastInput=Date.now();return {ok:true,sequence:record.sequence};
   }finally{clearTimeout(deadline);record.receiving=false;}
@@ -112,6 +117,7 @@ export class LocalRecordings {
      else await new Promise(resolve=>{if(record.stream.closed)return resolve();record.stream.once('close',resolve);record.stream.end();});
      this.active.delete(id);
     }
+    if(record?.child?.recoveryInput?.length&&!fs.existsSync(part)){fs.writeFileSync(part,record.child.recoveryInput,{flag:'wx',mode:0o600});record.ownsPart=true;}
     if(indexFailure)throw indexFailure;
     if(cancelEmpty){
      const info=fs.lstatSync(part,{throwIfNoEntry:false});

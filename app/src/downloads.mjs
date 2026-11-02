@@ -73,7 +73,7 @@ export class Downloads {
     let child;
     try {
       const ffmpeg=toolsFor(settings).ffmpeg;
-      if(path.isAbsolute(ffmpeg))args.push('--ffmpeg-location',path.dirname(ffmpeg));
+      if(path.isAbsolute(ffmpeg))args.push('--ffmpeg-location',ffmpeg);
       args.push('--no-plugin-dirs','--js-runtimes',`node:${process.execPath}`,'--no-remote-components','--',url);
       child = spawnOwnedTool(toolsFor(settings).ytdlp, args, { windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'],env:downloaderEnvironment() },{spawnProcess:this.spawn}); op.child = child;
     }

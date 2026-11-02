@@ -1,5 +1,5 @@
 import {language,localeTag} from './i18n.js';
-import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
 const t=(en,pt)=>language()==='pt-PT'?pt:en;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
@@ -38,11 +38,11 @@ export class RecorderPanel {
    <div class="recorder-grid"><section class="panel recorder-setup"><h2>${t('1. Picture and sound','1. Imagem e som')}</h2><form id="recorder-form">
    <label>${t('Recording mode','Modo de gravação')}<select name="mode"><option value="screen">${t('Screen / window / selected area','Ecrã / janela / área selecionada')}</option><option value="screen-camera">${t('Screen + square camera overlay','Ecrã + câmara em quadrado')}</option><option value="camera">${t('Camera video','Vídeo da câmara')}</option><option value="audio">${t('Audio recorder','Gravador de áudio')}</option></select></label>
    <label>${t('Sound source','Origem do som')}<select name="sound"><option value="microphone">${t('Microphone','Microfone')}</option><option value="system">${t('Computer audio','Áudio do PC')}</option><option value="both">${t('Computer audio + microphone','Áudio do PC + microfone')}</option><option value="none">${t('Video without sound','Vídeo sem som')}</option></select></label>
-   <div class="form-row"><label>${t('Camera','Câmara')}<select name="camera"><option value="">${t('Default camera','Câmara predefinida')}</option></select></label><label>${t('Microphone','Microfone')}<select name="microphone"><option value="">${t('Default microphone','Microfone predefinido')}</option></select></label></div>
+   <div class="form-row"><label>${t('Camera','Câmara')}<select name="camera"><option value="">${t('Default','Predefinido')}</option></select></label><label>${t('Microphone','Microfone')}<select name="microphone"><option value="">${t('Default','Predefinido')}</option></select></label></div>
    <div class="form-row"><label>${t('Maximum quality','Qualidade máxima')}<select name="quality"><option value="1080">1080p</option><option value="720">720p</option></select></label><label>${t('Countdown','Contagem decrescente')}<select name="countdown"><option value="0">${t('No countdown','Sem contagem')}</option><option value="3" selected>3 s</option><option value="5">5 s</option><option value="10">10 s</option></select></label></div>
    <p class="form-hint">${t('Choose a screen, window or tab in the system picker. To capture computer audio, enable audio sharing there. If no audio track is provided, preparation stops so you can choose another source. In audio-only mode, selecting a screen supplies sound; no video is saved.','Escolha o ecrã, janela ou separador no seletor do sistema. Para captar o som do PC, ative aí a partilha de áudio. Se a origem não fornecer som, a preparação para e pode escolher outra. No modo só áudio, a escolha de um ecrã fornece o som; não é guardado vídeo.')}</p>
    <button class="secondary" data-recorder="prepare">${t('Prepare preview','Preparar pré-visualização')}</button></form></section>
-   <section class="panel recorder-preview-panel"><h2>${t('Preview of the saved result','Pré-visualização do resultado guardado')}</h2><div class="recorder-preview-toolbar"><label class="recorder-aspect">${t('Output aspect ratio','Proporção do vídeo')}<select name="aspect">${recordingAspects.map(value=>`<option value="${value}">${value==='original'?t('Original (selected area)','Original (área selecionada)'):value}</option>`).join('')}</select></label><output class="recorder-frame-size"></output><div class="recorder-record-actions"><button class="primary" data-recorder="start" disabled>${t('Start recording','Iniciar gravação')}</button><button class="danger" data-recorder="stop" disabled>${t('Stop and save','Parar e guardar')}</button><button class="secondary" data-recorder="cancel" hidden>${t('Cancel countdown','Cancelar contagem')}</button><output class="recorder-countdown-inline" role="status" hidden></output><output class="recorder-elapsed" aria-live="off">00:00:00</output></div></div><div class="recorder-stage"><video class="recorder-preview" autoplay muted playsinline></video><div class="recorder-camera-box" tabindex="0" role="group" aria-label="${t('Move camera with arrow keys. Resize using the slider.','Mova a câmara com as setas. Use o controlo de tamanho para redimensionar.')}" hidden><span>${t('Drag camera','Arrastar câmara')}</span><button type="button" data-recorder="resize-camera" aria-label="${t('Drag to resize camera','Arraste para redimensionar a câmara')}">↘</button></div><img class="recorder-watermark" src="/program.png" alt="" aria-hidden="true" hidden><div class="recorder-countdown" role="status" hidden></div><div class="recorder-audio-only" hidden>${t('Audio only — no video is saved','Só áudio — não é guardado vídeo')}<meter min="0" max="1" value="0" aria-label="${t('Audio level','Nível de áudio')}"></meter></div></div>
+   <section class="panel recorder-preview-panel"><h2>${t('Preview of the saved result','Pré-visualização do resultado guardado')}</h2><div class="recorder-preview-toolbar"><label class="recorder-aspect">${t('Output aspect ratio','Proporção do vídeo')}<select name="aspect">${recordingAspects.map(value=>`<option value="${value}">${value==='original'?t('Original','Original'):value}</option>`).join('')}</select></label><output class="recorder-frame-size"></output><div class="recorder-record-actions"><button class="primary" data-recorder="start" disabled>${t('Start recording','Iniciar gravação')}</button><button class="danger" data-recorder="stop" disabled>${t('Stop and save','Parar e guardar')}</button><button class="secondary" data-recorder="cancel" hidden>${t('Cancel countdown','Cancelar contagem')}</button><output class="recorder-countdown-inline" role="status" hidden></output><output class="recorder-elapsed" aria-live="off">00:00:00</output></div></div><div class="recorder-stage"><video class="recorder-preview" autoplay muted playsinline></video><div class="recorder-camera-box" tabindex="0" role="group" aria-label="${t('Move camera with arrow keys. Resize using the slider.','Mova a câmara com as setas. Use o controlo de tamanho para redimensionar.')}" hidden><span>${t('Drag camera','Arrastar câmara')}</span><button type="button" data-recorder="resize-camera" aria-label="${t('Drag to resize camera','Arraste para redimensionar a câmara')}">↘</button></div><img class="recorder-watermark" src="/program.png" alt="" aria-hidden="true" hidden><div class="recorder-countdown" role="status" hidden></div><div class="recorder-audio-only" hidden>${t('Audio only — no video is saved','Só áudio — não é guardado vídeo')}<meter min="0" max="1" value="0" aria-label="${t('Audio level','Nível de áudio')}"></meter></div></div>
    <p class="form-hint recorder-aspect-hint">${t('Screen content keeps its proportions, with dark bars when needed. Camera video fills the frame.','O ecrã mantém as proporções, com barras escuras quando necessário. O vídeo da câmara preenche o enquadramento.')}</p><p class="recorder-status" role="status">${t('Devices are off. Prepare a preview first.','Os dispositivos estão desligados. Prepare primeiro a pré-visualização.')}</p><div class="actions"><button class="secondary" data-recorder="release" disabled>${t('Close preview and release devices','Fechar pré-visualização e libertar dispositivos')}</button></div>
    <div class="recorder-camera-controls" hidden><label>${t('Camera size','Tamanho da câmara')}<input name="cameraSize" type="range" min="10" max="65" value="28"></label><div class="form-row"><label>${t('Camera horizontal position (%)','Posição horizontal da câmara (%)')}<input name="cameraX" type="number" min="0" max="100" value="96"></label><label>${t('Camera vertical position (%)','Posição vertical da câmara (%)')}<input name="cameraY" type="number" min="0" max="100" value="96"></label></div><p class="form-hint">${t('Drag the square on the preview; drag its lower-right handle to resize. These controls are not included in the saved video.','Arraste o quadrado na pré-visualização; use o canto inferior direito para redimensionar. Estes controlos não aparecem no vídeo guardado.')}</p></div></section></div>
    <section class="panel recorder-region" hidden><h2>${t('Select the screen area to record','Escolher a área do ecrã a gravar')}</h2><p>${t('Drag a rectangle over the source below, or enter percentages. Only that area appears in the result above. Choose the area before starting.','Arraste um retângulo na origem abaixo ou introduza percentagens. Só essa área aparece no resultado acima. Escolha a área antes de iniciar.')}</p><div class="recorder-source-stage"><video class="recorder-source" autoplay muted playsinline></video><div class="recorder-crop-box"></div></div><div class="recorder-crop-fields">${[['x','Left (%)','Esquerda (%)',0],['y','Top (%)','Topo (%)',0],['width','Width (%)','Largura (%)',100],['height','Height (%)','Altura (%)',100]].map(([name,en,pt,value])=>`<label>${t(en,pt)}<input name="crop-${name}" type="number" min="${['width','height'].includes(name)?5:0}" max="100" step="1" value="${value}"></label>`).join('')}<button class="secondary" data-recorder="full-area">${t('Use full source','Usar origem completa')}</button></div></section>
@@ -77,13 +77,14 @@ export class RecorderPanel {
  }
  status(message){this.$('.recorder-status').textContent=message;}
  error(error){this.status(error.message);this.toast(error.message,true);}
+ recordingFailed(error){this.recordingError ||= error;this.error(error);void this.stop().catch(()=>{});}
  applyPreferences(preferences){this.$('[name="directory"]').value=preferences.directory;this.$('[name="askFolder"]').checked=preferences.askEveryTime;}
  update(state={}){
   if(!this.element)return;
-  if(state.recordingPreferences){this.preferences={...state.recordingPreferences};if(!this.folderDirty&&!this.folderBusy&&!this.starting&&!this.id)this.applyPreferences(this.preferences);}
+  if(state.recordingPreferences&&(state.recordingPreferences.revision||0)>=(this.preferences.revision||0)){this.preferences={...state.recordingPreferences};if(!this.folderDirty&&!this.folderBusy&&!this.starting&&!this.id)this.applyPreferences(this.preferences);}
   if(state.recordings){
    const signature=JSON.stringify(state.recordings);if(signature!==this.filesSignature){this.filesSignature=signature;this.$('.recorder-files').innerHTML=state.recordings.slice(0,20).map(item=>`<div class="recorder-file"><strong>${item.kind==='audio'?t('Audio','Áudio'):t('Video','Vídeo')} · ${esc(new Date(item.created).toLocaleString(localeTag()))} · ${esc(item.format||'webm')}</strong><p>${item.status==='completed'?`<a href="/api/recordings/${esc(item.id)}/file">${t('Download','Transferir')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-recorder="recover" data-id="${esc(item.id)}">${t('Recover recording','Recuperar gravação')}</button>`:esc(item.status)}</p><small>${esc(item.directory||this.preferences.directory)} / ${esc(item.id)}.${esc(item.format||'webm')}</small></div>`).join('')||`<p>${t('No recordings yet.','Ainda não existem gravações.')}</p>`;}
-   const own=state.recordings.find(item=>item.id===this.id);if(own&&!this.finishing&&!this.starting&&['completed','interrupted'].includes(own.status)){this.error(Error(own.error||t('Recording ended.','A gravação terminou.')));void this.stop().catch(()=>{});}
+   const own=state.recordings.find(item=>item.id===this.id);if(own&&!this.finishing&&!this.starting&&['completed','interrupted'].includes(own.status))this.recordingFailed(Error(own.error||t('Recording ended.','A gravação terminou.')));
   }
   this.controls();
  }
@@ -118,7 +119,7 @@ export class RecorderPanel {
  }
  async saveFolder(){
   if(this.folderBusy||this.id||this.starting)return;this.folderBusy=true;this.controls();
-  try{this.preferences=await this.api('/api/recordings/preferences',{directory:this.$('[name="directory"]').value,askEveryTime:this.$('[name="askFolder"]').checked},'PUT');this.folderDirty=false;this.applyPreferences(this.preferences);this.toast(t('Default recording folder saved.','Pasta de gravação predefinida guardada.'));}
+  try{const saved=await this.api('/api/recordings/preferences',{directory:this.$('[name="directory"]').value,askEveryTime:this.$('[name="askFolder"]').checked},'PUT');if((saved.revision||0)>=(this.preferences.revision||0))this.preferences=saved;this.folderDirty=false;this.applyPreferences(this.preferences);this.toast(t('Default recording folder saved.','Pasta de gravação predefinida guardada.'));}
   finally{this.folderBusy=false;this.controls();}
  }
  async prepare(){
@@ -141,7 +142,12 @@ export class RecorderPanel {
    if(!current())throw Error('Preview cancelled');
    const video=async stream=>{if(!stream?.getVideoTracks().length)return null;const v=document.createElement('video');v.muted=true;v.playsInline=true;v.srcObject=stream;this.videoElements||=[];this.videoElements.push(v);await v.play();if(!current())throw Error('Preview cancelled');return v;};
    this.screenVideo=await video(this.screen);this.cameraVideo=await video(this.device);
+   this.captureMimeType=(mode==='audio'?['audio/webm;codecs=opus','audio/webm']:['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']).find(type=>MediaRecorder.isTypeSupported(type));
+   if(!this.captureMimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
    this.crop=cropRect();this.canvas=document.createElement('canvas');this.resizeCanvas();this.syncCrop();
+   // VP8 cannot signal later frame color changes. Keep its canvas on the
+   // software sRGB path so GPU/CPU readback cannot change range mid-recording.
+   if(mode!=='audio'&&!this.captureMimeType.includes('vp9'))this.canvas.getContext('2d',{colorSpace:'srgb',willReadFrequently:true});
    if(mode!=='audio'){
     this.draw();this.drawTimer=setInterval(()=>this.draw(),1000/30);
     this.$('.recorder-source').srcObject=this.screen||null;
@@ -164,7 +170,7 @@ export class RecorderPanel {
  }
  async listDevices(generation){
   const request=this.deviceListRequest=(this.deviceListRequest||0)+1;
-  try{const devices=await navigator.mediaDevices.enumerateDevices();if(generation!==this.generation||request!==this.deviceListRequest)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const el=this.$(`[name="${name}"]`),previous=el.value,available=devices.filter(d=>d.kind===kind);el.innerHTML=`<option value="">${t('Default device','Dispositivo predefinido')}</option>`+available.map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||d.kind)}</option>`).join('');el.value=available.some(d=>d.deviceId===previous)?previous:'';}}
+  try{const devices=await navigator.mediaDevices.enumerateDevices();if(generation!==this.generation||request!==this.deviceListRequest)return;for(const [name,kind]of [['camera','videoinput'],['microphone','audioinput']]){const el=this.$(`[name="${name}"]`),previous=el.value,available=devices.filter(d=>d.kind===kind);el.innerHTML=`<option value="">${t('Default','Predefinido')}</option>`+available.map(d=>`<option value="${esc(d.deviceId)}">${esc(d.label||d.kind)}</option>`).join('');el.value=available.some(d=>d.deviceId===previous)?previous:'';}}
   catch{}
  }
  changeAspect(value){
@@ -206,26 +212,26 @@ export class RecorderPanel {
  }
  moveCamera(event){
   if(!this.output||event.button!==0)return;const b=containedRect(this.$('.recorder-stage').getBoundingClientRect(),this.canvas.width,this.canvas.height),r=cameraRect(this.cameraPosition,b.width,b.height),start={...this.cameraPosition},resize=Boolean(event.target.closest('[data-recorder="resize-camera"]'));
-  this.pointerSession(event,e=>{const dx=e.clientX-event.clientX,dy=e.clientY-event.clientY;if(resize)this.cameraPosition.size=Math.max(.1,Math.min(.65,start.size+Math.max(dx,dy)/Math.min(b.width,b.height)));else{this.cameraPosition.x=Math.max(0,Math.min(1,start.x+dx/Math.max(1,b.width-r.width)));this.cameraPosition.y=Math.max(0,Math.min(1,start.y+dy/Math.max(1,b.height-r.height)));}this.syncCamera();});
+  this.pointerSession(event,e=>{if(!this.output)return;const dx=e.clientX-event.clientX,dy=e.clientY-event.clientY;if(resize)this.cameraPosition=resizedCameraPosition(start,b.width,b.height,dx,dy);else{this.cameraPosition.x=Math.max(0,Math.min(1,start.x+dx/Math.max(1,b.width-r.width)));this.cameraPosition.y=Math.max(0,Math.min(1,start.y+dy/Math.max(1,b.height-r.height)));}this.syncCamera();});
  }
  async start(){
   if(!this.output||this.id||this.starting||this.finishing||this.folderBusy)return;
-  this.starting=true;const generation=this.generation;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.controls();this.countdownAbort=new AbortController();
+  this.starting=true;this.recordingError=null;const generation=this.generation;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.controls();this.countdownAbort=new AbortController();
   try{
    let directory=this.$('[name="directory"]').value;if(this.$('[name="askFolder"]').checked||!directory){directory=await this.chooseFolder();if(directory===null)return;}
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output)return;
    // VP9 carries the canvas color range/matrix in its bitstream. Native VP8
    // decoders can replace full-range WebM metadata with limited-range defaults.
-   const audio=this.config.mode==='audio',mimeType=(audio?['audio/webm;codecs=opus','audio/webm']:['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']).find(type=>MediaRecorder.isTypeSupported(type));
+   const audio=this.config.mode==='audio',mimeType=this.captureMimeType||(audio?['audio/webm;codecs=opus','audio/webm']:['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']).find(type=>MediaRecorder.isTypeSupported(type));
    if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
    const recorder=new MediaRecorder(this.output,{mimeType,...(audio?{}:{videoBitsPerSecond:4500000}),audioBitsPerSecond:192000});
    const ready=await countdown(this.config.countdown,value=>{this.$('.recorder-countdown').hidden=value===null;this.$('.recorder-countdown').textContent=value??'';this.$('.recorder-countdown-inline').hidden=value===null;this.$('.recorder-countdown-inline').textContent=value===null?'':t('Recording starts in ','A gravação começa em ')+value+' s';},this.countdownAbort.signal);
    if(!ready||generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){this.status(t('Countdown cancelled. No recording was started.','Contagem cancelada. Não foi iniciada nenhuma gravação.'));return;}
    const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4'});
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{discardEmpty:true}).catch(()=>{});return;}
-   this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>{this.error(error);void this.stop().catch(()=>{});});
+   this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>this.recordingFailed(error));
    const upload=this.upload;this.recorderStarted=false;
-   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>{this.error(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.')));void this.stop().catch(()=>{});});
+   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',resolve,{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>this.recordingFailed(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
    recorder.start(500);this.recorderStarted=true;this.startedAt=Date.now();this.$('.recorder-elapsed').textContent=elapsed(0);this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
    this.status(t('Recording to: ','A gravar para: ')+directory+' / '+id+(audio?'.m4a':'.mp4'));
   }catch(error){if(this.id)await this.stopWriter().catch(()=>{});this.error(error);}
@@ -237,18 +243,18 @@ export class RecorderPanel {
   // Drain that last event even when stop() is no longer necessary.
   if(this.recorderStarted){if(this.recorder.state!=='inactive')this.recorder.stop();await this.recorderDone;}
   let uploadError;try{await this.upload?.finish();}catch(error){uploadError=error;}
-  try{await this.api(`/api/recordings/${id}/finish`,{});if(uploadError)throw uploadError;this.status(t('Recording saved locally.','Gravação guardada localmente.'));}
-  finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;}
+  try{await this.api(`/api/recordings/${id}/finish`,{});if(uploadError||this.recordingError)throw uploadError||this.recordingError;this.status(t('Recording saved locally.','Gravação guardada localmente.'));}
+  finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;this.recordingError=null;}
  }
  async stop(){
   if(this.stopDone)return this.stopDone;
   if(this.starting){this.countdownAbort?.abort();await this.startDone;}
   if(this.stopDone)return this.stopDone;
   if(!this.id)return;this.finishing=true;this.controls();this.status(t('Saving recording…','A guardar a gravação…'));
-  this.stopDone=(async()=>{try{await this.stopWriter();await this.reloadFiles();}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
+  this.stopDone=(async()=>{try{await this.stopWriter();await this.reloadFiles();}catch(error){this.status(error.message);throw error;}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
  }
  async reloadFiles(){const state=await this.api('/api/state');this.update(state);}
- async recover(id){await this.api(`/api/recordings/${id}/finish`,{});await this.reloadFiles();this.toast(t('Recording recovered.','Gravação recuperada.'));}
+ async recover(id){await this.api(`/api/recordings/${id}/finish`,{});await this.reloadFiles();const message=t('Recording recovered.','Gravação recuperada.');this.status(message);this.toast(message);}
  releaseDevices(){
   clearInterval(this.drawTimer);clearInterval(this.meterTimer);clearInterval(this.elapsedTimer);
   for(const stream of [...this.streams,...(this.output?[this.output]:[])])for(const track of stream.getTracks())track.stop();
@@ -258,6 +264,7 @@ export class RecorderPanel {
  async release(){
   if(this.releaseDone)return this.releaseDone;
   this.generation++;this.countdownAbort?.abort();
-  this.releaseDone=(async()=>{try{await this.stop();}finally{this.releaseDevices();this.preparing=false;this.releaseDone=null;this.controls();this.status(t('Devices are off.','Os dispositivos estão desligados.'));}})();return this.releaseDone;
+  if(!this.id){this.releaseDevices();this.controls();}
+  this.releaseDone=(async()=>{let failure;try{await this.stop();}catch(error){failure=error;throw error;}finally{this.releaseDevices();this.preparing=false;this.releaseDone=null;this.controls();this.status(failure?failure.message:t('Devices are off.','Os dispositivos estão desligados.'));}})();return this.releaseDone;
  }
 }

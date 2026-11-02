@@ -23,7 +23,7 @@ export class ChatAuth {
   }
   if(this.data.accounts.Twitch){this.data.accounts.Twitch.validated=0;this.scheduleValidation(0);}
  }
- save(){if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);atomicWrite(this.file,JSON.stringify({version:1,secret:this.studio.vault.encrypt(JSON.stringify(this.data))}));}
+ save(data=this.data){if(this.controller.signal.aborted)throw new AppError('The studio is closing.',409);atomicWrite(this.file,JSON.stringify({version:1,secret:this.studio.vault.encrypt(JSON.stringify(data))}));}
  async http(url,options={}){
   if(!ORIGINS.has(new URL(url).origin))throw new AppError('Chat service address rejected.');
   const task=(async()=>{
@@ -57,7 +57,10 @@ export class ChatAuth {
   if(old.clientId&&old.clientId!==clientId&&this.data.accounts[provider])throw new AppError('Disconnect the account before changing its application ID.',409);
   const clientSecret=input.clientSecret===undefined||input.clientSecret===''?(old.clientId===clientId?old.clientSecret||'':''):input.clientSecret;
   if(typeof clientSecret!=='string'||clientSecret.length>500||/[\x00-\x20]/.test(clientSecret))throw new AppError('Invalid OAuth application secret.');
-  this.cancel(provider);this.versions[provider]++;this.data.settings[provider]={clientId,clientSecret};this.save();return this.state();
+  const next={...this.data,settings:{...this.data.settings,[provider]:{clientId,clientSecret}}};
+  // A rejected disk write must not replace the active OAuth configuration or
+  // cancel a sign-in that still uses the previously saved settings.
+  this.save(next);this.data=next;this.cancel(provider);this.versions[provider]++;return this.state();
  }
  async begin(provider){
   const setup=this.data.settings[provider];if(!setup?.clientId)throw new AppError('Configure the registered OAuth application first.');
@@ -120,7 +123,12 @@ export class ChatAuth {
   }
   const old=this.data.accounts[provider];
   if(this.versions[provider]!==version||this.controller.signal.aborted)throw new AppError('Authorization was cancelled.',409);
-  this.data.accounts[provider]={id,name,accessToken,refreshToken:refreshToken||(old?.id===id?old.refreshToken||'':''),expires,validated:Date.now()};this.save();
+  const account={id,name,accessToken,refreshToken:refreshToken||(old?.id===id?old.refreshToken||'':''),expires,validated:Date.now()};
+  const next={...this.data,accounts:{...this.data.accounts,[provider]:account}};
+  // Publish the identity only after it is durable. These synchronous steps
+  // leave no opportunity for a pending reply to observe a new identity with
+  // the old authorization generation when persistence fails.
+  this.save(next);this.data=next;
   if(old&&old.id!==id){this.versions[provider]++;this.onSessionEnd(provider);}
   if(provider==='Twitch')this.scheduleValidation();
  }
@@ -149,7 +157,9 @@ export class ChatAuth {
   delete this.data.accounts[provider];
   // Keep the one-time state of a replacement sign-in while ending its old session.
   if(this.pending.get(provider)?.version!==version)this.versions[provider]++;
-  this.save();this.onSessionEnd(provider);
+  // Revocation must close existing sockets even if the disk cannot record it.
+  // Keep the rejected credentials removed in this running session.
+  try{this.save();}finally{this.onSessionEnd(provider);}
  }
  scheduleValidation(delay=3600000){
   clearTimeout(this.validationTimer);this.validationTimer=null;

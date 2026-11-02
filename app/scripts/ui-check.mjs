@@ -15,8 +15,11 @@ const base = path.resolve(process.env.GO_STREAMS_UI_OUTPUT||'.tmp/ui-check'); fs
 const directory = fs.mkdtempSync(path.join(base, 'data-'));
 const clip = path.join(directory, 'Ensaio de emissão.mp4');
 await runProcess('ffmpeg', ['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-ac','2','-y',clip]);
-let folderPickerWait,chatSetupWait;
-const app = await createApplication({ directory, port: 4317, listen: false, clock: false,folderPicker:async()=>{if(folderPickerWait)await folderPickerWait;return path.join(directory,'Chosen recordings');} });
+let folderPickerWait,chatSetupWait,projectExportResponse;
+const app = await createApplication({ directory, port: 0, listen: true, clock: false,folderPicker:async()=>{if(folderPickerWait)await folderPickerWait;return path.join(directory,'Chosen recordings');} });
+// Browser-managed downloads can bypass Playwright routing. Keep the real local
+// HTTP endpoint available and inspect its actual response without replacing it.
+app.server.prependListener('request',(req,res)=>{if(new URL(req.url,app.base).pathname==='/api/export')res.once('finish',()=>{projectExportResponse={status:res.statusCode,type:String(res.getHeader('content-type')||''),disposition:String(res.getHeader('content-disposition')||'')};});});
 let context;
 const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const started=new Date().toISOString(),screenshots=[];let passed=false,failure='';
@@ -29,6 +32,7 @@ try {
     if (!request.url().startsWith(app.base + '/')) return route.abort();
     if(chatSetupWait&&request.url()===app.base+'/api/chat/settings')await chatSetupWait;
     const response = await dispatch(app, request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+    if(request.url()===app.base+'/api/export')projectExportResponse={status:response.status,type:response.headers.get('content-type'),disposition:response.headers.get('content-disposition')};
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: response.body });
   });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
@@ -189,6 +193,18 @@ try {
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.store.data.schedules.length,2);checks++;
   await goTo('Definições');
+  const protectedChannel=app.store.data.channels[0].secret;
+  const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click()]);
+  const exportFailure=await projectDownload.failure();assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'go-streams-project.json');
+  assert.equal(projectExportResponse.status,200);assert.match(projectExportResponse.type,/^application\/json(?:;|$)/);assert.match(projectExportResponse.disposition,/attachment;.*go-streams-project\.json/);
+  const projectStream=await projectDownload.createReadStream();assert.ok(projectStream);const projectChunks=[];for await(const chunk of projectStream)projectChunks.push(chunk);
+  const projectText=Buffer.concat(projectChunks).toString('utf8'),project=JSON.parse(projectText);assert.equal(project.version,1);assert.ok(Number.isFinite(Date.parse(project.exported)));
+  assert.equal(project.channels.find(channel=>channel.id===app.store.data.channels[0].id)?.name,'Canal de ensaio');assert.equal(project.media.length,1);assert.equal(project.playlists[0].mediaIds.length,2);assert.equal(project.schedules.length,2);assert.ok(project.schedules.every(schedule=>schedule.armed===false));
+  assert.ok(!projectText.includes('LOCAL-UI-TEST-SECRET'));assert.ok(!projectText.includes(protectedChannel));assert.ok(project.channels.every(channel=>!Object.hasOwn(channel,'key')&&!Object.hasOwn(channel,'secret')&&!Object.hasOwn(channel,'hasKey')));assert.equal(app.store.data.channels[0].secret,protectedChannel);checks++;
+  const copyCheckbox=page.locator('#encoding-form [name=copy]'),copyChecked=await copyCheckbox.isChecked(),copyInfo=await infoFor(copyCheckbox);assert.equal(await copyCheckbox.isEnabled(),true);
+  await copyInfo.click();await help.waitFor({state:'visible'});assert.equal(await copyCheckbox.isChecked(),copyChecked);
+  await copyInfo.focus();await page.keyboard.press('Enter');await help.waitFor({state:'hidden'});assert.equal(await copyCheckbox.isChecked(),copyChecked);
+  await page.keyboard.press('Space');await help.waitFor({state:'visible'});assert.equal(await copyCheckbox.isChecked(),copyChecked);await page.keyboard.press('Escape');checks++;
   await page.locator('#notification-form [name=host]').fill('smtp.unsaved.example');
   await page.locator('#encoding-form [name=videoBitrate]').selectOption('1000');
   await page.getByRole('button',{name:'Guardar perfil',exact:true}).click();
@@ -362,7 +378,7 @@ try {
   }finally{await blockedPage.close();}
   assert.deepEqual(errors, []);
   passed=true;
-  console.log(JSON.stringify({ version, checks, pageErrors: errors, screenshots: base, transport: 'Production HTTP handler via Playwright route; no network sockets', vault: process.platform==='win32'?'Windows DPAPI':'Chave local privada' }));
+   console.log(JSON.stringify({ version, checks, pageErrors: errors, screenshots: base, transport: 'Production HTTP handler via Playwright route and native loopback downloads', vault: process.platform==='win32'?'Windows DPAPI':'Chave local privada' }));
 } catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);throw error;}
 finally {
   const cleanup=[];
@@ -371,7 +387,7 @@ finally {
     try{await close();}catch(error){ok=false;cleanup.push(error);}
     finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
   }
-  const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route; no network sockets'};
+   const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');
 }

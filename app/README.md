@@ -1,8 +1,16 @@
-# Go Streams 1.1.2
+# Go Streams 1.1.3
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Recuperação e persistência (1.1.3)
+
+A captura VP8 preserva os metadados explícitos de gama e matriz de cores antes da codificação, nas gravações e nas fontes de direto partilhadas ou diretas. A leitura limitada do cabeçalho WebM aceita envios fragmentados. Os dois painéis preferem VP9; a alternativa VP8 usa um canvas sRGB por software para manter as cores consistentes durante a gravação. O teste de navegador repete a alternativa VP8 e compara as cores do vídeo descodificado. O processamento de áudio mantém-se.
+
+Cancelar um início de gravação pendente desliga imediatamente os dispositivos da pré-visualização. Os erros de envio ou finalização permanecem visíveis, a recuperação bem-sucedida atualiza o estado e as respostas antigas não repõem uma pasta predefinida desatualizada. A câmara pode ser reduzida arrastando o canto horizontal ou verticalmente, mantendo fixo o canto superior esquerdo.
+
+A informação fecha quando o respetivo campo é ocultado. Editar um canal ou playlist removido não abre um formulário de criação. As configurações OAuth e contas substitutas só entram em uso depois de serem guardadas; revogar uma conta encerra o chat mesmo quando o disco falha. O downloader conserva o caminho completo do FFmpeg personalizado. Os testes de navegador incluem falhas controladas, recuperação, transferência real de ficheiros e nova gravação após erro.
 
 ## Proporções do gravador e ajuda por clique (1.1.2)
 

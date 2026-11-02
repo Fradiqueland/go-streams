@@ -179,7 +179,7 @@ export function helpFor(control){
  if('remove' in d)return uiText('Remove this occurrence from the playlist. The library video is kept. Save to apply.','Retire esta ocorrência da playlist. O vídeo fica na biblioteca. Guarde para aplicar.');
  const id=control.id||'',name=control.name||'';
  if(control.closest?.('.recorder-studio')){
-  const recorderFields={mode:['Choose screen, screen with camera, camera video or audio only.','Escolha ecrã, ecrã com câmara, vídeo da câmara ou apenas áudio.'],sound:['Choose microphone, computer sound, both, or silent video. Computer sound needs an audio-capable shared source.','Escolha microfone, som do computador, ambos ou vídeo sem som. O som do computador exige uma origem partilhada com áudio.'],aspect:['Choose the saved video shape before recording. Screen content fits without distortion; camera video fills the frame.','Escolha a proporção do vídeo antes de gravar. O ecrã ajusta-se sem distorção; o vídeo da câmara preenche a imagem.'],countdown:['Choose the delay before local recording starts. You can cancel before recording begins.','Escolha o intervalo antes de iniciar a gravação local. Pode cancelar antes de começar a gravar.'],directory:['The recording is written directly to this folder. Save it as default to reuse it later.','A gravação é escrita diretamente nesta pasta. Guarde como predefinição para a reutilizar.'],askFolder:['Ask where to save before each recording. Turn this off to use the displayed folder.','Pergunte onde guardar antes de cada gravação. Desative para usar a pasta apresentada.'],cameraSize:['Adjust the size of the square camera overlay. The overlay stays within the saved picture.','Ajuste o tamanho do quadrado da câmara. O quadrado permanece dentro da imagem gravada.'],cameraX:['Move the camera square horizontally within the recorded picture.','Mova o quadrado da câmara na horizontal dentro da imagem gravada.'],cameraY:['Move the camera square vertically within the recorded picture.','Mova o quadrado da câmara na vertical dentro da imagem gravada.']};
+  const recorderFields={mode:['Choose screen, screen with camera, camera video or audio only.','Escolha ecrã, ecrã com câmara, vídeo da câmara ou apenas áudio.'],sound:['Choose microphone, computer sound, both, or silent video. Computer sound needs an audio-capable shared source.','Escolha microfone, som do computador, ambos ou vídeo sem som. O som do computador exige uma origem partilhada com áudio.'],aspect:['Choose the saved video shape before recording. Original follows the source or selected area\'s proportions. Screen content fits without distortion; camera video fills the frame.','Escolha a proporção do vídeo antes de gravar. Original segue as proporções da origem ou da área selecionada. O ecrã ajusta-se sem distorção; o vídeo da câmara preenche a imagem.'],countdown:['Choose the delay before local recording starts. You can cancel before recording begins.','Escolha o intervalo antes de iniciar a gravação local. Pode cancelar antes de começar a gravar.'],directory:['The recording is written directly to this folder. Save it as default to reuse it later.','A gravação é escrita diretamente nesta pasta. Guarde como predefinição para a reutilizar.'],askFolder:['Ask where to save before each recording. Turn this off to use the displayed folder.','Pergunte onde guardar antes de cada gravação. Desative para usar a pasta apresentada.'],cameraSize:['Adjust the size of the square camera overlay. The overlay stays within the saved picture.','Ajuste o tamanho do quadrado da câmara. O quadrado permanece dentro da imagem gravada.'],cameraX:['Move the camera square horizontally within the recorded picture.','Mova o quadrado da câmara na horizontal dentro da imagem gravada.'],cameraY:['Move the camera square vertically within the recorded picture.','Mova o quadrado da câmara na vertical dentro da imagem gravada.']};
   if(recorderFields[name])return say(recorderFields[name]);
   if(name.startsWith('crop-'))return uiText('Set the selected screen region as a percentage of the source. Adjust it before starting the recording.','Defina a região selecionada em percentagem da origem. Ajuste-a antes de iniciar a gravação.');
  }
@@ -233,6 +233,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
   return copy.textContent.replace(/\s+/g,' ').trim();
  };
  const controlLabel=control=>control.getAttribute('aria-label')||[...(control.labels||[])].map(labelText).join(' ')||control.dataset.helpTitle||(['BUTTON','A','SUMMARY'].includes(control.tagName)?labelText(control):'')||control.name||uiText('this option','esta opção');
+ const visible=control=>control.isConnected&&!control.hidden&&(!control.getClientRects||control.getClientRects().length>0);
  function describe(element,include){
   const ids=new Set((element.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));if(include)ids.add(tip.id);else ids.delete(tip.id);
   if(ids.size)element.setAttribute('aria-describedby',[...ids].join(' '));else element.removeAttribute('aria-describedby');
@@ -245,7 +246,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
   active=null;
  }
  function show(control){
-  const content=helpFor(control),icon=entries.get(control)?.icon;if(!content||!control.isConnected||!icon)return;
+  const content=helpFor(control),icon=entries.get(control)?.icon;if(!content||!visible(control)||!icon)return;
   if(active===control&&!tip.hidden){if(content!==tip.textContent){tip.textContent=content;position();}return;}
   hide();active=control;
   const parent=control.closest('dialog[open]')||doc.body;if(tip.parentNode!==parent)parent.appendChild(tip);
@@ -290,7 +291,7 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
     entry.icon.setAttribute('aria-label',uiText('Information: ','Informação: ')+controlLabel(control));
     const hidden=Boolean(control.hidden);if(entry.icon.hidden!==hidden)entry.icon.hidden=hidden;if(entry.wrapper&&entry.wrapper.hidden!==hidden)entry.wrapper.hidden=hidden;
    }
-   if(active){if(!active.isConnected||active.hidden)hide();else show(active);}
+   if(active){if(!visible(active))hide();else show(active);}
   }finally{refreshing=false;}
  }
  const target=event=>event.target?.closest?.('.control-info');
@@ -305,6 +306,6 @@ export function installContextHelp(doc=globalThis.document,win=globalThis.window
  // A click may be followed by a delayed scroll event from bringing its icon
  // into view. Keep explicitly opened information visible and track its anchor.
  doc.addEventListener('close',hide,true);doc.addEventListener('scroll',event=>{if(!tip.contains(event.target))position();},true);win.addEventListener('resize',hide);win.addEventListener('blur',hide);
- const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(refresh):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','title','data-help']});
+ const observer=typeof win.MutationObserver==='function'?new win.MutationObserver(refresh):null;observer?.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','open','title','data-help']});
  const installed={hide,tip,refresh,sourceFor:icon=>sources.get(icon),infoFor:control=>entries.get(control)?.icon,restoreFocus(control,wasReading=false,asInfo=false){hide();refresh();const target=asInfo?entries.get(control)?.icon:control;target?.focus({preventScroll:true});if(asInfo&&wasReading)show(control);},isReading:()=>Boolean(active&&!tip.hidden)};installations.set(doc,installed);refresh();return installed;
 }

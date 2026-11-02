@@ -52,3 +52,16 @@ test('a confirmed SMTP save clears the typed secret even when refreshing state f
  assert.equal(h.run("settingsDrafts.get('notification-form').find(field=>field.name==='host').value"),'smtp.example.test');
  assert.match(h.element('#toast').textContent,/Settings saved/);
 });
+
+for(const [action,label]of [['channel-edit',/no longer available/],['playlist-edit',/Playlist unavailable/]])test('a stale '+action+' button cannot silently become a new-item form',async()=>{
+ const h=uiHarness({locale:'en',fetch:async()=>ok(empty())});
+ // Static lists can still show an entry after another window removes it and
+ // a background poll has applied the newer state without repainting the list.
+ h.run("state.channels=[];state.playlists=[]");await h.click(action,'removed-id');
+ assert.equal(h.element('#dialog').open,false);assert.equal(h.element('#dialog-content').innerHTML,'');assert.equal(h.requests.length,0);assert.match(h.element('#toast').textContent,label);
+});
+
+test('explicit new channel and playlist actions still open their creation forms',async()=>{
+ const h=uiHarness({locale:'en'});await h.click('channel-new');assert.equal(h.element('#dialog').open,true);assert.match(h.element('#dialog-content').innerHTML,/Add channel/);
+ h.element('#dialog').close();await h.click('playlist-new');assert.equal(h.element('#dialog').open,true);assert.match(h.element('#dialog-content').innerHTML,/New playlist/);
+});

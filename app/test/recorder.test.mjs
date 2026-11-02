@@ -92,6 +92,74 @@ test('camera numeric controls normalize values to the position actually drawn',(
  assert.deepEqual(cameraPosition({x:NaN,y:Infinity,size:-2}),{x:0,y:0,size:.1});
 });
 
+test('camera corner resizing follows horizontal and vertical drags without moving its top-left anchor',()=>{
+ const panel=new RecorderPanel({api(){},toast(){}});let move;const box={left:0,top:0,width:1000,height:600};
+ panel.output={};panel.canvas={width:1000,height:600};panel.$=()=>({getBoundingClientRect:()=>box});panel.syncCamera=()=>{};panel.pointerSession=(_event,callback)=>{move=callback;};
+ const begin=()=>{panel.cameraPosition={x:.2,y:.25,size:.3};panel.moveCamera({button:0,clientX:300,clientY:200,target:{closest:()=>true}});return cameraRect(panel.cameraPosition,1000,600);};
+ for(const [dx,dy,side]of [[80,0,260],[-50,0,130],[0,-70,110],[2000,2000,390]]){const before=begin();move({clientX:300+dx,clientY:200+dy});const after=cameraRect(panel.cameraPosition,1000,600);assert.ok(Math.abs(after.width-side)<1e-9);assert.ok(Math.abs(after.x-before.x)<1e-9);assert.ok(Math.abs(after.y-before.y)<1e-9);assert.ok(after.x+after.width<=1000&&after.y+after.height<=600);}
+});
+
+test('closing preview releases devices before a pending start folder picker settles',async()=>{
+ let picked,stops=0;const calls=[],panel=new RecorderPanel({api:async route=>{calls.push(route);if(route==='/api/recordings/pick-directory')return new Promise(resolve=>{picked=resolve;});assert.fail('No writer should start');},toast(){}}),fields=new Map();
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.controls=()=>{};panel.status=()=>{};panel.error=assert.fail;
+ panel.element={};panel.$('[name="directory"]').value='saved-directory';panel.$('[name="askFolder"]').checked=true;panel.streams=[{getTracks:()=>[{stop(){stops++;}}]}];panel.output={getTracks:()=>[]};
+ const starting=panel.start();assert.equal(typeof picked,'function');const closing=panel.release();assert.equal(stops,1);assert.equal(panel.output,null);
+ picked({directory:'picked-directory'});await Promise.all([starting,closing]);assert.deepEqual(calls,['/api/recordings/pick-directory']);assert.equal(panel.busy,false);
+});
+
+test('saved recorder folder preferences reject older poll responses but accept a newer saved revision',async()=>{
+ const panel=new RecorderPanel({api:async()=>({directory:'new-directory',askEveryTime:false,revision:20}),toast(){}}),fields=new Map();panel.element={};panel.controls=()=>{};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};
+ panel.preferences={directory:'old-directory',askEveryTime:true,revision:10};panel.$('[name="directory"]').value='new-directory';panel.$('[name="askFolder"]').checked=false;await panel.saveFolder();
+ panel.update({recordingPreferences:{directory:'old-directory',askEveryTime:true,revision:10}});assert.equal(panel.preferences.directory,'new-directory');assert.equal(panel.$('[name="directory"]').value,'new-directory');assert.equal(panel.$('[name="askFolder"]').checked,false);
+ panel.update({recordingPreferences:{directory:'latest-directory',askEveryTime:true,revision:21}});assert.equal(panel.preferences.directory,'latest-directory');assert.equal(panel.$('[name="directory"]').value,'latest-directory');
+});
+
+test('a delayed preference save response cannot replace a newer default received from another panel',async()=>{
+ let saved;const panel=new RecorderPanel({api:async()=>new Promise(resolve=>{saved=resolve;}),toast(){}}),fields=new Map();panel.element={};panel.controls=()=>{};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};
+ panel.$('[name="directory"]').value='my-directory';panel.$('[name="askFolder"]').checked=false;const saving=panel.saveFolder();
+ panel.update({recordingPreferences:{directory:'newer-directory',askEveryTime:true,revision:32}});saved({directory:'my-directory',askEveryTime:false,revision:31});await saving;
+ assert.equal(panel.preferences.revision,32);assert.equal(panel.$('[name="directory"]').value,'newer-directory');assert.equal(panel.$('[name="askFolder"]').checked,true);
+});
+
+for(const denial of ['screen','microphone'])test(denial+' permission denial releases every source already acquired and unlocks preparation',async t=>{
+ const stopped=[],tracks=['video','audio'].map(kind=>Object.assign(new EventTarget(),{kind,readyState:'live',stop(){this.readyState='ended';stopped.push(kind);}})),screen={getTracks:()=>tracks,getAudioTracks:()=>tracks.filter(track=>track.kind==='audio')},messages=[];
+ replaceGlobal(t,'window',{MediaRecorder:function(){}});replaceGlobal(t,'navigator',{mediaDevices:{getDisplayMedia:async()=>{if(denial==='screen')throw Error('screen permission denied');return screen;},getUserMedia:async()=>{throw Error('microphone permission denied');}}});
+ const panel=new RecorderPanel({api(){assert.fail('No recording may start');},toast:message=>messages.push(message)}),fields=new Map();panel.element={};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.controls=()=>{};panel.positionBoxes=()=>{};
+ for(const [name,value]of Object.entries({mode:'screen-camera',sound:'both',quality:'720',countdown:'0',aspect:'original',camera:'',microphone:''}))panel.$(`[name="${name}"]`).value=value;
+ await panel.prepare();assert.equal(panel.preparing,false);assert.equal(panel.output,null);assert.deepEqual(stopped,denial==='screen'?[]:['video','audio']);assert.deepEqual(messages,[denial+' permission denied']);assert.equal(panel.streams.length,0);
+});
+
+test('cancelled permission acquisition cannot overwrite a newer preparation when the old device arrives late',async t=>{
+ const requests=[],messages=[];replaceGlobal(t,'window',{MediaRecorder:function(){}});replaceGlobal(t,'navigator',{mediaDevices:{getUserMedia:()=>new Promise((resolve,reject)=>requests.push({resolve,reject}))}});
+ const panel=new RecorderPanel({api(){assert.fail('No recording may start');},toast:message=>messages.push(message)}),fields=new Map();panel.element={};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.controls=()=>{};panel.positionBoxes=()=>{};
+ for(const [name,value]of Object.entries({mode:'camera',sound:'none',quality:'720',countdown:'0',aspect:'original',camera:'',microphone:''}))panel.$(`[name="${name}"]`).value=value;
+ const first=panel.prepare();await panel.release();const second=panel.prepare();assert.equal(requests.length,2);let stopped=0;
+ requests[0].resolve({getTracks:()=>[{stop(){stopped++;}}]});await first;assert.equal(stopped,1);assert.equal(panel.preparing,true);assert.deepEqual(messages,[]);
+ requests[1].reject(Error('New permission denied'));await second;assert.equal(panel.preparing,false);assert.deepEqual(messages,['New permission denied']);assert.equal(panel.output,null);
+});
+
+test('automatic upload failure keeps the actionable error visible after finalization settles',async t=>{
+ class FakeRecorder extends EventTarget{static isTypeSupported(){return true;}constructor(){super();this.state='inactive';}start(){this.state='recording';}stop(){this.state='inactive';this.dispatchEvent(new Event('stop'));}}
+ replaceGlobal(t,'MediaRecorder',FakeRecorder);replaceGlobal(t,'fetch',async()=>({ok:false,json:async()=>({error:'Recording disk unavailable'})}));
+ const calls=[],toasts=[],panel=new RecorderPanel({api:async route=>{calls.push(route);return route==='/api/recordings/start'?{id:'failed-upload'}:{};},toast:(...args)=>toasts.push(args)}),fields=new Map();let status='';
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.controls=()=>{};panel.status=message=>{status=message;};panel.$('[name="directory"]').value='chosen-directory';panel.$('[name="askFolder"]').checked=false;panel.output={};panel.config={mode:'screen',countdown:0};
+ t.after(()=>panel.stopWriter());await panel.start();const event=new Event('dataavailable');event.data=new Blob(['encoded video']);panel.recorder.dispatchEvent(event);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(panel.id,null);assert.equal(panel.finishing,false);assert.equal(status,'Recording disk unavailable');assert.ok(calls.includes('/api/recordings/failed-upload/finish'));assert.ok(toasts.some(([message])=>message==='Recording disk unavailable'));
+});
+
+test('automatic MediaRecorder failure preserves the error after saving its available data',async t=>{
+ class FakeRecorder extends EventTarget{static isTypeSupported(){return true;}constructor(){super();this.state='inactive';}start(){this.state='recording';}stop(){this.state='inactive';this.dispatchEvent(new Event('stop'));}}
+ replaceGlobal(t,'MediaRecorder',FakeRecorder);
+ const toasts=[],panel=new RecorderPanel({api:async route=>route==='/api/recordings/start'?{id:'failed-recorder'}:{},toast:(...args)=>toasts.push(args)}),fields=new Map();let status='';
+ panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.controls=()=>{};panel.status=message=>{status=message;};panel.$('[name="directory"]').value='chosen-directory';panel.$('[name="askFolder"]').checked=false;panel.output={};panel.config={mode:'screen',countdown:0};
+ t.after(()=>panel.stopWriter());await panel.start();panel.recorder.dispatchEvent(new Event('error'));await new Promise(resolve=>setImmediate(resolve));assert.equal(panel.id,null);assert.equal(status,toasts[0][0]);assert.ok(status.length>0);
+});
+
+test('closing preview preserves a finalization error and still releases capture devices',async()=>{
+ const panel=new RecorderPanel({api:async()=>{throw Error('Disk full while saving');},toast(){}});let status='',stops=0;panel.element={};panel.$=()=>({});panel.controls=()=>{};panel.status=message=>{status=message;};panel.id='failed-save';panel.output={getTracks:()=>[{stop(){stops++;}}]};
+ await assert.rejects(panel.release(),/Disk full while saving/);assert.equal(status,'Disk full while saving');assert.equal(panel.output,null);assert.equal(panel.id,null);assert.equal(stops,1);assert.equal(panel.finishing,false);
+});
+
 test('crop drag already in progress cannot change the canvas after recording starts or preview closes',()=>{
  const panel=new RecorderPanel({api(){},toast(){}});let move,resizes=0;
  panel.screenVideo={videoWidth:1600,videoHeight:900};panel.$=()=>({getBoundingClientRect:()=>({left:0,top:0,width:1600,height:900})});

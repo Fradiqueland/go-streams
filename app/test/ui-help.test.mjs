@@ -21,17 +21,17 @@ function control(properties={}){
   remove(){if(this.parentNode)this.parentNode.children.splice(this.parentNode.children.indexOf(this),1);this.parentNode=null;this.isConnected=false;},replaceWith(other){this.before(other);this.remove();},
   querySelectorAll(selector){return this.children.flatMap(child=>[...(child.matches(selector)?[child]:[]),...child.querySelectorAll(selector)]);},
   cloneNode(deep){const clone=control({tagName:this.tagName,className:this.className,textContent:text});for(const [key,value]of attributes)clone.setAttribute(key,value);if(deep)for(const child of this.children)clone.appendChild(child.cloneNode(true));return clone;},
-  focus(){},getBoundingClientRect:()=>({left:24,top:30,bottom:74,width:120,height:44})};Object.assign(node,properties);return node;
+  focus(){},getClientRects(){for(let node=this;node;node=node.parentNode)if(node.hidden)return [];return [this.getBoundingClientRect()];},getBoundingClientRect:()=>({left:24,top:30,bottom:74,width:120,height:44})};Object.assign(node,properties);return node;
 }
 function environment(){
- const listeners=new Map(),properties=new Map(),sources=[];let observer;
+ const listeners=new Map(),properties=new Map(),sources=[];let observer,observed;
  const body=control({tagName:'BODY',textContent:''});
  const doc={body,activeElement:null,styleSheets:[{cssRules:[{selectorText:'#control-help',style:{setProperty:(key,value)=>properties.set(key,value)}}]}],
   querySelectorAll:()=>sources.filter(source=>source.isConnected),createElement:tag=>control({tagName:tag.toUpperCase(),textContent:'',getBoundingClientRect:()=>tag==='div'?{width:280,height:80}:{left:24,top:30,bottom:58,width:28,height:28}}),
   addEventListener(type,fn){listeners.set(type,[...(listeners.get(type)||[]),fn]);}};
- const win={innerWidth:640,innerHeight:480,addEventListener(){},MutationObserver:class{constructor(fn){observer=fn;}observe(){}}};
+ const win={innerWidth:640,innerHeight:480,addEventListener(){},MutationObserver:class{constructor(fn){observer=fn;}observe(_node,options){observed=options;}}};
  const installed=installContextHelp(doc,win);
- const e={doc,win,properties,installed,tip:installed.tip,
+ const e={doc,win,properties,installed,tip:installed.tip,get observed(){return observed;},
   add(source,parent=body){parent.appendChild(source);sources.push(source);source.focus=()=>{doc.activeElement=source;e.emit('focusin',{target:source});};installed.refresh();const icon=installed.infoFor(source);if(icon)icon.focus=()=>{doc.activeElement=icon;e.emit('focusin',{target:icon});};return source;},
   emit(type,event={}){event.preventDefault ||= ()=>{event.prevented=true;};event.stopPropagation ||= ()=>{event.stopped=true;};for(const fn of listeners.get(type)||[])fn(event);return event;},
   click(source){const target=installed.infoFor(source);assert.ok(target,'A source must have an info icon');return e.emit('click',{target});},mutate(){observer();}};return e;
@@ -72,6 +72,15 @@ test('Enter and Space activate only the info icon without submitting or toggling
 test('disabled actions keep clickable explanations; hidden actions hide their icons',()=>{
  const e=environment(),button=e.add(control({dataset:{capture:'start'},disabled:true})),icon=e.installed.infoFor(button);assert.ok(!icon.disabled);e.click(button);assert.match(e.tip.textContent,/free destination/);
  button.hidden=true;e.mutate();assert.equal(icon.hidden,true);assert.equal(button.parentNode.hidden,true);assert.equal(e.tip.hidden,true);button.hidden=false;e.mutate();assert.equal(icon.hidden,false);assert.equal(button.parentNode.hidden,false);
+});
+test('hiding a field group dismisses its open explanation without waiting for another click',()=>{
+ const e=environment(),label=control({tagName:'LABEL',textContent:'Video source'});e.doc.body.appendChild(label);const source=e.add(control({tagName:'SELECT',name:'mediaId',textContent:''}),label);e.click(source);assert.equal(e.tip.hidden,false);
+ label.hidden=true;e.mutate();assert.equal(source.hidden,false);assert.equal(e.tip.hidden,true);assert.equal(e.installed.infoFor(source).getAttribute('aria-expanded'),'false');assert.equal(e.installed.isReading(),false);
+ label.hidden=false;e.mutate();assert.equal(e.tip.hidden,true,'Showing the field cannot reopen information automatically');
+});
+test('closing a details group dismisses information for a control that is no longer rendered',()=>{
+ const e=environment(),details=control({tagName:'DETAILS',open:true,textContent:''});e.doc.body.appendChild(details);const source=e.add(control({name:'name',getClientRects:()=>details.open?[{width:120,height:44}]:[]}),details);
+ assert.ok(e.observed.attributeFilter.includes('open'));e.click(source);assert.equal(e.tip.hidden,false);details.open=false;e.mutate();assert.equal(e.tip.hidden,true);assert.equal(e.installed.isReading(),false);
 });
 test('field icons preserve labels and prevent checkbox label activation',()=>{
  const e=environment(),label=control({tagName:'LABEL',textContent:'Include microphone'});e.doc.body.appendChild(label);
