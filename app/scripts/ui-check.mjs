@@ -43,8 +43,9 @@ try {
     await page.waitForFunction(expected=>document.querySelector('#crumb')?.textContent===expected,name);
   }
   async function infoFor(control){
-    const id=await control.getAttribute('data-help-id');assert.ok(id,'control has a contextual information association');
-    const info=page.locator('.control-info[data-help-for='+JSON.stringify(id)+']');
+    const info=control.locator('xpath=..').locator(':scope > .control-info');
+    await info.waitFor({state:'attached'});
+    assert.ok(await control.evaluate(el=>{const icon=el.parentElement?.querySelector(':scope > .control-info');return Boolean(el.dataset.helpId&&icon?.dataset.helpFor===el.dataset.helpId);}), 'control has a contextual information association');
     assert.equal(await info.count(),1);assert.equal(await info.getAttribute('role'),'button');assert.equal(await info.getAttribute('tabindex'),'0');
     assert.equal(await info.getAttribute('aria-controls'),'control-help');assert.ok(await info.getAttribute('aria-label'));
     return info;
@@ -365,7 +366,11 @@ try {
 } catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);throw error;}
 finally {
   const cleanup=[];
-  for(const close of [()=>context?.close(),()=>app.close()])try{await close();}catch(error){cleanup.push(error);}
+  for(const [stage,close] of [['context.close',()=>context?.close()],['app.close',()=>app.close()]]){
+    const began=Date.now();let ok=true;console.log(JSON.stringify({cleanup:stage,event:'start'}));
+    try{await close();}catch(error){ok=false;cleanup.push(error);}
+    finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
+  }
   const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route; no network sockets'};
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');
