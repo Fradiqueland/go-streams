@@ -272,7 +272,7 @@ export class LiveCapturePanel {
   this.captureEpoch++;
   if(!this.session&&!this.feedSession&&!this.feedStarting)this.releaseDevices();
   this.releasing=(async()=>{
-   try{await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(text('Camera and microphone are off.','A câmara e o microfone estão desligados.'));}
+   try{await this.production?.stopRecording();this.production?.stopClip();await this.stop();await this.releaseFeed('recording').catch(error=>this.toast(error.message,true));this.releaseDevices();this.status(this.stopFailure?.message||text('Camera and microphone are off.','A câmara e o microfone estão desligados.'),Boolean(this.stopFailure));}
    finally{this.releasing=null;this.controls();}
   })();this.controls();return this.releasing;
  }

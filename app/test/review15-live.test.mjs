@@ -92,3 +92,24 @@ test('shared live upload errors close the encoder once and remain visible instea
  assert.deepEqual(value.lastStatus,{message:failure.message,error:true});assert.equal(value.session,null);assert.equal(value.feedSession,null);assert.equal(value.feedUploader,null);assert.equal(value.feedRecorder,null);assert.equal(value.feedUsers.size,0);
  assert.equal(instances[0].state,'inactive');assert.equal(calls.filter(route=>route==='/api/capture/feed/stop').length,1);assert.equal(calls.filter(route=>route==='/api/live/live/stop').length,1);
 });
+
+for(const failedEndpoint of ['live','capture'])test('preview release preserves '+failedEndpoint+' shutdown errors while releasing devices',async()=>{
+ const failure=Error(failedEndpoint+' shutdown unavailable'),cleanupFailure=Error('Capture cleanup unavailable'),calls=[];
+ const value=panel(async route=>{
+  calls.push(route);
+  if(route.includes('/'+failedEndpoint+'/'))throw failure;
+  if(failedEndpoint==='live'&&route.includes('/capture/'))throw cleanupFailure;
+  return {ok:true};
+ });
+ let stoppedDevices=0;
+ value.output={getTracks:()=>[{stop(){stoppedDevices++;}}]};
+ value.session={id:'active-live'};value.feedSession={id:'active-feed'};value.feedUsers=new Set(['live']);
+ value.feedRecorder={state:'inactive'};
+ value.feedUploader=new LiveUploader({fetchChunk:async()=>{},stopRemote:()=>value.api('/api/capture/active-feed/stop',{}),onError(){assert.fail('No upload error is expected');}});
+ await value.release();
+ assert.deepEqual(value.lastStatus,{message:failure.message,error:true});assert.equal(value.stopFailure,failure);
+ assert.deepEqual(calls,['/api/live/active-live/stop','/api/capture/active-feed/stop']);
+ assert.equal(stoppedDevices,1);assert.equal(value.output,null);assert.equal(value.feedSession,null);assert.equal(value.feedUploader,null);assert.equal(value.feedRecorder,null);assert.equal(value.feedUsers.size,0);
+ assert.equal(value.session?.id,failedEndpoint==='live'?'active-live':undefined);
+ assert.equal(value.stopping,false);assert.equal(value.releasing,null);
+});

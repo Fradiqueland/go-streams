@@ -74,3 +74,43 @@ for(const format of ['image/png','image/webp','image/jpeg'])test('background sce
  const reloading=f.tools.action({dataset:{production:'load-scene'}});assert.equal(f.images[1].src,persisted);f.images[1].ready.resolve();await reloading;
  assert.equal(f.tools.images.backgroundImage,f.images[1]);assert.equal(f.tools.hasUnsavedChanges,false);
 });
+
+for(const loadedScene of ['main','intro'])test('loading '+loadedScene+' invalidates an earlier scene save still waiting for an image',async t=>{
+ const f=fixture(t),original=JSON.stringify({intro:{banner:'Original Intro'},main:{banner:'Saved Main'}});f.saved.set('go-streams-scenes',original);
+ f.tools.values.banner='Draft intended for Intro';
+ const loading=f.tools.loadImage('logo',imageFile('pending')),button={dataset:{production:'save-scene'}},saving=f.tools.action(button);
+ f.fields.scene.value=loadedScene;await f.tools.action({dataset:{production:'load-scene'}});
+ f.readers[0].onload();await loading;await saving;
+ assert.equal(f.saved.get('go-streams-scenes'),original);
+ assert.equal(f.tools.values.banner,loadedScene==='main'?'Saved Main':'Original Intro');
+ assert.equal(f.tools.hasUnsavedChanges,false);assert.equal(button.disabled,false);
+ assert.ok(f.messages.some(message=>message.error&&/scene changed/i.test(message.message)));
+ assert.equal(f.messages.some(message=>!message.error&&/saved/i.test(message.message)),false);
+});
+
+for(const [format,extension]of [['mp4','mp4'],['webm','webm'],[undefined,'webm']])test('live recording download names match the '+extension+' file format'+(format?'':' for legacy records'),()=>{
+ const fields=new Map(),tools=new ProductionTools({getStream:()=>null});
+ tools.element={querySelector:selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);}};
+ tools.update([{id:'local-take',created:'2026-11-02T00:00:00Z',status:'completed',bytes:1048576,...(format?{format}:{})}]);
+ const html=fields.get('.recording-files').innerHTML;
+ assert.ok(html.includes('href="/api/recordings/local-take/file"'));
+ assert.ok(html.includes('download="GoStreams-local-take.'+extension+'"'));
+});
+
+test('live recording download attributes escape file identifiers and formats',()=>{
+ const fields=new Map(),tools=new ProductionTools({getStream:()=>null});
+ tools.element={querySelector:selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);}};
+ tools.update([{id:'take"one',format:'webm"test',created:'2026-11-02T00:00:00Z',status:'completed',bytes:1}]);
+ assert.ok(fields.get('.recording-files').innerHTML.includes('download="GoStreams-take&quot;one.webm&quot;test"'));
+});
+
+test('loading an empty scene slot does not cancel a pending save to a valid slot',async t=>{
+ const f=fixture(t);f.tools.values.banner='Intro draft';
+ const loading=f.tools.loadImage('logo',imageFile('pending')),saving=f.tools.action({dataset:{production:'save-scene'}});
+ f.fields.scene.value='main';await f.tools.action({dataset:{production:'load-scene'}});
+ await beginDecode(f);f.images[0].ready.resolve();await loading;await saving;
+ assert.equal(JSON.parse(f.saved.get('go-streams-scenes')).intro.banner,'Intro draft');
+ assert.equal(f.tools.hasUnsavedChanges,false);
+ assert.ok(f.messages.some(message=>!message.error&&/saved/i.test(message.message)));
+ assert.equal(f.messages.some(message=>message.error&&/scene changed/i.test(message.message)),false);
+});

@@ -105,7 +105,7 @@ async function smokeRecordingDownloads(browserSession,runProcess){
     handler=(event,item)=>{
      if(item.getURL()!==backend.base+href)return;
      downloadItem=item;
-     try{item.setSavePath(destination);item.once('done',(_,state)=>state==='completed'?resolve():reject(Error('Recording download failed: '+state)));}catch(error){item.cancel();reject(error);}
+     try{if(item.getFilename()!=='GoStreams-'+id+'.mp4')throw Error('Recording download filename differs: '+route);item.setSavePath(destination);item.once('done',(_,state)=>state==='completed'?resolve():reject(Error('Recording download failed: '+state)));}catch(error){item.cancel();reject(error);}
     };
     browserSession.on('will-download',handler);
    });
