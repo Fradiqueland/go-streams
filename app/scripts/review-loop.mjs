@@ -29,8 +29,10 @@ try{
   if(fingerprint()!==sourceHash)throw Error('Source changed during review; restart the cycles on the final source.');
   const logFile=path.join(output,`cycle-${index}.log`),log=fs.createWriteStream(logFile);const started=Date.now();
   const child=spawn(process.execPath,['--test','--test-concurrency=1','--test-timeout=60000','--test-reporter=tap',...files],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe']});
+  // Retain the full ordinary TAP run so an early failure is visible in CI logs.
+  // The cap also bounds diagnostics if a subprocess emits excessive output.
   let tail='',timedOut=false;
-  const consume=chunk=>{log.write(chunk);tail=(tail+chunk).slice(-25000);};child.stdout.on('data',consume);child.stderr.on('data',consume);
+  const consume=chunk=>{log.write(chunk);tail=(tail+chunk).slice(-2*1024*1024);};child.stdout.on('data',consume);child.stderr.on('data',consume);
   const watchdog=setTimeout(()=>{timedOut=true;child.kill();},360000).unref();
   const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);}).finally(()=>clearTimeout(watchdog));
   await new Promise(resolve=>log.end(resolve));
