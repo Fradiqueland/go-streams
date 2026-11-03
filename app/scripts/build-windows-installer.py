@@ -117,7 +117,7 @@ def build_msi(application,output,version,*,test_identity=None,legacy_directory_p
         ('UpgradeCode',upgrade),('INSTALLLEVEL','1'),('DefaultUIFont','Normal'),
         ('REBOOT','ReallySuppress'),('MSIRESTARTMANAGERCONTROL','DisableShutdown'),
         ('ARPPRODUCTICON','Streamland.exe'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
-        ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYDATADIR;PREVIOUSINSTALLDIR;INSTALLDIR'),
+        ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYBRANDPRODUCTS;LEGACYDATADIR;PREVIOUSINSTALLDIR;INSTALLDIR'),
         ('REINSTALLMODE','amus'),('ARPCOMMENTS','User projects and profiles are preserved when updating or uninstalling.')
     ])
     if not legacy_directory_policy:
@@ -167,7 +167,7 @@ def build_msi(application,output,version,*,test_identity=None,legacy_directory_p
         # The deployed predecessor cannot recover a custom INSTALLDIR during its
         # nested uninstall. Retire only its confirmed packaged launcher in the captured,
         # registered folder. Standard RemoveFiles participates in MSI rollback.
-        add('Component',[('LegacyBrandCleanup',guid('legacy-brand-cleanup:'+upgrade),'INSTALLDIR',260,'OLDPRODUCTS AND PREVIOUSINSTALLDIR','LegacyBrandCleanupMarker')])
+        add('Component',[('LegacyBrandCleanup',guid('legacy-brand-cleanup:'+upgrade),'INSTALLDIR',260,'LEGACYBRANDPRODUCTS AND PREVIOUSINSTALLDIR','LegacyBrandCleanupMarker')])
         add('FeatureComponents',[('Main','LegacyBrandCleanup')])
         add('Registry',[('LegacyBrandCleanupMarker',1,registry,'StreamlandLegacyCleanup',version,'LegacyBrandCleanup')])
         add('RemoveFile',[
@@ -184,6 +184,10 @@ def build_msi(application,output,version,*,test_identity=None,legacy_directory_p
     add('CreateFolder',[('GoStreamsMenu','Registration')])
     add('RemoveFile',[('RemoveEmptyStartMenu','Registration',None,'GoStreamsMenu',2)])
     add('Upgrade',[(upgrade,None,version,None,1,None,'OLDPRODUCTS'),(upgrade,version,None,None,258,None,'NEWERPRODUCTS')])
+    if not legacy_directory_policy:
+        # Only pre-Streamland packages owned GoStreams.exe. A later Streamland
+        # upgrade must preserve a user-created file that happens to use that name.
+        add('Upgrade',[(upgrade,None,'1.2.0',None,2,None,'LEGACYBRANDPRODUCTS')])
     add('LaunchCondition',[
         ('Installed OR VersionNT64','Streamland requires 64-bit Windows.'),
         ('Installed OR NOT NEWERPRODUCTS','A newer Streamland is already installed. Your data has not been changed.')

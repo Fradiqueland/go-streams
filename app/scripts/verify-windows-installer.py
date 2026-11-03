@@ -52,7 +52,9 @@ def validate(package):
         actions={row[0]:row for row in rows(db,table)}
         assert int(actions['AppSearch'][2])<int(actions['RestoreInstallDirectory'][2])<int(actions['CostInitialize'][2])
         assert actions['RestoreInstallDirectory'][1]=='PREVIOUSINSTALLDIR AND NOT INSTALLDIR'
-    assert components['LegacyBrandCleanup'][4]=='OLDPRODUCTS AND PREVIOUSINSTALLDIR'
+    assert components['LegacyBrandCleanup'][4]=='LEGACYBRANDPRODUCTS AND PREVIOUSINSTALLDIR'
+    assert (properties['UpgradeCode'],'','1.2.0','','2','','LEGACYBRANDPRODUCTS') in upgrades
+    assert 'LEGACYBRANDPRODUCTS' in properties['SecureCustomProperties'].split(';')
     assert set(rows(db,'RemoveFile'))=={
         ('RemoveEmptyStartMenu','Registration','','GoStreamsMenu','2'),
         ('RetireLegacyLauncher','LegacyBrandCleanup','GoStreams.exe','PREVIOUSINSTALLDIR','1')
@@ -133,9 +135,11 @@ def native_fixture(work):
     (source/'revision.txt').write_text('updated')
     two=work/'upgrade.msi';upgraded=builder.build_msi(source,two,'1.2.0',test_identity=test_id)
     assert baseline['upgradeCode']==upgraded['upgradeCode'], 'Rename changed the installer upgrade identity'
+    (source/'revision.txt').write_text('next')
+    three=work/'next-streamland.msi';future=builder.build_msi(source,three,'1.2.1',test_identity=test_id)
     # Redirect shell folders inside the fixture BEFORE any native install. Private
     # Windows Installer folder properties cannot safely be set on its command line.
-    for package in [one,two]:
+    for package in [one,two,three]:
         db=msilib.OpenDatabase(str(package),msilib.MSIDBOPEN_TRANSACT)
         msilib.add_data(db,'CustomAction',[
             ('FixtureDesktop',51,'DesktopFolder',str(desktop)+os.sep),
@@ -195,19 +199,28 @@ def native_fixture(work):
         assert (menu/'Streamland'/'Streamland.lnk').is_file()
         assert snapshot()==original
         assert (desktop/'Streamland.lnk').is_file()
-        uninstall=int(msi.MsiConfigureProductExW(upgraded['productCode'],0,2,'REMOVE=ALL REBOOT=ReallySuppress'))
+        # Once the brand transition is complete this filename is no longer owned.
+        # Future Streamland upgrades must not repeat legacy-brand cleanup.
+        (install/'GoStreams.exe').write_text('User-created file after the brand transition')
+        code=apply(three,'next-upgrade',override=False);assert code in (0,3010), 'Subsequent Streamland upgrade failed: '+str(code)
+        installed.append(future['productCode'])
+        assert (install/'revision.txt').read_text()=='next' and (install/'Streamland.exe').is_file()
+        assert (install/'GoStreams.exe').read_text()=='User-created file after the brand transition', 'Later upgrade deleted an unowned legacy-named file'
+        assert snapshot()==original
+        uninstall=int(msi.MsiConfigureProductExW(future['productCode'],0,2,'REMOVE=ALL REBOOT=ReallySuppress'))
         assert uninstall in (0,3010), 'Uninstall failed: '+str(uninstall)
         assert not (install/'revision.txt').exists() and not (desktop/'Streamland.lnk').exists()
         assert not (install/'Streamland.exe').exists(), 'Uninstall lost the registered custom directory'
+        assert (install/'GoStreams.exe').read_text()=='User-created file after the brand transition'
         assert (install/'CloseGoStreams.cmd').read_text()=='User-created helper must survive'
         assert (install/'user-added.txt').read_text()=='Unknown application files must survive'
         assert snapshot()==original
-        return {'nativeInstallTested':True,'shortcutsCreated':True,'failedUpgradeRolledBack':True,'upgradeCompleted':True,'legacyBrandUpgradeCompleted':True,'legacyShortcutsAndExecutableRetired':True,'uninstallPreservedData':True,'profileHashesUnchanged':True,'registeredCustomDirectoryReused':True,'executedFileCleanupRolledBack':True,'unknownApplicationFilesPreserved':True}
+        return {'nativeInstallTested':True,'shortcutsCreated':True,'failedUpgradeRolledBack':True,'upgradeCompleted':True,'legacyBrandUpgradeCompleted':True,'legacyShortcutsAndExecutableRetired':True,'uninstallPreservedData':True,'profileHashesUnchanged':True,'registeredCustomDirectoryReused':True,'executedFileCleanupRolledBack':True,'unknownApplicationFilesPreserved':True,'futureUpgradePreservesUnownedLegacyNamedFiles':True}
     except Exception:
         # Keep native failures actionable without weakening installation checks.
         # These paths and logs belong only to the isolated synthetic fixture.
         traces={}
-        for name in ['install','rollback','upgrade']:
+        for name in ['install','rollback','upgrade','next-upgrade']:
             file=work/(name+'.log')
             if not file.exists():continue
             raw=file.read_bytes();text=raw.decode('utf-16' if raw.startswith((b'\xff\xfe',b'\xfe\xff')) else 'utf-8',errors='replace')
