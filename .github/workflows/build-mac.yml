@@ -59,7 +59,7 @@ jobs:
         run: |
           qa="$RUNNER_TEMP/streamland-ui-qa"
           npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
-          GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
+          DEBUG=pw:api GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:ui
       - name: Verify recorder composition and saved formats
         timeout-minutes: 5
         run: |

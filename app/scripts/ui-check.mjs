@@ -19,11 +19,19 @@ let folderPickerWait,chatSetupWait,projectExportResponse;
 const app = await createApplication({ directory, port: 0, listen: true, clock: false,folderPicker:async()=>{if(folderPickerWait)await folderPickerWait;return path.join(directory,'Chosen recordings');} });
 // Browser-managed downloads can bypass Playwright routing. Keep the real local
 // HTTP endpoint available and inspect its actual response without replacing it.
-app.server.prependListener('request',(req,res)=>{if(new URL(req.url,app.base).pathname==='/api/export')res.once('finish',()=>{projectExportResponse={status:res.statusCode,type:String(res.getHeader('content-type')||''),disposition:String(res.getHeader('content-disposition')||'')};});});
+app.server.prependListener('request',(req,res)=>{if(new URL(req.url,app.base).pathname==='/api/export'){progress('project-export-native',{event:'request'});res.once('finish',()=>{projectExportResponse={status:res.statusCode,type:String(res.getHeader('content-type')||''),disposition:String(res.getHeader('content-disposition')||'')};progress('project-export-native',{event:'finish',response:projectExportResponse});});}});
 let context;
 const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const started=new Date().toISOString(),screenshots=[];let passed=false,failure='';
-let checks = 0; const errors = [];
+let checks = 0; const errors = []; let lastStage='initialization';
+function progress(stage,details={}){lastStage=stage;console.log(JSON.stringify({ui:stage,checks,screenshots:screenshots.length,...details}));}
+async function boundedDownload(stage,operation){
+  progress(stage,{event:'start'});let timer;
+  try{
+    const result=await Promise.race([operation(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Prazo de 45 s excedido: '+stage)),45000);})]);
+    progress(stage,{event:'end'});return result;
+  }finally{clearTimeout(timer);}
+}
 try {
   context = await chromium.launchPersistentContext(path.join(directory, 'browser'), { executablePath: browserPath, headless: true, chromiumSandbox: true, viewport: { width: 1440, height: 1000 } });
   await context.addCookies([{ name: 'go_streams', value: app.token, url: app.base, httpOnly: true, sameSite: 'Strict' }]);
@@ -32,7 +40,7 @@ try {
     if (!request.url().startsWith(app.base + '/')) return route.abort();
     if(chatSetupWait&&request.url()===app.base+'/api/chat/settings')await chatSetupWait;
     const response = await dispatch(app, request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
-    if(request.url()===app.base+'/api/export')projectExportResponse={status:response.status,type:response.headers.get('content-type'),disposition:response.headers.get('content-disposition')};
+    if(request.url()===app.base+'/api/export'){projectExportResponse={status:response.status,type:response.headers.get('content-type'),disposition:response.headers.get('content-disposition')};progress('project-export-route',{event:'response',response:projectExportResponse});}
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: response.body });
   });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
@@ -40,9 +48,11 @@ try {
   async function capture(file,section='dashboard',fullPage=true){
     await page.screenshot({path:path.join(base,file),fullPage});
     screenshots.push({file,section,viewport:page.viewportSize()});
+    progress('capture',{file,section});
   }
   const navigation=page.locator('#nav');
   async function goTo(name){
+    progress('navigation',{section:name});
     await navigation.getByRole('link',{name,exact:true}).click();
     await page.waitForFunction(expected=>document.querySelector('#crumb')?.textContent===expected,name);
   }
@@ -193,10 +203,18 @@ try {
   assert.equal(app.store.data.schedules.length,2);checks++;
   await goTo('Definições');
   const protectedChannel=app.store.data.channels[0].secret;
+  progress('project-export',{event:'start'});
   const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click()]);
-  const exportFailure=await projectDownload.failure();assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'streamland-project.json');
+  progress('project-export-download',{filename:projectDownload.suggestedFilename()});
+  let projectStream;const projectChunks=[];
+  try {
+  const exportFailure=await boundedDownload('project-export-completion',()=>projectDownload.failure());assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'streamland-project.json');
   assert.equal(projectExportResponse.status,200);assert.match(projectExportResponse.type,/^application\/json(?:;|$)/);assert.match(projectExportResponse.disposition,/attachment;.*streamland-project\.json/);
-  const projectStream=await projectDownload.createReadStream();assert.ok(projectStream);const projectChunks=[];for await(const chunk of projectStream)projectChunks.push(chunk);
+  projectStream=await boundedDownload('project-export-stream',()=>projectDownload.createReadStream());assert.ok(projectStream);
+  await boundedDownload('project-export-read',async()=>{for await(const chunk of projectStream)projectChunks.push(chunk);});
+  } catch(error) {
+    projectStream?.destroy();void projectDownload.cancel().catch(()=>{});throw error;
+  }
   const projectText=Buffer.concat(projectChunks).toString('utf8'),project=JSON.parse(projectText);assert.equal(project.version,1);assert.ok(Number.isFinite(Date.parse(project.exported)));
   assert.equal(project.channels.find(channel=>channel.id===app.store.data.channels[0].id)?.name,'Canal de ensaio');assert.equal(project.media.length,1);assert.equal(project.playlists[0].mediaIds.length,2);assert.equal(project.schedules.length,2);assert.ok(project.schedules.every(schedule=>schedule.armed===false));
   assert.ok(!projectText.includes('LOCAL-UI-TEST-SECRET'));assert.ok(!projectText.includes(protectedChannel));assert.ok(project.channels.every(channel=>!Object.hasOwn(channel,'key')&&!Object.hasOwn(channel,'secret')&&!Object.hasOwn(channel,'hasKey')));assert.equal(app.store.data.channels[0].secret,protectedChannel);checks++;
@@ -248,7 +266,12 @@ try {
   assert.equal(await page.locator('html').getAttribute('data-compact-nav'),'false');checks++;
   await goTo('Playlists');
   await page.locator('[data-action=playlist-edit]').first().click();
-  while(await page.locator('[data-remove]').count())await page.locator('[data-remove]').first().click();
+  const playlistRows=await page.locator('[data-remove]').count();progress('playlist-empty',{rows:playlistRows});
+  for(let remaining=playlistRows;remaining>0;remaining--){
+    await page.locator('[data-remove]').first().click();
+    await page.waitForFunction(expected=>document.querySelectorAll('[data-remove]').length===expected,remaining-1);
+  }
+  assert.equal(await page.locator('[data-remove]').count(),0);
   await page.locator('#modal-form').getByRole('button',{name:'Guardar',exact:true}).click();
   await page.locator('#modal-form .form-error').waitFor({state:'visible'});
   assert.equal(app.store.data.playlists[0].mediaIds.length,2);
@@ -389,7 +412,7 @@ try {
   assert.deepEqual(errors, []);
   passed=true;
    console.log(JSON.stringify({ version, checks, pageErrors: errors, screenshots: base, transport: 'Production HTTP handler via Playwright route and native loopback downloads', vault: process.platform==='win32'?'Windows DPAPI':'Chave local privada' }));
-} catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);throw error;}
+} catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);console.log(JSON.stringify({ui:'failed',lastStage,checks,screenshots:screenshots.length,failure}));throw error;}
 finally {
   const cleanup=[];
   for(const [stage,close] of [['context.close',()=>context?.close()],['app.close',()=>app.close()]]){
@@ -397,7 +420,7 @@ finally {
     try{await close();}catch(error){ok=false;cleanup.push(error);}
     finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
   }
-   const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
+   const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,lastStage,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
    report.relevantControlHelpOnly=report.passed;report.productionDraftLanguageProtection=report.passed;
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');

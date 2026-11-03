@@ -47,8 +47,10 @@ Encerrar Streamland termina o motor; fechar apenas a janela pode deixa-lo ativo.
 
 VALIDACAO
 Integridade, recursos, dois processadores e permissoes do ZIP verificados.
-A abertura nativa num Mac e a execucao do produto final do construtor ainda
-nao foram testadas neste ambiente Windows. Nao e uma certificacao Mac.
+Consulte os relatorios da compilacao para os resultados de execucao nativa
+e a arquitetura efetivamente testada.
+O produto final exportado por um construtor externo requer validacao
+separada no Mac de destino.
 
 Criado por Antonio Fradique
 https://AntonioFradique.net
