@@ -8,6 +8,36 @@ function seed(app){
  app.store.update(s=>{s.media=[{id:'video-a',title:'Video original',source:'https',path:'https://cdn.example.test/video.mp4',size:0,duration:12,width:320,height:180,fps:30,codec:'h264',pixelFormat:'yuv420p',timeBase:'1/15360',audio:null,thumbnail:false,added:'2026-01-01T00:00:00Z'}];s.playlists=[{id:'playlist-a',name:'Sequência',mediaIds:['video-a','video-a'],loop:true,quality:'720p'}];s.channelPlans={[cid]:{playlistId:'playlist-a',mediaId:null,quality:'720p',countdown:10,autoRestart:true}};s.schedules=[{id:'schedule-a',playlistId:'playlist-a',mediaId:null,channelIds:[cid],at:'2099-01-01T12:00:00Z',timeZone:'Europe/Lisbon',status:'pending',armed:true}];s.history=[{id:'history-a',time:'2026-01-01T00:00:00Z',kind:'session',result:'completed',elapsed:42}];s.downloads=[{id:'download-a',url:'https://www.youtube.com/watch?v=abcdefghijk',status:'completed',title:'Download entry'}];s.settings={ffmpeg:'',ffprobe:'',ytdlp:'',encoding:{copy:false,videoBitrate:4500,audioBitrate:192,fps:60,aspect:'9:16'},operations:{maxConcurrent:10,historyLimit:5000,persistSchedules:true}};s.updates={feed:'',publicKey:'',autoCheck:false};});
  app.notifications.save({enabled:true,host:'smtp.example.test',port:465,security:'tls',username:'owner',password:'SMTP-PRIVATE-456',from:'owner@example.test',to:'owner@example.test'});return cid;
 }
+
+test('restoring reserved object identifiers fails before changing the existing project',async t=>{
+ for(const reserved of ['__proto__','constructor','toString']){
+  const source=await fixture(t),target=await fixture(t),old=seed(source);
+  source.store.update(s=>{const plan=s.channelPlans[old];s.channels[0].id=reserved;s.schedules[0].channelIds=[reserved];s.channelPlans=Object.fromEntries([[reserved,plan]]);});
+  const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences});
+  const before=JSON.stringify(target.store.data),response=await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true});
+  assert.equal(response.status,400,reserved+' must not be used as a property lookup');assert.equal(JSON.stringify(target.store.data),before);
+ }
+});
+
+for(const kind of ['schedule','plan'])test('restore rejects an empty playlist used by a pending '+kind,async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);
+ source.store.update(s=>{s.playlists[0].mediaIds=[];if(kind==='schedule')s.channelPlans={};else s.schedules=[];});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences});const before=JSON.stringify(target.store.data);
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,400);assert.equal(JSON.stringify(target.store.data),before);
+});
+
+test('restore keeps terminal schedule history whose playlist has since been emptied',async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);
+ source.store.update(s=>{s.playlists[0].mediaIds=[];s.channelPlans={};s.schedules[0].status='triggered';s.schedules[0].armed=false;});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences});
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,200);assert.equal(target.store.data.schedules[0].status,'triggered');
+});
+
+test('restore rejects non-string schedule timestamps before corrupting dashboard sorting',async t=>{
+ const source=await fixture(t),target=await fixture(t);seed(source);source.store.update(s=>{s.schedules[0].at=123;});
+ const backup=await exportBackup(source.store,source.studio.vault,{scope:'all',password:pass,interface:preferences}),before=JSON.stringify(target.store.data);
+ assert.equal((await request(target,'/api/backups/restore',{backup,password:pass,confirmed:true})).status,400);assert.equal(JSON.stringify(target.store.data),before);
+});
 test('full encrypted backup restores the same IDs, ordering, duplicates, keys, settings and history into a different vault',async t=>{
  const source=await fixture(t),target=await fixture(t),cid=seed(source);target.studio.saveChannel({name:'Discarded channel',url:'rtmp://localhost/live',key:'OLD'});
  const exported=await request(source,'/api/backups/export',{scope:'all',password:pass,interface:preferences});assert.equal(exported.status,200);const backup=await exported.json(),encoded=JSON.stringify(backup);assert.ok(!encoded.includes('CHANNEL-PRIVATE'));assert.ok(!encoded.includes('SMTP-PRIVATE'));assert.ok(!encoded.includes('Original channel'));

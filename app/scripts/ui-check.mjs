@@ -15,44 +15,124 @@ const base = path.resolve(process.env.GO_STREAMS_UI_OUTPUT||'.tmp/ui-check'); fs
 const directory = fs.mkdtempSync(path.join(base, 'data-'));
 const clip = path.join(directory, 'Ensaio de emissão.mp4');
 await runProcess('ffmpeg', ['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=640x360:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','2','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-ac','2','-y',clip]);
-const app = await createApplication({ directory, port: 4317, listen: false, clock: false });
+let folderPickerWait,chatSetupWait,projectExportResponse;
+const app = await createApplication({ directory, port: 0, listen: true, clock: false,folderPicker:async()=>{if(folderPickerWait)await folderPickerWait;return path.join(directory,'Chosen recordings');} });
+// Browser-managed downloads can bypass Playwright routing. Keep the real local
+// HTTP endpoint available and inspect its actual response without replacing it.
+app.server.prependListener('request',(req,res)=>{if(new URL(req.url,app.base).pathname==='/api/export'){progress('project-export-native',{event:'request'});res.once('finish',()=>{projectExportResponse={status:res.statusCode,type:String(res.getHeader('content-type')||''),disposition:String(res.getHeader('content-disposition')||'')};progress('project-export-native',{event:'finish',response:projectExportResponse});});}});
 let context;
 const version=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const started=new Date().toISOString(),screenshots=[];let passed=false,failure='';
-let checks = 0; const errors = [];
+let checks = 0; const errors = []; let lastStage='initialization';
+function progress(stage,details={}){lastStage=stage;console.log(JSON.stringify({ui:stage,checks,screenshots:screenshots.length,...details}));}
+async function boundedDownload(stage,operation){
+  progress(stage,{event:'start'});let timer;
+  try{
+    const result=await Promise.race([operation(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Prazo de 45 s excedido: '+stage)),45000);})]);
+    progress(stage,{event:'end'});return result;
+  }finally{clearTimeout(timer);}
+}
 try {
   context = await chromium.launchPersistentContext(path.join(directory, 'browser'), { executablePath: browserPath, headless: true, chromiumSandbox: true, viewport: { width: 1440, height: 1000 } });
   await context.addCookies([{ name: 'go_streams', value: app.token, url: app.base, httpOnly: true, sameSite: 'Strict' }]);
   await context.route('**/*', async route => {
     const request = route.request();
     if (!request.url().startsWith(app.base + '/')) return route.abort();
+    if(chatSetupWait&&request.url()===app.base+'/api/chat/settings')await chatSetupWait;
     const response = await dispatch(app, request.url(), { method: request.method(), headers: await request.allHeaders(), body: request.postData() });
+    if(request.url()===app.base+'/api/export'){projectExportResponse={status:response.status,type:response.headers.get('content-type'),disposition:response.headers.get('content-disposition')};progress('project-export-route',{event:'response',response:projectExportResponse});}
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: response.body });
   });
   const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
-  async function capture(file,section='dashboard'){
-    await page.screenshot({path:path.join(base,file),fullPage:true});
+  await page.addInitScript(()=>document.addEventListener('securitypolicyviolation',event=>{throw Error('CSP violation: '+event.violatedDirective);}));
+  async function capture(file,section='dashboard',fullPage=true){
+    await page.screenshot({path:path.join(base,file),fullPage});
     screenshots.push({file,section,viewport:page.viewportSize()});
+    progress('capture',{file,section});
   }
-  const navigation=page.getByRole('navigation',{name:'Menu principal'});
+  const navigation=page.locator('#nav');
   async function goTo(name){
+    progress('navigation',{section:name});
     await navigation.getByRole('link',{name,exact:true}).click();
     await page.waitForFunction(expected=>document.querySelector('#crumb')?.textContent===expected,name);
+  }
+  async function infoFor(control){
+    const info=control.locator('xpath=..').locator(':scope > .control-info');
+    let associated=null;
+    for(let attempt=0;attempt<3;attempt++){
+      await info.waitFor({state:'attached'});
+      associated=await control.evaluate(el=>{
+        if(!el.isConnected)return null;
+        const icon=el.parentElement?.querySelector(':scope > .control-info');
+        return Boolean(el.dataset.helpId&&icon?.dataset.helpFor===el.dataset.helpId);
+      });
+      if(associated!==null)break;
+      progress('context-help-detached',{attempt:attempt+1});
+    }
+    assert.ok(associated, 'control has a contextual information association');
+    assert.equal(await info.count(),1);assert.equal(await info.getAttribute('role'),'button');assert.equal(await info.getAttribute('tabindex'),'0');
+    assert.equal(await info.getAttribute('aria-controls'),'control-help');assert.ok(await info.getAttribute('aria-label'));
+    return info;
   }
 
   await page.goto(app.base + '/');
   await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();
+  await page.waitForFunction(expected=>document.querySelector('.version')?.textContent==='v'+expected,version);checks++;
+  assert.equal(await navigation.getAttribute('aria-label'),'Main menu');
   assert.equal(await page.locator('#language-select').inputValue(),'en');
   assert.equal(await page.locator('#language-select option').count(),10);
   assert.ok(await page.locator('.nav-item').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=16));
   assert.ok(await page.locator('[data-action=go-live]').first().evaluate(el=>el.getBoundingClientRect().height>=44));checks++;
   const products=page.locator('.creator-credit a');assert.equal(await products.getAttribute('href'),'https://AntonioFradique.net');assert.equal(await products.getAttribute('target'),'_blank');checks++;
+  assert.equal(await page.locator('.dashboard-actions .start-card').count(),2);assert.equal(await navigation.locator('.nav-section-title').count(),3);checks++;
+  const help=page.locator('#control-help'),prepare=page.locator('.dashboard-start [data-action=go-live]');
+  let prepareInfo=await infoFor(prepare);
+  await prepare.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);checks++;
+  await prepare.focus();await page.waitForTimeout(2400);assert.equal(await help.isVisible(),false);assert.equal(await prepare.evaluate(el=>el===document.activeElement),true);checks++;
+  prepareInfo=await infoFor(prepare);await prepareInfo.hover();await prepareInfo.focus();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);
+  assert.equal(await prepare.getAttribute('title'),null);assert.equal(await prepareInfo.getAttribute('title'),null);checks++;
+  await page.keyboard.press('Enter');await help.waitFor({state:'visible'});
+  assert.match(await help.textContent(),/Nothing is broadcast until you confirm/);checks++;
+  await page.waitForTimeout(2400);assert.equal(await help.isVisible(),true);
+  assert.equal(await prepareInfo.getAttribute('aria-expanded'),'true');assert.equal(await prepareInfo.getAttribute('aria-describedby'),'control-help');assert.equal(await prepare.getAttribute('aria-describedby'),'control-help');checks++;
+  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;}));checks++;
+  await capture('dashboard-help-1440.png','context-help',false);
+  await help.hover();await page.waitForTimeout(250);assert.equal(await help.isVisible(),true);checks++;
+  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await prepareInfo.getAttribute('aria-expanded'),'false');checks++;
+  await prepareInfo.focus();await page.keyboard.press('Space');await help.waitFor({state:'visible'});await prepareInfo.click();assert.equal(await help.isVisible(),false);checks++;
+  const studioLink=navigation.locator('a[href="#capture"]');await studioLink.focus();assert.equal(await help.isVisible(),false);
+  await studioLink.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);assert.equal(await navigation.locator('.control-info').count(),0);assert.equal(await studioLink.evaluate(el=>el.parentElement.id),'nav');checks++;
+  assert.equal(await page.locator('.creator-social-links a').count(),9);assert.equal(await page.locator('.creator-social-links .control-info,.creator-credit .control-info').count(),0);
+  assert.ok(await page.locator('.sidebar a').evaluateAll(links=>links.every(link=>!link.dataset.helpId&&!link.hasAttribute('title')&&!link.parentElement.classList.contains('control-info-pair'))));assert.equal(await page.locator('#crumb').textContent(),'Overview');checks++;
+  await page.locator('.dashboard-start [data-action=channel-new]').click();
+  assert.equal(await help.isVisible(),false);checks++;
+  const modalName=page.locator('#modal-form input[name=name]');await modalName.focus();assert.equal(await help.isVisible(),false);
+  const modalInfo=await infoFor(modalName);await modalInfo.click();await help.waitFor({state:'visible'});
+  assert.equal(await help.evaluate(el=>el.parentElement.id),'dialog');
+  assert.equal(await page.locator('#modal-form').count(),1);assert.equal(await modalName.inputValue(),'');assert.equal(app.store.data.channels.length,0);checks++;
+  await capture('dialog-help-1440.png','context-help',false);await help.waitFor({state:'visible'});checks++;
+  await page.keyboard.press('Escape');assert.equal(await help.isVisible(),false);assert.equal(await page.locator('#dialog').isVisible(),true);
+  await page.keyboard.press('Escape');await page.locator('#dialog').waitFor({state:'hidden'});checks++;
+  assert.equal(app.studio.jobs.size,0);assert.equal(app.store.data.channels.length,0);checks++;
+  await page.setViewportSize({width:320,height:300});await page.mouse.move(1,1);
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});
+  // Keep the control mounted while extending its help: dashboard polling pauses while help is open.
+  await prepare.evaluate(el=>{el.dataset.help='Long contextual explanation. '.repeat(150);});
+  await page.waitForFunction(()=>{const tip=document.querySelector('#control-help');return !tip.hidden&&tip.textContent.startsWith('Long contextual explanation.')&&tip.scrollHeight>tip.clientHeight;});
+  assert.ok(await help.evaluate(el=>{const b=el.getBoundingClientRect();return b.left>=12&&b.right<=document.documentElement.clientWidth-11&&b.top>=12&&b.bottom<=innerHeight-11;}));checks++;
+  await help.evaluate(el=>{el.scrollTop=150;});await page.waitForTimeout(100);
+  assert.equal(await help.isVisible(),true);assert.ok(await help.evaluate(el=>el.scrollTop>0));checks++;
+  await page.keyboard.press('Escape');await prepare.evaluate(el=>{delete el.dataset.help;});await page.setViewportSize({width:1440,height:1000});
   for(const [code,title,dir] of [['es','Resumen','ltr'],['fr','Vue d’ensemble','ltr'],['hi','अवलोकन','ltr'],['ar','نظرة عامة','rtl'],['zh','概览','ltr'],['bn','সারসংক্ষেপ','ltr'],['ru','Обзор','ltr'],['id','Ringkasan','ltr'],['pt-PT','Visão geral','ltr']]){
     await page.locator('#language-select').selectOption(code);
     await page.getByRole('heading',{name:title,exact:true}).waitFor();
     assert.equal(await page.locator('html').getAttribute('dir'),dir);
     assert.equal(await page.locator('#language-select').inputValue(),code);checks++;
   }
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/Nada é transmitido/);checks++;
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();assert.equal(await help.isVisible(),false);
+  prepareInfo=await infoFor(prepare);await prepareInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/Nothing is broadcast/);checks++;
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();assert.equal(await help.isVisible(),false);checks++;
   await page.reload();await page.getByRole('heading',{name:'Visão geral',exact:true}).waitFor();checks++;
 
   assert.equal(await page.locator('header').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(225, 10, 81)');checks++;
@@ -67,15 +147,25 @@ try {
   assert.equal(app.store.data.media.length,0);
   await page.getByRole('button',{name:'Fechar',exact:true}).click();checks++;
   await page.locator('[data-action="import"]').first().click();
-  await page.getByLabel('Caminhos locais').fill(clip);
+  await page.getByLabel('Caminhos locais',{exact:true}).fill(clip);
   await page.locator('#modal-form').getByRole('button', { name: 'Importar vídeos', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   await page.locator('.media-table').getByText('Ensaio de emissão',{exact:true}).waitFor(); checks++;
+  await page.locator('[data-action="media-grid"]').click();await page.locator('.media-grid .thumbnail').waitFor();
+  const thumbnailInfo=await infoFor(page.locator('.media-grid .thumbnail').first());await thumbnailInfo.click();await help.waitFor({state:'visible'});
+  assert.equal(await page.locator('#dialog').isVisible(),false,'thumbnail information must not start a video preview');checks++;
+  await page.keyboard.press('Escape');
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1000});
+    assert.ok(await page.locator('.media-card').first().evaluate(el=>el.scrollWidth<=el.clientWidth+1),'thumbnail and adjacent information fit the media card');checks++;
+    await capture(`media-grid-info-${width}.png`,'media-grid');
+  }
+  await page.setViewportSize({width:1440,height:1000});await page.locator('[data-action="media-list"]').click();await page.locator('.media-table').waitFor();
   await goTo('Canais');
   await page.locator('[data-action="channel-new"]').first().click();
-  await page.getByLabel('Nome do canal').fill('Canal de ensaio');
-  await page.getByLabel('Servidor RTMP / RTMPS').fill('rtmp://127.0.0.1:9/live');
-  await page.getByLabel('Chave de transmissão').fill('LOCAL-UI-TEST-SECRET');
+  await page.getByLabel('Nome do canal',{exact:true}).fill('Canal de ensaio');
+  await page.getByLabel('Servidor RTMP / RTMPS',{exact:true}).fill('rtmp://127.0.0.1:9/live');
+  await page.getByLabel('Chave de transmissão',{exact:true}).fill('LOCAL-UI-TEST-SECRET');
   await page.locator('#modal-form').getByRole('button', { name: 'Guardar', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   assert.ok(!(await page.content()).includes('LOCAL-UI-TEST-SECRET')); checks++;
@@ -84,7 +174,7 @@ try {
   await page.getByLabel('Nome', { exact: true }).fill('Programação de ensaio');
   await page.locator('#add-media-button').click();
   await page.locator('#add-media-button').click();
-  await page.getByRole('button', { name: 'Subir vídeo' }).nth(1).click();
+  await page.getByRole('button', { name: 'Subir vídeo',exact:true }).nth(1).click();
   await page.locator('#modal-form').getByRole('button', { name: 'Guardar', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' }); checks++;
   await page.locator('[data-action=playlist-rename]').first().click();
@@ -93,6 +183,8 @@ try {
   await page.locator('#modal-form').getByRole('button',{name:'Guardar',exact:true}).click();
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.store.data.playlists[0].name,'Programa de ensaio renomeado');checks++;
+  await page.getByRole('heading',{name:'Programa de ensaio renomeado',exact:true}).waitFor();
+  await help.waitFor({state:'hidden'});checks++;
   await page.locator('[data-action=preview-playlist]').first().click();
   await page.getByRole('button', { name: 'Ver resultado', exact: true }).waitFor({ timeout: 30000 });
   await page.getByRole('button', { name: 'Ver resultado', exact: true }).click();
@@ -101,8 +193,8 @@ try {
   await goTo('Agendamento');
   await page.locator('[data-action="schedule-new"]').first().click();
   await page.locator('#source-mode').selectOption('playlist');
-  await page.getByLabel('Canal de ensaio').check();
-  await page.getByLabel('Confirmo os canais e o horário selecionados.').check();
+  await page.getByRole('checkbox',{name:/^Canal de ensaio/}).check();
+  await page.getByLabel('Confirmo os canais e o horário selecionados.',{exact:true}).check();
   await page.getByRole('button', { name: 'Guardar agendamento', exact: true }).click();
   await page.locator('#dialog').waitFor({ state: 'hidden' });
   await page.getByText('Pausado', { exact: true }).waitFor(); checks++;
@@ -115,11 +207,32 @@ try {
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.studio.jobs.size,1); // Only the completed local preview exists.
   await page.locator('[data-action="plan-schedule"]').first().click();
-  await page.getByLabel('Confirmo os canais e o horário selecionados.').check();
+  await page.getByLabel('Confirmo os canais e o horário selecionados.',{exact:true}).check();
   await page.getByRole('button',{name:'Guardar agendamento',exact:true}).click();
   await page.locator('#dialog').waitFor({state:'hidden'});
   assert.equal(app.store.data.schedules.length,2);checks++;
   await goTo('Definições');
+  const protectedChannel=app.store.data.channels[0].secret;
+  progress('project-export',{event:'start'});
+  // The export produces a download, not a document navigation; await its event and completed file below.
+  const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click({noWaitAfter:true})]);
+  progress('project-export-download',{filename:projectDownload.suggestedFilename()});
+  let projectStream;const projectChunks=[];
+  try {
+  const exportFailure=await boundedDownload('project-export-completion',()=>projectDownload.failure());assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'streamland-project.json');
+  assert.equal(projectExportResponse.status,200);assert.match(projectExportResponse.type,/^application\/json(?:;|$)/);assert.match(projectExportResponse.disposition,/attachment;.*streamland-project\.json/);
+  projectStream=await boundedDownload('project-export-stream',()=>projectDownload.createReadStream());assert.ok(projectStream);
+  await boundedDownload('project-export-read',async()=>{for await(const chunk of projectStream)projectChunks.push(chunk);});
+  } catch(error) {
+    projectStream?.destroy();void projectDownload.cancel().catch(()=>{});throw error;
+  }
+  const projectText=Buffer.concat(projectChunks).toString('utf8'),project=JSON.parse(projectText);assert.equal(project.version,1);assert.ok(Number.isFinite(Date.parse(project.exported)));
+  assert.equal(project.channels.find(channel=>channel.id===app.store.data.channels[0].id)?.name,'Canal de ensaio');assert.equal(project.media.length,1);assert.equal(project.playlists[0].mediaIds.length,2);assert.equal(project.schedules.length,2);assert.ok(project.schedules.every(schedule=>schedule.armed===false));
+  assert.ok(!projectText.includes('LOCAL-UI-TEST-SECRET'));assert.ok(!projectText.includes(protectedChannel));assert.ok(project.channels.every(channel=>!Object.hasOwn(channel,'key')&&!Object.hasOwn(channel,'secret')&&!Object.hasOwn(channel,'hasKey')));assert.equal(app.store.data.channels[0].secret,protectedChannel);checks++;
+  const copyCheckbox=page.locator('#encoding-form [name=copy]'),copyChecked=await copyCheckbox.isChecked(),copyInfo=await infoFor(copyCheckbox);assert.equal(await copyCheckbox.isEnabled(),true);
+  await copyInfo.click();await help.waitFor({state:'visible'});assert.equal(await copyCheckbox.isChecked(),copyChecked);
+  await copyInfo.focus();await page.keyboard.press('Enter');await help.waitFor({state:'hidden'});assert.equal(await copyCheckbox.isChecked(),copyChecked);
+  await page.keyboard.press('Space');await help.waitFor({state:'visible'});assert.equal(await copyCheckbox.isChecked(),copyChecked);await page.keyboard.press('Escape');checks++;
   await page.locator('#notification-form [name=host]').fill('smtp.unsaved.example');
   await page.locator('#encoding-form [name=videoBitrate]').selectOption('1000');
   await page.getByRole('button',{name:'Guardar perfil',exact:true}).click();
@@ -127,13 +240,18 @@ try {
   assert.equal(await page.locator('#notification-form [name=host]').inputValue(),'smtp.unsaved.example');
   assert.equal(app.store.data.settings.encoding.videoBitrate,1000);checks++;
   await page.locator('#encoding-form [name=copy]').check();
-  assert.equal(await page.locator('#encoding-form [name=videoBitrate]').isDisabled(),true);
+  for(const name of ['videoBitrate','audioBitrate'])assert.equal(await page.locator(`#encoding-form [name=${name}]`).isEnabled(),true);
+  for(const name of ['fps','aspect'])assert.equal(await page.locator(`#encoding-form [name=${name}]`).isDisabled(),true);
+  await page.locator('#encoding-form [name=videoBitrate]').selectOption('4500');
+  await page.locator('#encoding-form [name=audioBitrate]').selectOption('192');
   await page.getByRole('button',{name:'Guardar perfil',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('#encoding-form button').disabled);
   assert.equal(app.store.data.settings.encoding.copy,true);
-  assert.equal(app.store.data.settings.encoding.videoBitrate,1000);
+  assert.equal(app.store.data.settings.encoding.videoBitrate,4500);
+  assert.equal(app.store.data.settings.encoding.audioBitrate,192);
   await page.locator('#encoding-form [name=copy]').uncheck();
   assert.equal(await page.locator('#encoding-form [name=videoBitrate]').isEnabled(),true);
+  for(const name of ['fps','aspect'])assert.equal(await page.locator(`#encoding-form [name=${name}]`).isEnabled(),true);
   await page.getByRole('button',{name:'Guardar perfil',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('#encoding-form button').disabled);
   assert.equal(app.store.data.settings.encoding.copy,false);checks++;
@@ -159,7 +277,12 @@ try {
   assert.equal(await page.locator('html').getAttribute('data-compact-nav'),'false');checks++;
   await goTo('Playlists');
   await page.locator('[data-action=playlist-edit]').first().click();
-  while(await page.locator('[data-remove]').count())await page.locator('[data-remove]').first().click();
+  const playlistRows=await page.locator('[data-remove]').count();progress('playlist-empty',{rows:playlistRows});
+  for(let remaining=playlistRows;remaining>0;remaining--){
+    await page.locator('[data-remove]').first().click();
+    await page.waitForFunction(expected=>document.querySelectorAll('[data-remove]').length===expected,remaining-1);
+  }
+  assert.equal(await page.locator('[data-remove]').count(),0);
   await page.locator('#modal-form').getByRole('button',{name:'Guardar',exact:true}).click();
   await page.locator('#modal-form .form-error').waitFor({state:'visible'});
   assert.equal(app.store.data.playlists[0].mediaIds.length,2);
@@ -205,13 +328,79 @@ try {
   for(const name of ['topEnabled','bottomEnabled','imageEnabled'])await page.locator('[name='+name+']').uncheck();
   await page.getByRole('button',{name:'Guardar sobreposições',exact:true}).click();await page.locator('#dialog').waitFor({state:'hidden'});
   assert.ok(['top','bottom','image'].every(key=>!app.store.data.settings.overlays[key].enabled));checks++;
+  await goTo('Câmara e ecrã ao vivo');
+  assert.equal(await page.locator('.studio-customization').getAttribute('open'),null);assert.equal(await page.locator('.production-clips').getAttribute('open'),null);
+  assert.equal(await page.locator('[data-production=choose-recording-folder]').isVisible(),true);checks++;
+  await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),true);
+  await page.locator('.studio-customization>summary').click();assert.equal(await page.locator('.production-grid').isVisible(),false);checks++;
+  const captureStart=page.locator('[data-capture=start]');assert.equal(await captureStart.isDisabled(),true);
+  await captureStart.hover();await page.waitForTimeout(450);assert.equal(await help.isVisible(),false);
+  const captureInfo=await infoFor(captureStart);assert.notEqual(await captureInfo.getAttribute('aria-disabled'),'true');await captureInfo.click();await help.waitFor({state:'visible'});assert.match(await help.textContent(),/destino livre/);checks++;
+  await page.keyboard.press('Escape');
+  await page.locator('#capture-form [name=source]').selectOption('microphone');
+  assert.equal(await page.locator('#capture-form [name=camera]').isDisabled(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isChecked(),true);assert.equal(await page.locator('#capture-form [name=useMic]').isDisabled(),true);checks++;
+  const liveProduction=page.locator('.live-capture-studio .production-tools'),liveProductionField=name=>liveProduction.locator(`[name="${name}"]`);
+  const setLiveVolume=async(name,value)=>liveProductionField(name).evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+  await liveProduction.locator('.studio-customization>summary').click();await liveProductionField('notes').locator('xpath=ancestor::details[1]').locator(':scope > summary').click();
+  await liveProductionField('notes').fill('Private live presenter notes');await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('notes').inputValue(),'Private live presenter notes');checks++;
+  await liveProductionField('notes').fill('');await setLiveVolume('micVolume',.55);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('micVolume').inputValue(),'0.55');checks++;
+  await setLiveVolume('micVolume',1);await setLiveVolume('screenVolume',.75);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.equal(await liveProductionField('screenVolume').inputValue(),'0.75');checks++;
+  await liveProductionField('notes').fill('Private live presenter notes');await setLiveVolume('micVolume',.55);await liveProductionField('scene').selectOption('intro');await liveProduction.locator('[data-production=save-scene]').click();await page.waitForFunction(()=>!document.querySelector('.live-capture-studio [data-production=save-scene]').disabled);
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Live camera & screen',exact:true}).waitFor();
+  await liveProduction.locator('.studio-customization>summary').click();await liveProduction.locator('[data-production=load-scene]').click();assert.equal(await liveProductionField('notes').inputValue(),'Private live presenter notes');assert.equal(await liveProduction.locator('.teleprompter').textContent(),'Private live presenter notes');assert.equal(await liveProductionField('micVolume').inputValue(),'0.55');assert.equal(await liveProductionField('screenVolume').inputValue(),'0.75');
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Câmara e ecrã ao vivo',exact:true}).waitFor();checks++;
+  let releaseFolderPicker;folderPickerWait=new Promise(resolve=>{releaseFolderPicker=resolve;});
+  try{
+    await page.locator('[data-production=choose-recording-folder]').click();
+    await page.waitForFunction(()=>document.querySelector('[data-production=choose-recording-folder]').disabled);
+    await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  }finally{releaseFolderPicker();folderPickerWait=null;}
+  await page.waitForFunction(()=>document.querySelector('[name=recordingDirectory]').value.includes('Chosen recordings'));
+  await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');assert.match(await page.locator('[name=recordingDirectory]').inputValue(),/Chosen recordings/);checks++;
+  await page.locator('[name=askRecordingFolder]').uncheck();await page.locator('[data-production=save-recording-preferences]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-production=save-recording-preferences]').disabled);
+  assert.equal(app.recordings.preferences.directory,fs.realpathSync(path.join(directory,'Chosen recordings')));assert.equal(app.recordings.preferences.askEveryTime,false);checks++;
+  await goTo('Visão geral');
+  await goTo('Câmara e ecrã ao vivo');assert.equal(await page.locator('[name=askRecordingFolder]').isChecked(),false);checks++;
+  await goTo('Chat unificado');const chatDraft=page.locator('.chat-compose textarea');
+  await chatDraft.fill('Unsent review draft');await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');
+  await goTo('Visão geral');await goTo('Chat unificado');assert.equal(await chatDraft.inputValue(),'Unsent review draft');checks++;
+  await chatDraft.fill('');await page.locator('.chat-account-setup>summary').click();
+  const youtubeSetup=page.locator('.chat-provider-setup[data-provider="YouTube"]');await youtubeSetup.locator('..').locator('summary').click();
+  await youtubeSetup.locator('[name=clientId]').fill('123-review.apps.googleusercontent.com');await youtubeSetup.locator('[name=clientSecret]').fill('synthetic-unsaved-secret');
+  await chatDraft.focus();app.studio.chat.auth.pending.set('Twitch',{url:'https://www.twitch.tv/activate',userCode:'REVIEW',expires:Date.now()+600000});
+  await page.locator('.chat-accounts a[href="https://www.twitch.tv/activate"]').waitFor();
+  assert.equal(await youtubeSetup.locator('[name=clientId]').inputValue(),'123-review.apps.googleusercontent.com');assert.equal(await youtubeSetup.locator('[name=clientSecret]').inputValue(),'synthetic-unsaved-secret');assert.equal(await youtubeSetup.locator('..').evaluate(el=>el.open),true);
+  await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  let releaseChatSetup;chatSetupWait=new Promise(resolve=>{releaseChatSetup=resolve;});
+  try{
+    await youtubeSetup.locator('button').click();await page.waitForFunction(()=>document.querySelector('.chat-provider-setup[data-provider="YouTube"] [name=clientId]').disabled);
+    assert.equal(await youtubeSetup.locator('[name=clientSecret]').isDisabled(),true);await page.locator('#language-select').selectOption('en');assert.equal(await page.locator('#language-select').inputValue(),'pt-PT');checks++;
+  }finally{releaseChatSetup();chatSetupWait=null;}
+  await page.waitForFunction(()=>{const form=document.querySelector('.chat-provider-setup[data-provider="YouTube"]');return !form.querySelector('[name=clientId]').disabled&&form.querySelector('[name=clientSecret]').value==='';});
+  assert.equal(app.studio.chat.auth.state().YouTube.configured,true);assert.equal(app.studio.chat.auth.state().YouTube.hasClientSecret,true);assert.equal(await youtubeSetup.locator('[name=clientSecret]').getAttribute('value'),null);checks++;
+  app.studio.chat.auth.pending.delete('Twitch');
+  await page.locator('#language-select').selectOption('en');await page.getByRole('heading',{name:'Unified live chat',exact:true}).waitFor();
+  await page.locator('#language-select').selectOption('pt-PT');await page.getByRole('heading',{name:'Chat unificado ao vivo',exact:true}).waitFor();checks++;
   await goTo('Visão geral');
   await capture('dashboard-populated.png');
   for(const width of [1440,800,390]){
     await page.setViewportSize({width,height:1000});
-    for(const name of ['Visão geral','Entrar em direto','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
+    for(const name of ['Visão geral','Entrar em direto','Câmara e ecrã ao vivo','Gravador de vídeo e áudio','Chat unificado','Em direto agora','Biblioteca de vídeos','Canais','Playlists','Agendamento','Ferramentas','Histórico','Definições','Ajuda']){
       await goTo(name);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${name}: horizontal page overflow at ${width}px`);checks++;
+      if(name==='Câmara e ecrã ao vivo'||name==='Chat unificado'||name==='Gravador de vídeo e áudio')assert.ok(await page.locator('#content').evaluate(el=>el.scrollWidth<=el.clientWidth+1),`${name}: clipped panel content at ${width}px`);
+      if(name==='Câmara e ecrã ao vivo')for(const action of ['preview','start','stop','release'])assert.equal(await page.locator('[data-capture='+action+']').count(),1,'cached live capture controls survive navigation');
+      if(name==='Gravador de vídeo e áudio')for(const action of ['prepare','start','stop','folder','release'])assert.equal(await page.locator('[data-recorder='+action+']').count(),1,'cached recorder controls survive navigation');
+      assert.ok(await page.evaluate(()=>{
+        const icons=[...document.querySelectorAll('.control-info')];
+        const plainLinks=[...document.querySelectorAll('.sidebar a,a[href^="https://"],a[href^="http://"],a[href^="#"]')];
+        return plainLinks.every(link=>!link.dataset.helpId&&!link.hasAttribute('title')&&!link.parentElement.classList.contains('control-info-pair'))&&icons.length>0&&icons.every(icon=>{
+          const controls=[...document.querySelectorAll('[data-help-id]')].filter(control=>control.dataset.helpId===icon.dataset.helpFor);
+          return controls.length===1&&icon.getAttribute('aria-label')?.trim()&&icon.getAttribute('aria-controls')==='control-help'&&!icon.hasAttribute('title')&&!controls[0].hasAttribute('title');
+        });
+      }),`${name}: missing, duplicate or stale contextual information association at ${width}px`);
+      assert.equal(await help.isVisible(),false,`${name}: ordinary navigation must not open contextual information`);
       const section=await page.evaluate(()=>location.hash.slice(1)||'dashboard');
       await capture(`screen-${width}-${section}.png`,section);
     }
@@ -233,12 +422,17 @@ try {
   }finally{await blockedPage.close();}
   assert.deepEqual(errors, []);
   passed=true;
-  console.log(JSON.stringify({ version, checks, pageErrors: errors, screenshots: base, transport: 'Production HTTP handler via Playwright route; no network sockets', vault: process.platform==='win32'?'Windows DPAPI':'Chave local privada' }));
-} catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);throw error;}
+   console.log(JSON.stringify({ version, checks, pageErrors: errors, screenshots: base, transport: 'Production HTTP handler via Playwright route and native loopback downloads', vault: process.platform==='win32'?'Windows DPAPI':'Chave local privada' }));
+} catch(error){failure=String(error.message||error).split('\n')[0].slice(0,500);console.log(JSON.stringify({ui:'failed',lastStage,checks,screenshots:screenshots.length,failure}));throw error;}
 finally {
   const cleanup=[];
-  for(const close of [()=>context?.close(),()=>app.close()])try{await close();}catch(error){cleanup.push(error);}
-  const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route; no network sockets'};
+  for(const [stage,close] of [['context.close',()=>context?.close()],['app.close',()=>app.close()]]){
+    const began=Date.now();let ok=true;console.log(JSON.stringify({cleanup:stage,event:'start'}));
+    try{await close();}catch(error){ok=false;cleanup.push(error);}
+    finally{console.log(JSON.stringify({cleanup:stage,event:'end',ok,elapsedMs:Date.now()-began}));}
+  }
+   const report={version,started,finished:new Date().toISOString(),passed:passed&&!cleanup.length,checks,lastStage,pageErrors:errors,failure:failure||(cleanup.length?'Falha ao terminar a verificação.':''),screenshots,transport:'Production HTTP handler via Playwright route and native loopback downloads'};
+   report.relevantControlHelpOnly=report.passed;report.productionDraftLanguageProtection=report.passed;
   fs.writeFileSync(path.join(base,'result.json'),JSON.stringify(report,null,2));
   if(cleanup.length)throw new AggregateError(cleanup,'Falha ao terminar a verificação.');
 }

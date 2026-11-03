@@ -16,16 +16,20 @@ for(const p of platforms){requireYtdlp(root,p);for(const target of runtimeTarget
 buildCatalogs(root);
 if(platforms.includes('win32')){
  if(process.platform!=='win32')throw Error('Build the Windows launcher on Windows');
- const release=path.join(root,'release','GoStreams-'+version),binary=path.join(release,'GoStreams.exe');
- if(fs.existsSync(binary)){let fd;try{fd=fs.openSync(binary,'r+');}catch{throw Error('Close this Go Streams version before rebuilding.');}finally{if(fd!==undefined)fs.closeSync(fd);}}
+ const release=path.join(root,'release','Streamland-'+version),binary=path.join(release,'Streamland.exe');
+ if(fs.existsSync(binary)){let fd;try{fd=fs.openSync(binary,'r+');}catch{throw Error('Close this Streamland version before rebuilding.');}finally{if(fd!==undefined)fs.closeSync(fd);}}
  fs.mkdirSync(release,{recursive:true});
  for(const folder of ['src','public'])fs.cpSync(path.join(root,folder),path.join(release,folder),{recursive:true});
  for(const name of ['package.json','README.md'])fs.copyFileSync(path.join(root,name),path.join(release,name));
+  if(fs.existsSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md')))fs.copyFileSync(path.join(root,'STREAMYARD-FEATURE-SCOPE.md'),path.join(release,'STREAMYARD-FEATURE-SCOPE.md'));
  copyYtdlp(root,release,'win32');copyRuntime(root,release,'win32');
+ fs.mkdirSync(path.join(root,'.tmp'),{recursive:true});
+ const work=fs.mkdtempSync(path.join(root,'.tmp','windows-launcher-')),assembly=path.join(work,'Version.cs');
+ fs.writeFileSync(assembly,'using System.Reflection;\n[assembly: AssemblyTitle("Streamland")]\n[assembly: AssemblyProduct("Streamland")]\n[assembly: AssemblyCompany("Antonio Fradique")]\n[assembly: AssemblyVersion("'+version+'.0")]\n[assembly: AssemblyFileVersion("'+version+'.0")]\n');
  const csc=path.join(process.env.WINDIR||'C:\\Windows','Microsoft.NET','Framework64','v4.0.30319','csc.exe');
- const result=spawnSync(csc,['/nologo','/target:winexe','/reference:System.Windows.Forms.dll','/win32icon:'+path.join(root,'public','icon.ico'),'/out:'+binary,path.join(root,'scripts','Launcher.cs')],{encoding:'utf8',windowsHide:true});
+ const result=spawnSync(csc,['/nologo','/target:winexe','/reference:System.Windows.Forms.dll','/win32icon:'+path.join(root,'public','icon.ico'),'/out:'+binary,path.join(root,'scripts','Launcher.cs'),assembly],{encoding:'utf8',windowsHide:true});
  if(result.status!==0)throw Error(result.stdout||result.stderr||String(result.error));
- fs.writeFileSync(path.join(release,'CloseGoStreams.cmd'),'@echo off\r\n"%~dp0GoStreams.exe" --close\r\n');
+ fs.writeFileSync(path.join(release,'CloseStreamland.cmd'),'@echo off\r\n"%~dp0Streamland.exe" --close\r\n');
  console.log('Windows build ready: '+release);
 }
 if(platforms.includes('darwin'))console.log('Mac bundle prepared (execution not validated): '+buildMac(root));

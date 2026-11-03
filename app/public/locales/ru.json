@@ -157,7 +157,7 @@
   "Mais antigos": "Сначала старые",
   "Pesquisar": "Поиск",
   "Verificação ainda não efetuada": "Ещё не проверено",
-  "Atualizações do Go Streams": "Обновления Go Streams",
+  "Atualizações do Streamland": "Обновления Streamland",
   "Verificar agora": "Проверить сейчас",
   "Configurar canal de atualizações": "Настроить источник обновлений",
   "A mostrar": "Показано",
@@ -193,7 +193,7 @@
   "Pré-visualizar": "Предпросмотр",
   "Estúdio local": "Локальная студия",
   "ESTÚDIO": "СТУДИЯ",
-  "Encerrar Go Streams": "Закрыть Go Streams",
+  "Encerrar Streamland": "Закрыть Streamland",
   "Menu principal": "Главное меню",
   "Voltar a ligar": "Подключиться снова",
   "+ Preparar transmissão": "+ Подготовить трансляцию",
@@ -236,5 +236,7 @@
   "Banner superior": "Верхняя строка",
   "Banner inferior": "Нижняя строка",
   "Configurar sobreposições": "Настроить наложения",
-  "Guardar sobreposições": "Сохранить наложения"
+  "Guardar sobreposições": "Сохранить наложения",
+  "Preservar resolução e fps do vídeo original": "Сохранять разрешение и частоту кадров исходного видео",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Без активных наложений сохраняются разрешение и частота кадров файла. Битрейты видео и аудио продолжают применяться."
 }

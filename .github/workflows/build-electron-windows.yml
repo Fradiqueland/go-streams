@@ -1,6 +1,8 @@
 name: Build Electron Windows installer
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ['app/**', '.github/workflows/build-electron-windows.yml']
   push:
     branches: [main]
     paths: ['app/**', '.github/workflows/build-electron-windows.yml']
@@ -12,7 +14,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
@@ -27,23 +29,56 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.11'
+      - name: Verify native MSI legacy upgrade and rollback
+        run: |
+          python scripts/verify-windows-installer.py --fixture-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare verified application runtimes
         run: |
           node --input-type=module -e "import {prepareYtdlp} from './scripts/vendor-ytdlp.mjs'; import {prepareRuntime} from './scripts/vendor-runtime.mjs'; await prepareYtdlp(process.cwd(),{platforms:['win32']}); await prepareRuntime(process.cwd(),'win32');"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/build.mjs --platform=win32
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Test application and data preservation
+      - name: Check application syntax
         run: |
           $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
           node scripts/check.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm test
+      - name: Verify review 15 and 16 regressions
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          node --test --test-concurrency=1 test/review15-*.test.mjs test/review16-*.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native media and late destination joining
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          npm run test:live
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:wire
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/soak-check.mjs --seconds 30 --streams 7
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify synthetic live browser and independent recording
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          npm run test:live:browser
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify interface controls and responsive layouts
+        timeout-minutes: 5
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          $qa = Join-Path $env:RUNNER_TEMP 'streamland-ui-qa'
+          npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:GO_STREAMS_PLAYWRIGHT_PACKAGE = Join-Path $qa 'package.json'
+          npm run test:ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:recorder:browser
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare Electron and installer compiler
         run: |
           $toolchain = Get-Content electron/toolchain.json -Raw | ConvertFrom-Json
-          $tools = Join-Path $env:RUNNER_TEMP 'gostreams-build-tools'
+          $tools = Join-Path $env:RUNNER_TEMP 'streamland-build-tools'
           New-Item -ItemType Directory -Path $tools -Force | Out-Null
           Invoke-WebRequest -Uri $toolchain.url -OutFile (Join-Path $tools 'electron.zip')
           $actual = (Get-FileHash -LiteralPath (Join-Path $tools 'electron.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -58,29 +93,46 @@ jobs:
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'NSIS compiler unavailable' }
           "GS_BUILD_TOOLS=$tools" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "GS_NSIS=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build Electron setup EXE
-        run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          python scripts/build-electron-windows.py --electron-zip "$env:GS_BUILD_TOOLS\electron.zip" --application-root "release/GoStreams-$version" --nsis "$env:GS_NSIS" --rcedit "$env:GS_BUILD_TOOLS\rcedit-x64.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify installation, upgrades and uninstallation
         run: |
           python scripts/verify-electron-installer.py --nsis "$env:GS_NSIS"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Electron setup EXE
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          python scripts/build-electron-windows.py --electron-zip "$env:GS_BUILD_TOOLS\electron.zip" --application-root "release/Streamland-$version" --nsis "$env:GS_NSIS" --rcedit "$env:GS_BUILD_TOOLS\rcedit-x64.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native Electron window and persistent sessions
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $report = Get-Content "release/GoStreams-$version-Electron-build.json" -Raw | ConvertFrom-Json
+          $report = Get-Content "release/Streamland-$version-Electron-build.json" -Raw | ConvertFrom-Json
           node scripts/verify-electron.mjs "$($report.application)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Complete ten regression review cycles
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          npm run test:review
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload installer and verification reports
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: GoStreams-Electron-Windows
+          name: Streamland-Electron-Windows
           path: |
             app/release/*Electron-Setup.exe
             app/release/*Electron*verification.json
             app/release/*Electron-build.json
+            app/release/*Windows-installer-verification.json
+            app/.tmp/msi-brand-verification-*/*.log
+            app/release/*live-studio*-verification.json
+            app/release/*review*-verification.json
+            app/release/*recorder*-verification.json
+            app/.tmp/recorder-browser/*.png
+            app/.tmp/recorder-browser/result.json
+            app/.tmp/review-loop/*.log
+            app/.tmp/ui-check/result.json
+            app/.tmp/soak-result.json
+            app/.tmp/ui-check/*.png
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true

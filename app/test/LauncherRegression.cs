@@ -20,7 +20,7 @@ class LauncherRegression {
         Check(result==null,"stale session should time out");
         string browser=Launcher.BrowserArguments(valid,@"D:\User data\desktop-browser");
         Check(browser.Contains("--user-data-dir=\"D:\\User data\\desktop-browser\"") && browser.Contains("--no-first-run"),"dedicated profile missing");
-        foreach(string flag in new[]{"--profile-directory=Default","--hide-crash-restore-bubble","--disable-sync","--disable-features=msImplicitSignin","--edge-skip-compat-layer-relaunch"})
+        foreach(string flag in new[]{"--profile-directory=Default","--hide-crash-restore-bubble","--disable-sync","--disable-features=msImplicitSignin,Translate,msEdgeTranslate","--edge-skip-compat-layer-relaunch"})
             Check(browser.Contains(flag),"additional browser window prevention missing: "+flag);
         Check(!browser.Contains("--no-sandbox"),"browser sandbox was disabled");
         string fixture=Path.Combine(Path.GetDirectoryName(typeof(LauncherRegression).Assembly.Location),"app-data");

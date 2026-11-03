@@ -6,7 +6,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
 if(!['win32','darwin'].includes(process.platform))throw Error('Run this check on Windows or macOS.');
 const applicationRoot=process.argv.find(value=>value.startsWith('--application-root='))?.slice('--application-root='.length);
-const release=applicationRoot?path.resolve(applicationRoot):(process.platform==='win32'?path.join(root,'release','GoStreams-'+version):path.join(root,'release','GoStreams-'+version+'-mac','GoStreams.app','Contents','Resources','app'));
+const release=applicationRoot?path.resolve(applicationRoot):(process.platform==='win32'?path.join(root,'release','Streamland-'+version):path.join(root,'release','Streamland-'+version+'-mac','Streamland.app','Contents','Resources','app'));
 const target=process.platform==='win32'?'win32-x64':'darwin-'+process.arch,binary=path.join(release,'runtime',target,process.platform==='win32'?'node.exe':'node');
 const code=`
 import fs from 'node:fs';import path from 'node:path';

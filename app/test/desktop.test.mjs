@@ -8,13 +8,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
-import {nativePicker,openBrowser,defaultDataDirectory,showStartupError} from '../src/desktop.mjs';
+import {nativePicker,nativeDirectoryPicker,openBrowser,defaultDataDirectory,showStartupError} from '../src/desktop.mjs';
 import {spawnOwnedTool,stopProcessTree} from '../src/processes.mjs';
 import {verifyRelease} from '../src/updates.mjs';
 import {buildMac} from '../scripts/build-mac.mjs';
 test('macOS keeps writable user data outside the application bundle',()=>{
- assert.equal(defaultDataDirectory('/Applications/GoStreams.app',{platform:'darwin',home:'/Users/Antonio'}),path.join('/Users/Antonio','Library','Application Support','Go Streams'));
+ assert.equal(defaultDataDirectory('/Applications/Streamland.app',{platform:'darwin',home:'/Users/Antonio'}),path.join('/Users/Antonio','Library','Application Support','Go Streams'));
  assert.equal(defaultDataDirectory('D:/App',{platform:'win32',home:'C:/Users/User'}),path.join('D:/App','data'));
+});
+
+for(const platform of ['darwin','win32'])test(platform+' recording directory picker handles Unicode folders and cancellation without extra installations',async()=>{
+ const directory=platform==='darwin'?'/Users/António/Gravações':'D:\\Gravações de António';let call;
+ assert.equal(await nativeDirectoryPicker({platform,directory,stat:()=>({isDirectory:()=>true}),execute:async(...args)=>{call=args;return {stdout:JSON.stringify(directory)};}}),directory);
+ assert.equal(call[2].timeout,300000);assert.match(call[0],platform==='darwin'?/osascript$/:/powershell\.exe$/i);
+ if(platform==='darwin')assert.equal(call[1].at(-1),directory);
+ else assert.equal(Buffer.from(/FromBase64String\("([^"]*)"\)/.exec(call[1].at(-1))[1],'base64').toString('utf8'),directory);
+ assert.equal(await nativeDirectoryPicker({platform,execute:async()=>({stdout:'null'})}),null);
+ for(const stdout of ['"relative"','{}','["folder"]'])await assert.rejects(nativeDirectoryPicker({platform,execute:async()=>({stdout})}));
+});
+
+for(const platform of ['darwin','win32'])test(platform+' folder picker recovers from deleted or non-directory presets and treats paths as data',async()=>{
+ const directory=platform==='darwin'?'/Users/António/$(text) "recordings"':"D:\\António\\$(text) 'recordings'";
+ const invoke=async stat=>{let call;await nativeDirectoryPicker({platform,directory,stat,execute:async(...args)=>{call=args;return {stdout:'null'};}});return platform==='darwin'?call[1].at(-1):Buffer.from(/FromBase64String\("([^"]*)"\)/.exec(call[1].at(-1))[1],'base64').toString('utf8');};
+ assert.equal(await invoke(()=>({isDirectory:()=>true})),directory);
+ assert.equal(await invoke(()=>({isDirectory:()=>false})), '');
+ assert.equal(await invoke(()=>{throw Object.assign(Error('Removed folder'),{code:'ENOENT'});}), '');
+ if(platform==='darwin')await assert.rejects(nativeDirectoryPicker({platform,execute:async()=>({stdout:JSON.stringify('D:\\Windows-folder')})}),/invalid path/);
 });
 test('macOS native picker parses Unicode and quoted paths, cancellation and malformed output',async()=>{
  const paths=['/Users/test/Vídeo de João.mp4','/Users/test/a"b.mov'];let call;
@@ -25,8 +44,10 @@ test('macOS native picker parses Unicode and quoted paths, cancellation and malf
 });
 test('macOS browser opens an app window or delegates one URL without shell interpolation',()=>{
  for(const browserPresent of [true,false]){
-  let call;openBrowser('http://127.0.0.1:4317/?launch='+'a'.repeat(64),{platform:'darwin',exists:()=>browserPresent,spawnProcess:(...args)=>{call=args;const child=new EventEmitter();child.unref=()=>{};return child;}});
-  assert.equal(call[0],browserPresent?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':'/usr/bin/open');assert.equal(call[2].stdio,'ignore');assert.ok(!call[1].some(x=>x.includes('--no-sandbox')));
+  let call;const url='http://127.0.0.1:4317/?launch='+'a'.repeat(64);openBrowser(url,{platform:'darwin',directory:'/Users/João/Library/Application Support/Go Streams',prepareProfile:()=>'/Users/João/Library/Application Support/Go Streams/desktop-browser',exists:()=>browserPresent,spawnProcess:(...args)=>{call=args;const child=new EventEmitter();child.unref=()=>{};return child;}});
+  assert.equal(call[0],'/usr/bin/open');assert.equal(call[2].stdio,'ignore');assert.ok(!call[1].some(x=>x.includes('--no-sandbox')));
+  if(browserPresent){assert.deepEqual(call[1].slice(0,4),['-n','-a','/Applications/Google Chrome.app','--args']);assert.ok(call[1].includes('--app='+url));assert.ok(!call[1].some(arg=>arg.startsWith('--user-data-dir=')));assert.ok(call[1].includes('--disable-features=Translate,msEdgeTranslate'));assert.ok(call[1].includes('--disable-background-timer-throttling'));assert.ok(call[1].includes('--disable-renderer-backgrounding'));assert.ok(!call[1].includes('-g'));}
+  else assert.deepEqual(call[1],[url]);
  }
 });
 test('POSIX group cancellation requires a child explicitly spawned as its own group',async()=>{
@@ -51,11 +72,11 @@ test('Mac bundle builder copies only runtime files and emits a relocatable launc
   for(const dir of ['src','public','data'])fs.mkdirSync(path.join(root,dir));fs.writeFileSync(path.join(root,'src','server.mjs'),'// fixture');fs.writeFileSync(path.join(root,'public','index.html'),'<html>test</html>');fs.copyFileSync(new URL('../public/icon.icns',import.meta.url),path.join(root,'public','icon.icns'));fs.writeFileSync(path.join(root,'data','secret'),'DO NOT COPY');
   fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'0.9.0'}));fs.writeFileSync(path.join(root,'README.md'),'Read me');
   vendorFixture(root,{macBinary:true});runtimeFixture(root);
-  const native=universalFixture(),launcherDir=path.join(root,'vendor','mac-launcher');fs.mkdirSync(launcherDir,{recursive:true});fs.writeFileSync(path.join(launcherDir,'GoStreams'),native);for(const name of ['LICENSE','PATENTS'])fs.writeFileSync(path.join(launcherDir,name),'Go fixture '+name);fs.writeFileSync(path.join(launcherDir,'manifest.json'),JSON.stringify({bytes:native.length,sha256:crypto.createHash('sha256').update(native).digest('hex')}));
-  const bundle=buildMac(root),launcher=fs.readFileSync(path.join(bundle,'Contents','MacOS','GoStreams'));
+  const native=universalFixture(),launcherDir=path.join(root,'vendor','mac-launcher');fs.mkdirSync(launcherDir,{recursive:true});fs.writeFileSync(path.join(launcherDir,'Streamland'),native);for(const name of ['LICENSE','PATENTS'])fs.writeFileSync(path.join(launcherDir,name),'Go fixture '+name);fs.writeFileSync(path.join(launcherDir,'manifest.json'),JSON.stringify({bytes:native.length,sha256:crypto.createHash('sha256').update(native).digest('hex')}));
+  const bundle=buildMac(root),launcher=fs.readFileSync(path.join(bundle,'Contents','MacOS','Streamland'));
   assert.deepEqual(launcher,native);assert.deepEqual(inspectMachO(launcher).map(s=>s.arch),['x64','arm64']);
-  assert.deepEqual(fs.readFileSync(path.join(bundle,'Contents','Resources','GoStreams.icns')),fs.readFileSync(new URL('../public/icon.icns',import.meta.url)));
-  assert.match(fs.readFileSync(path.join(bundle,'Contents','Info.plist'),'utf8'),/CFBundleIconFile<\/key><string>GoStreams.icns/);
+  assert.deepEqual(fs.readFileSync(path.join(bundle,'Contents','Resources','Streamland.icns')),fs.readFileSync(new URL('../public/icon.icns',import.meta.url)));
+  assert.match(fs.readFileSync(path.join(bundle,'Contents','Info.plist'),'utf8'),/CFBundleIconFile<\/key><string>Streamland.icns/);
   assert.ok(fs.existsSync(path.join(bundle,'Contents','Resources','app','src','server.mjs')));assert.ok(!fs.existsSync(path.join(bundle,'Contents','Resources','app','data')));
   assert.ok(fs.existsSync(path.join(bundle,'Contents','Resources','app','vendor','yt-dlp','darwin','yt-dlp')));
   assert.equal(fs.existsSync(path.join(bundle,'Contents','Resources','app','vendor','yt-dlp','win32')),false);

@@ -14,6 +14,8 @@ function child(){const c=new EventEmitter();c.stdout=new PassThrough();c.stderr=
 test('incomplete portable runtime records failure and releases download capacity before shutdown',async t=>{
  const f=fixture(t),copy=path.join(f.root,'broken-portable');fs.mkdirSync(path.join(copy,'runtime'),{recursive:true});
  fs.cpSync(new URL('../src/',import.meta.url),path.join(copy,'src'),{recursive:true});
+ fs.mkdirSync(path.join(copy,'public'),{recursive:true});
+ fs.copyFileSync(new URL('../public/video-geometry.js',import.meta.url),path.join(copy,'public/video-geometry.js'));
  const {Downloads:PackagedDownloads}=await import(pathToFileURL(path.join(copy,'src/downloads.mjs')).href);
  let spawned=0;const d=new PackagedDownloads(f.studio,{spawnProcess:()=>{spawned++;return child();}});
  const item=d.start({url:'https://youtu.be/abcdefghijk'});

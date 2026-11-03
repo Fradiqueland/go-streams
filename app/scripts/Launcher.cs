@@ -13,11 +13,12 @@ class Launcher {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
 
     internal static string BrowserArguments(string url, string profile) {
         return "--user-data-dir=" + EscapeArgument(profile) +
             " --profile-directory=Default --no-first-run --no-default-browser-check --disable-background-mode" +
-            " --hide-crash-restore-bubble --disable-sync --disable-features=msImplicitSignin" +
+            " --hide-crash-restore-bubble --disable-sync --disable-features=msImplicitSignin,Translate,msEdgeTranslate" +
             " --edge-skip-compat-layer-relaunch --window-size=1440,960 --app=" + EscapeArgument(url);
     }
 
@@ -55,18 +56,22 @@ class Launcher {
         }
         data = Path.Combine(root, "data");
         var folder = new DirectoryInfo(root);
-        if (!Directory.Exists(data) && folder.Name.StartsWith("GoStreams-") && folder.Parent != null) {
+        if (!Directory.Exists(data) && (folder.Name.StartsWith("Streamland-") || folder.Name.StartsWith("GoStreams-")) && folder.Parent != null) {
             Version latest = new Version(0,0,0); string previous = null;
-            foreach (string candidate in Directory.GetDirectories(folder.Parent.FullName, "GoStreams-*")) {
-                Version version; string name = new DirectoryInfo(candidate).Name.Substring(10);
+            foreach (string candidate in Directory.GetDirectories(folder.Parent.FullName)) {
+                string folderName = new DirectoryInfo(candidate).Name;
+                if (!folderName.StartsWith("Streamland-") && !folderName.StartsWith("GoStreams-")) continue;
+                Version version; string name = folderName.Substring(folderName.IndexOf('-') + 1);
                 string previousData = Path.Combine(candidate, "data");
                 if (Version.TryParse(name, out version) && version > latest && File.Exists(Path.Combine(previousData, "project.json"))) {
                     latest = version; previous = previousData;
                 }
             }
-            string legacy = Path.Combine(folder.Parent.FullName, "GoStreams", "data");
             if (previous != null) data = previous;
-            else if (Directory.Exists(legacy)) data = legacy;
+            else foreach (string brand in new[]{"Streamland", "GoStreams"}) {
+                string legacy = Path.Combine(folder.Parent.FullName, brand, "data");
+                if (Directory.Exists(legacy)) { data = legacy; break; }
+            }
         }
         return data;
     }
@@ -79,11 +84,13 @@ class Launcher {
     internal static string FindPortableData(string source) {
         if (String.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return null;
         var candidates = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (string relative in new[]{"GoStreams-data", "data", Path.Combine("GoStreams", "data")}) {
+        foreach (string relative in new[]{"Streamland-data", "GoStreams-data", "data", Path.Combine("Streamland", "data"), Path.Combine("GoStreams", "data")}) {
             string candidate = Path.Combine(source, relative);
             if (File.Exists(Path.Combine(candidate, "project.json"))) candidates.Add(Path.GetFullPath(candidate));
         }
-        foreach (string child in Directory.GetDirectories(source, "GoStreams*")) {
+        foreach (string child in Directory.GetDirectories(source)) {
+            string name = Path.GetFileName(child);
+            if (!name.StartsWith("Streamland") && !name.StartsWith("GoStreams")) continue;
             string candidate = Path.Combine(child, "data");
             if (File.Exists(Path.Combine(candidate, "project.json"))) candidates.Add(Path.GetFullPath(candidate));
         }
@@ -113,13 +120,14 @@ class Launcher {
     }
 
     internal static string InstalledDataDirectory(string localData, string legacy) {
+        // The private storage and lock identities survive the Streamland rename.
         string target = Path.GetFullPath(Path.Combine(localData, "Go Streams", "data"));
         string parent = Path.GetDirectoryName(target), stage = null;
         using (var mutex = new Mutex(false, @"Local\GoStreams.InstalledDataMigration")) {
             bool acquired = false;
             try {
                 try { acquired = mutex.WaitOne(30000); } catch (AbandonedMutexException) { acquired = true; }
-                if (!acquired) throw new IOException("Another Go Streams launch is preserving your existing data. Try again shortly.");
+                if (!acquired) throw new IOException("Another Streamland launch is preserving your existing data. Try again shortly.");
                 // Never merge into or overwrite any existing installed user data.
                 if (Directory.Exists(target) && Directory.GetFileSystemEntries(target).Length > 0) return target;
                 if (String.IsNullOrWhiteSpace(legacy)) return target;
@@ -130,7 +138,7 @@ class Launcher {
                     throw new IOException("The old and new data folders must be separate.");
                 if (!File.Exists(Path.Combine(legacy, "project.json"))) throw new IOException("Select the portable data folder containing project.json. Its files have not been changed.");
                 int port; if (!Int32.TryParse(Environment.GetEnvironmentVariable("GO_STREAMS_PORT"), out port) || port < 1 || port > 65535) port = 4317;
-                if (Ready(Session(legacy, port))) throw new IOException("Close the portable Go Streams before importing its profile, then open the installed version again.");
+                if (Ready(Session(legacy, port))) throw new IOException("Close the portable Streamland before importing its profile, then open the installed version again.");
                 Directory.CreateDirectory(parent);
                 stage = Path.Combine(parent, ".data-migration-" + Guid.NewGuid().ToString("N"));
                 CopyDataTree(legacy, stage);
@@ -216,14 +224,25 @@ class Launcher {
         catch (System.ComponentModel.Win32Exception) { }
     }
 
-    static void Activate(ref Process browser, string url, string data) {
-        if (!HasExited(browser)) {
+    static void FocusBrowser(Process browser) {
+        var waiting = Stopwatch.StartNew();
+        while (!HasExited(browser) && waiting.ElapsedMilliseconds < 10000) {
             browser.Refresh();
             IntPtr window = browser.MainWindowHandle;
             if (window != IntPtr.Zero) {
                 if (IsIconic(window)) ShowWindow(window, 9);
+                // Raise once at launch/explicit activation, never keep it always on top.
+                SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, 0x0043);
                 SetForegroundWindow(window);
+                return;
             }
+            Thread.Sleep(100);
+        }
+    }
+
+    static void Activate(ref Process browser, string url, string data) {
+        if (!HasExited(browser)) {
+            FocusBrowser(browser);
             return; // A still-starting browser must not produce a second window.
         }
         if (browser != null) browser.Dispose();
@@ -237,6 +256,7 @@ class Launcher {
         browser = Process.Start(new ProcessStartInfo(executable, BrowserArguments(url, profile)) {
             UseShellExecute = false, CreateNoWindow = false, WindowStyle = ProcessWindowStyle.Normal
         });
+        FocusBrowser(browser);
     }
 
     static void Log(string data, string message) {
@@ -252,23 +272,23 @@ class Launcher {
 
     internal static void Run(string[] args, string root, string selectedData) {
         int port; if (!Int32.TryParse(Environment.GetEnvironmentVariable("GO_STREAMS_PORT"), out port)) port = 4317;
-        if (port < 1 || port > 65535) { MessageBox.Show("Invalid local port.", "Go Streams"); return; }
+        if (port < 1 || port > 65535) { MessageBox.Show("Invalid local port.", "Streamland"); return; }
         string data;
-        try { data = selectedData ?? DataDirectory(root); } catch (Exception error) { MessageBox.Show(error.Message, "Go Streams"); return; }
+        try { data = selectedData ?? DataDirectory(root); } catch (Exception error) { MessageBox.Show(error.Message, "Streamland"); return; }
         if (Array.IndexOf(args, "--close") >= 0) {
-            if (MessageBox.Show("Close Go Streams and stop its active streams?", "Go Streams", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (MessageBox.Show("Close Streamland and stop its active streams?", "Streamland", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             try {
                 string session = Session(data, port);
-                if (session == null) throw new Exception("No Go Streams session was found in this data folder.");
+                if (session == null) throw new Exception("No Streamland session was found in this data folder.");
                 Shutdown(session);
                 var closing = Stopwatch.StartNew();
                 while (closing.ElapsedMilliseconds < 10000 && Session(data, port) == session) Thread.Sleep(100);
-            } catch { MessageBox.Show("Could not contact this Go Streams session. Its data was preserved.", "Go Streams"); }
+            } catch { MessageBox.Show("Could not contact this Streamland session. Its data was preserved.", "Streamland"); }
             return;
         }
         string node = Path.Combine(root, "runtime", "win32-x64", "node.exe"), server = Path.Combine(root, "src", "server.mjs");
         if (!File.Exists(node) || !File.Exists(server)) {
-            MessageBox.Show("Extract the complete Go Streams folder before opening the application.", "Go Streams"); return;
+            MessageBox.Show("Extract the complete Streamland folder before opening the application.", "Streamland"); return;
         }
         bool first;
         using (var mutex = new Mutex(true, "Local\\GoStreams.Desktop." + port, out first)) {
@@ -284,7 +304,7 @@ class Launcher {
                 }
                 if (signalled) return;
                 if (!acquired) {
-                    MessageBox.Show("An older Go Streams launcher is running. Close that session before opening this version; restarting Windows is not required.", "Go Streams");
+                    MessageBox.Show("An older Streamland launcher is running. Close that session before opening this version; restarting Windows is not required.", "Streamland");
                     return;
                 }
             }
@@ -312,7 +332,7 @@ class Launcher {
                                 engine.WaitForExit();
                                 throw new Exception(errors.Length == 0 ? "The local engine could not start." : errors.ToString());
                             }
-                            throw new Exception("The local engine did not become ready. Close Go Streams with CloseGoStreams.cmd and try again.");
+                            throw new Exception("The local engine did not become ready. Close Streamland with CloseStreamland.cmd and try again.");
                         }
                     }
                     Log(data, "Engine ready. Opening dedicated application window.");
@@ -336,7 +356,7 @@ class Launcher {
                     if (engine != null && !HasExited(engine) && shutdownSession != null) {
                         try { Shutdown(shutdownSession); engine.WaitForExit(5000); } catch { }
                     }
-                    MessageBox.Show(error.Message, "Go Streams");
+                    MessageBox.Show(error.Message, "Streamland");
                 } finally {
                     CloseOwnedBrowser(browser);
                     if (browser != null) browser.Dispose();

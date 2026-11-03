@@ -1,0 +1,221 @@
+import {language} from './i18n.js';
+import {RecordingUpload} from './recording-upload.js';
+const t=(en,pt)=>language()==='pt-PT'?pt:en;
+const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const defaults={layout:'pip',background:'#111827',accent:'#e70952',name:'',title:'',banner:'',ticker:'',mirror:false,logo:'',backgroundImage:'',notes:'',micVolume:1,screenVolume:1};
+const volume=value=>Number.isFinite(value)?Math.max(0,Math.min(1.5,value)):1;
+const boundedText=(value,limit)=>value.slice(0,limit).replace(/[\uD800-\uDBFF]$/,'');
+function sceneValues(input){
+ if(!input||typeof input!=='object'||Array.isArray(input))return null;
+ const scene={...defaults};
+ if(['pip','split','camera','screen'].includes(input.layout))scene.layout=input.layout;
+ for(const name of ['background','accent'])if(typeof input[name]==='string'&&/^#[\da-f]{6}$/i.test(input[name]))scene[name]=input[name];
+ for(const [name,limit]of Object.entries({name:80,title:100,banner:160,ticker:500,notes:30000}))if(typeof input[name]==='string')scene[name]=boundedText(input[name],limit);
+ if(typeof input.mirror==='boolean')scene.mirror=input.mirror;
+ for(const name of ['logo','backgroundImage'])if(typeof input[name]==='string'&&/^data:image\/(png|jpeg|webp);base64,[\da-z+/]+=*$/i.test(input[name]))scene[name]=input[name];
+ for(const name of ['micVolume','screenVolume'])scene[name]=volume(input[name]);
+ return scene;
+}
+export function layoutRects(layout,width,height,hasCamera,hasScreen){
+ if(!hasScreen)return hasCamera?[{source:'camera',x:0,y:0,w:width,h:height}]:[];
+ if(!hasCamera||layout==='screen')return [{source:'screen',x:0,y:0,w:width,h:height}];
+ if(layout==='camera')return [{source:'camera',x:0,y:0,w:width,h:height}];
+ if(layout==='split')return [{source:'screen',x:0,y:height*.1,w:width*.64,h:height*.8},{source:'camera',x:width*.66,y:height*.1,w:width*.34,h:height*.8}];
+ return [{source:'screen',x:0,y:0,w:width,h:height},{source:'camera',x:width*.70,y:height*.70,w:width*.28,h:height*.28}];
+}
+export class ProductionTools {
+ constructor({api,toast,getStream,getRecordingConfig,setVolume,setClipAudio,snapshot,recordingControls=true,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey='go-streams-scenes'}){
+  Object.assign(this,{api,toast,getStream,getRecordingConfig,setVolume,setClipAudio,snapshot,recordingControls,toggleRecording,onChange,onRecordingStateChange,sceneStorageKey});this.recordingPreferences={directory:'',askEveryTime:true};this.values={...defaults};this.cleanComposition=JSON.stringify(this.values);this.images={};this.scenes=this.readScenes()||{};this.level=0;this.emojiTarget='banner';
+ }
+ readScenes(){try{const saved=JSON.parse(localStorage.getItem(this.sceneStorageKey)||'{}');if(!saved||typeof saved!=='object'||Array.isArray(saved))return {};const scenes={};for(const name of ['intro','main','presentation','outro']){const scene=sceneValues(saved[name]);if(scene)scenes[name]=scene;}return scenes;}catch{return null;}}
+ notifyRecordingState(){const active=this.recording;if(active!==this.lastRecordingState){this.lastRecordingState=active;this.onRecordingStateChange?.(active);}}
+ isActive(){return Boolean(this.element?.isConnected&&!this.element.hidden&&(!this.element.getClientRects||this.element.getClientRects().length));}
+ handleKeydown(event){
+  if(!this.isActive()||!event.ctrlKey||!event.altKey||event.repeat||event.isComposing)return;
+  const layouts={'1':'camera','2':'screen','3':'pip','4':'split'};
+  if(layouts[event.key]){event.preventDefault();this.values.layout=layouts[event.key];this.element.querySelector('[name=layout]').value=this.values.layout;this.onChange?.();}
+  if(event.code==='KeyR'&&this.getStream?.()){
+   event.preventDefault();try{const operation=this.toggleRecording?this.toggleRecording():this.recordingControls?(this.recording?this.stopRecording():this.startRecording()):null;Promise.resolve(operation).catch(error=>this.toast?.(error.message,true));}catch(error){this.toast?.(error.message,true);}
+  }
+ }
+ rememberTextSelection(field){
+  if(!['name','title','banner','ticker'].includes(field?.name))return;
+  this.emojiTarget=field.name;this.emojiSelection={name:field.name,start:field.selectionStart??field.value.length,end:field.selectionEnd??field.value.length};const target=this.element?.querySelector('[name=emojiTarget]');if(target)target.value=field.name;
+ }
+ insertEmoji(emoji){
+  if(typeof emoji!=='string'||!emoji)return;const name=this.element?.querySelector('[name=emojiTarget]')?.value||this.emojiTarget;if(!['name','title','banner','ticker'].includes(name))return;
+  const field=this.element?.querySelector(`[name="${name}"]`);if(!field||field.disabled)return;
+  const value=field.value,selection=this.emojiSelection?.name===name?this.emojiSelection:null,start=Math.max(0,Math.min(value.length,selection?.start??value.length)),end=Math.max(start,Math.min(value.length,selection?.end??start));
+  if(field.maxLength>=0&&value.length-(end-start)+emoji.length>field.maxLength){this.toast?.(t('This text has reached its maximum length. Select text to replace or shorten it first.','Este texto atingiu o tamanho máximo. Selecione texto para substituir ou reduza-o primeiro.'),true);return;}
+  if(field.setRangeText)field.setRangeText(emoji,start,end,'end');else{field.value=value.slice(0,start)+emoji+value.slice(end);field.setSelectionRange?.(start+emoji.length,start+emoji.length);}
+  this.values[name]=field.value;field.dispatchEvent?.(new Event('input',{bubbles:true}));field.focus?.({preventScroll:true});this.rememberTextSelection(field);
+ }
+
+ get hasUnsavedChanges(){return JSON.stringify(this.values)!==this.cleanComposition||Object.values(this.imageLoads||{}).some(load=>load.pending);}
+ get recording(){return Boolean(this.recordingId)||Boolean(this.finishing)||Boolean(this.starting);}
+ mount(parent){
+  if(this.element)return;
+  this.element=document.createElement('section');this.element.className='panel production-tools';
+  this.element.innerHTML=`<h2>${t('Studio production','Produção do estúdio')}</h2><div class="production-grid"><div><label>${this.recordingControls?t('Live layout','Layout ao vivo'):t('Video layout','Layout do vídeo')}<select name="layout"><option value="pip">${t('Picture in picture','Imagem na imagem')}</option><option value="split">${t('Screen + presenter side by side','Ecrã e apresentador lado a lado')}</option><option value="camera">${t('Camera only','Apenas câmara')}</option><option value="screen">${t('Screen only','Apenas ecrã')}</option></select></label><label class="check"><input type="checkbox" name="mirror">${t('Mirror camera','Espelhar câmara')}</label><div class="form-row"><label>${t('Background','Fundo')}<input name="background" type="color" value="#111827"></label><label>${t('Brand color','Cor da marca')}<input name="accent" type="color" value="#e70952"></label></div><label>${t('Logo image','Imagem do logótipo')}<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label><label>${t('Background image','Imagem de fundo')}<input type="file" name="backgroundImage" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="secondary small" data-production="clear-images">${t('Remove images','Remover imagens')}</button></div><div><label>${t('Presenter name','Nome do apresentador')}<input name="name" maxlength="80"></label><label>${t('Presenter title','Título do apresentador')}<input name="title" maxlength="100"></label><label>${t('On-screen banner','Faixa no vídeo')}<input name="banner" maxlength="160"></label><label>${t('Scrolling ticker','Texto em movimento')}<input name="ticker" maxlength="500"></label><label>${t('Microphone volume','Volume do microfone')}<input type="range" name="micVolume" min="0" max="1.5" step="0.05" value="1"></label><label>${t('Shared audio volume','Volume do áudio partilhado')}<input type="range" name="screenVolume" min="0" max="1.5" step="0.05" value="1"></label><label>${t('Mixed audio level','Nível do áudio misturado')}<meter class="capture-audio-meter" min="0" max="1" value="0"></meter></label></div></div><div class="form-row"><label>${t('Saved studio scene','Cena guardada')}<select name="scene"><option value="intro">Intro</option><option value="main">${t('Main','Principal')}</option><option value="presentation">${t('Presentation','Apresentação')}</option><option value="outro">Outro</option></select></label><div class="actions"><button type="button" class="secondary" data-production="save-scene">${t('Save scene','Guardar cena')}</button><button type="button" class="secondary" data-production="load-scene">${t('Load scene','Carregar cena')}</button></div></div><details><summary>${t('Private notes & teleprompter','Notas privadas e teleponto')}</summary><label>${t('These notes are not drawn into the program frame.','Estas notas não são desenhadas no vídeo do programa.')}<textarea name="notes" rows="4" maxlength="30000"></textarea></label><div class="teleprompter" tabindex="0"></div><button type="button" class="secondary" data-production="teleprompter">${t('Start / pause scrolling','Iniciar / pausar movimento')}</button></details>${this.recordingControls?`<h3>${t('Local recording','Gravação local')}</h3><p>${t('Record the composed video and mixed audio to this computer, with or without broadcasting. Files are saved locally; no cloud recording is used.','Grave o vídeo composto e o áudio misturado neste computador, com ou sem transmissão. Os ficheiros ficam guardados localmente; não é usada gravação na nuvem.')}</p><div class="actions"><button type="button" class="secondary" data-production="record" disabled>${t('Start local recording','Iniciar gravação local')}</button><button type="button" class="danger" data-production="stop-record" disabled>${t('Stop & save recording','Parar e guardar gravação')}</button></div><p class="recording-status" role="status"></p><div class="recording-files"></div>`:''}`;
+  const grid=this.element.querySelector('.production-grid');
+  const customization=document.createElement('details');customization.className='studio-customization';
+  customization.innerHTML=`<summary>${t('Picture, branding & presenter','Imagem, aspeto e apresentador')}<span class="optional-label">${t('Optional','Opcional')}</span></summary>`;
+  const customizationBody=document.createElement('div');customizationBody.className='studio-details-body';
+  const options=[grid,grid.nextElementSibling,grid.nextElementSibling.nextElementSibling];grid.before(customization);for(const option of options)customizationBody.appendChild(option);customization.appendChild(customizationBody);
+  if(this.recordingControls){
+  const location=document.createElement('div');location.className='recording-location';
+  location.innerHTML=`<label>${t('Recording folder','Pasta das gravações')}<input name="recordingDirectory" type="text" maxlength="4096" placeholder="${t('Choose a folder or enter an absolute path','Escolha uma pasta ou introduza um caminho absoluto')}"></label><label class="check"><input name="askRecordingFolder" type="checkbox" checked>${t('Ask for a folder whenever recording starts','Perguntar a pasta sempre que iniciar uma gravação')}</label><div class="actions"><button type="button" class="secondary" data-production="choose-recording-folder">${t('Choose folder','Escolher pasta')}</button><button type="button" class="secondary" data-production="save-recording-preferences">${t('Save recording preferences','Guardar preferências de gravação')}</button></div><p class="form-hint">${t('Recordings are written directly to the chosen folder. Turn off the question and save to use this folder by default.','As gravações são escritas diretamente na pasta escolhida. Desative a pergunta e guarde para usar esta pasta por predefinição.')}</p>`;
+  this.element.querySelector('[data-production="record"]').parentElement.before(location);
+  }
+  parent.appendChild(this.element);
+  const clips=document.createElement('details');clips.className='production-clips';clips.innerHTML=`<summary>${t('Intro, outro & video clips','Introdução, encerramento e clips')}<span class="optional-label">${t('Optional','Opcional')}</span></summary><div class="studio-details-body"><label>${t('Local video file','Vídeo local')}<input type="file" name="clipFile" accept="video/mp4,video/webm"></label><p class="form-hint">${this.recordingControls?t('The clip replaces the live picture and temporarily mutes the live microphone/shared audio. At the end, the live picture and audio return.','O clip substitui a imagem ao vivo e silencia temporariamente o microfone/áudio partilhado. No final regressam a imagem e o áudio ao vivo.'):t('The clip temporarily replaces the camera/screen and selected audio. With no audio selected, clips are silent. At the end, the camera/screen and selected audio return.','O clip substitui temporariamente a câmara/o ecrã e o áudio selecionado. Sem áudio selecionado, os clips ficam sem som. No final regressam a câmara/o ecrã e o áudio selecionado.')}</p><div class="actions"><button type="button" class="secondary" data-production="play-clip">${t('Play selected clip','Reproduzir clip selecionado')}</button><button type="button" class="secondary" data-production="stop-clip">${this.recordingControls?t('Return to live','Regressar ao direto'):t('Return to camera / screen','Regressar à câmara / ao ecrã')}</button><button type="button" class="secondary" data-production="snapshot">${t('Save frame as PNG','Guardar imagem PNG')}</button></div><p class="form-hint">${t('Shortcuts: Ctrl+Alt+1–4 changes layouts. Ctrl+Alt+R starts/stops local recording.','Atalhos: Ctrl+Alt+1–4 muda o layout. Ctrl+Alt+R inicia/para a gravação local.')}</p></div>`;
+  this.element.appendChild(clips);
+  const emojiTools=document.createElement('div');emojiTools.className='production-emoji-tools';
+  emojiTools.innerHTML=`<label>${t('Insert emojis into','Inserir emojis em')}<select name="emojiTarget"><option value="name">${t('Presenter name','Nome do apresentador')}</option><option value="title">${t('Presenter title','Título do apresentador')}</option><option value="banner" selected>${t('On-screen banner','Faixa no vídeo')}</option><option value="ticker">${t('Scrolling ticker','Texto em movimento')}</option></select></label><div class="actions" data-no-help>${['😀','❤️','🎵','🔥','✨','📢','🎉','👍'].map(emoji=>`<button type="button" class="secondary small" data-production="emoji" data-emoji="${emoji}" aria-label="${t('Insert emoji ','Inserir emoji ')+emoji}">${emoji}</button>`).join('')}</div>`;
+  this.element.querySelector('[name=ticker]').closest('label').after(emojiTools);
+  window.addEventListener('keydown',event=>this.handleKeydown(event));
+  for(const name of ['focusin','focusout','select','keyup','pointerup'])this.element.addEventListener(name,event=>this.rememberTextSelection(event.target));
+
+  this.element.addEventListener('input',event=>{
+   const el=event.target;if(['background','accent','name','title','banner','ticker','layout'].includes(el.name))this.values[el.name]=el.value;if(el.name==='mirror')this.values.mirror=el.checked;
+   if(['recordingDirectory','askRecordingFolder'].includes(el.name))this.recordingPreferencesDirty=true;
+   if(el.name==='micVolume'||el.name==='screenVolume'){const value=volume(Number(el.value));this.values[el.name]=value;el.value=value;this.setVolume?.(el.name,value);}
+   if(el.name==='notes'){this.values.notes=el.value;this.element.querySelector('.teleprompter').textContent=el.value;}
+   if(['background','accent','name','title','banner','ticker','layout','mirror'].includes(el.name))this.onChange?.();
+  });
+  this.element.addEventListener('change',event=>{const el=event.target;if(el.type==='file'&&el.name!=='clipFile')void this.loadImage(el.name,el.files[0]);if(el.name==='layout'){this.values.layout=el.value;this.onChange?.();}if(el.name==='emojiTarget'){this.emojiTarget=el.value;if(this.emojiSelection?.name!==el.value)this.emojiSelection=null;}});
+  this.element.addEventListener('click',event=>{const b=event.target.closest('[data-production]');if(b&&!b.disabled)void this.action(b);});
+ }
+ async loadImage(name,file){
+  if(!file)return;
+  let resolveImage,loaded=false;const token={pending:true,done:new Promise(resolve=>{resolveImage=resolve;})};this.imageLoads ||= {};this.imageLoads[name]=token;
+  try{
+   if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>2*1024*1024)throw Error(t('Choose a PNG, JPEG or WebP image up to 2 MB.','Escolha uma imagem PNG, JPEG ou WebP até 2 MB.'));
+   const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
+   if(this.imageLoads[name]!==token)return;
+   const image=new Image();image.src=data;await image.decode();if(this.imageLoads[name]!==token)return;const canvas=document.createElement('canvas'),max=name==='logo'?600:1600,ratio=Math.min(1,max/Math.max(image.width,image.height));canvas.width=Math.max(1,Math.round(image.width*ratio));canvas.height=Math.max(1,Math.round(image.height*ratio));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+   this.values[name]=canvas.toDataURL(name==='logo'?'image/png':file.type,.85);this.images[name]=canvas;loaded=true;this.onChange?.();
+  }catch(error){if(this.imageLoads[name]===token)this.toast(error.message||'Image could not be opened.',true);}
+  finally{token.pending=false;resolveImage(loaded||this.imageLoads[name]!==token);}
+ }
+ draw(ctx,w,h,camera,screen,fit,drawBase){
+  const v=this.values;ctx.fillStyle=v.background;ctx.fillRect(0,0,w,h);if(this.images.backgroundImage)ctx.drawImage(this.images.backgroundImage,0,0,w,h);
+  if(drawBase)drawBase(ctx,w,h,v);else for(const rect of layoutRects(v.layout,w,h,Boolean(camera),Boolean(screen))){
+   ctx.save();if(rect.source==='camera'&&v.mirror){ctx.translate(rect.x+rect.w,rect.y);ctx.scale(-1,1);fit(camera,0,0,rect.w,rect.h);}else fit(rect.source==='camera'?camera:screen,rect.x,rect.y,rect.w,rect.h);ctx.restore();
+  }
+  if(this.clip&&!this.clip.paused&&!this.clip.ended){ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);fit(this.clip,0,0,w,h);}
+  if(this.images.logo){const image=this.images.logo,scale=Math.min(w*.13/image.width,h*.2/image.height),iw=image.width*scale,ih=image.height*scale;ctx.drawImage(image,w-iw-w*.03,h*.03,iw,ih);}
+  const band=(value,y,height)=>{ctx.fillStyle=v.accent;ctx.fillRect(w*.03,y,w*.94,height);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(value,w*.05,y+height*.65,w*.9);};
+  if(v.name){band(v.name+(v.title?' — '+v.title:''),h*.82,h*.08);}
+  if(v.banner)band(v.banner,h*.72,h*.08);
+  if(v.ticker){ctx.fillStyle=v.accent;ctx.fillRect(0,h*.94,w,h*.06);ctx.font=`${Math.round(h*.03)}px sans-serif`;ctx.fillStyle='#fff';const span=ctx.measureText(v.ticker).width+w;ctx.fillText(v.ticker,w-(performance.now()/20)%span,h*.982);}
+ }
+ applyRecordingPreferences(preferences){
+  this.recordingPreferences={...preferences};
+  const directory=this.element?.querySelector('[name="recordingDirectory"]'),ask=this.element?.querySelector('[name="askRecordingFolder"]');
+  if(directory)directory.value=preferences.directory;if(ask)ask.checked=preferences.askEveryTime;
+ }
+ recordingOptions(){return {directory:this.element?.querySelector('[name="recordingDirectory"]')?.value??this.recordingPreferences.directory,askEveryTime:this.element?.querySelector('[name="askRecordingFolder"]')?.checked??this.recordingPreferences.askEveryTime};}
+ async chooseRecordingDirectory(){
+  if(this.preferencesBusy)return null;
+  this.preferencesBusy=true;this.update();
+  try{const result=await this.api('/api/recordings/pick-directory',{directory:this.recordingOptions().directory});if(result.directory===null)return null;
+   this.recordingPreferencesDirty=true;this.applyRecordingPreferences({...this.recordingOptions(),directory:result.directory});return result.directory;
+  }finally{this.preferencesBusy=false;this.update();}
+ }
+ async saveRecordingPreferences(){
+  if(this.preferencesBusy||this.recording)return;
+  this.preferencesBusy=true;this.update();
+  try{const preferences=await this.api('/api/recordings/preferences',this.recordingOptions(),'PUT');this.recordingPreferencesDirty=false;this.applyRecordingPreferences(preferences);this.toast(t('Recording preferences saved.','Preferências de gravação guardadas.'));}
+  finally{this.preferencesBusy=false;this.update();}
+ }
+ update(recordings=this.recordings||[],preferences){
+  if(!this.element)return;this.notifyRecordingState();if(!this.recordingControls)return;
+  if(preferences&&!this.recordingPreferencesDirty&&!this.preferencesBusy&&(preferences.revision||0)>=(this.recordingPreferences.revision||0))this.applyRecordingPreferences(preferences);
+  for(const selector of ['[name="recordingDirectory"]','[name="askRecordingFolder"]','[data-production="choose-recording-folder"]','[data-production="save-recording-preferences"]']){const control=this.element.querySelector(selector);if(control)control.disabled=this.recording||Boolean(this.preferencesBusy);}
+  this.recordings=recordings;
+  const current=recordings.find(item=>item.id===this.recordingId);
+  if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
+   const recorder=this.localRecorder,upload=this.localUpload;this.recordingId=null;this.clearRecordingWriter();this.recordingFailure=null;upload?.fail(Error(current.error||'Recording ended.'));if(recorder&&recorder.state!=='inactive')recorder.stop();this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
+  }
+  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
+  this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
+  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="Streamland-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
+  this.notifyRecordingState();
+ }
+ async startRecording(){
+  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy)return;
+  const attempt={stream,cancelled:false};let cleanupAttempted=false;this.recordingAttempt=attempt;this.recordingFailure=null;
+  const current=()=>this.recordingAttempt===attempt&&!attempt.cancelled&&this.getStream()===stream;
+  const changed=()=>Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));
+  this.starting=true;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.update();
+  try{let {directory,askEveryTime}=this.recordingOptions();if(askEveryTime||!directory){directory=await this.chooseRecordingDirectory();if(directory===null)return;}
+   if(!current()){if(attempt.cancelled)return;throw changed();}
+   const config=this.getRecordingConfig?.()||{},mimeType=typeof MediaRecorder==='function'?[config.mimeType,'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>type&&MediaRecorder.isTypeSupported(type)):null;
+   if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
+   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:'video',format:'mp4'});this.recordingId=id;this.discardRecordingEmpty=true;
+   if(!current()){cleanupAttempted=true;await this.finishRecordingWriter();if(!attempt.cancelled)throw changed();return;}
+   const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:config.videoBitsPerSecond||4500000,audioBitsPerSecond:config.audioBitsPerSecond||192000});this.localRecorder=recorder;
+   const fail=error=>{if(this.recordingAttempt!==attempt||this.recordingId!==id)return;this.recordingFailure ||= error;void this.stopRecording();};
+   const upload=this.localUpload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},fail);
+   this.localRecorderDone=new Promise(resolve=>recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.recordingAttempt===attempt&&this.recordingId===id&&!this.finishing&&!this.localWriterStopping)void this.stopRecording();});},{once:true}));recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>fail(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
+   recorder.start(500);this.localRecorderStarted=true;this.discardRecordingEmpty=false;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;
+  }catch(error){if(this.recordingId&&!cleanupAttempted)try{await this.finishRecordingWriter();}catch(cleanup){error=this.recordingFailure||cleanup;}this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
+  finally{this.starting=false;if(!this.recordingId)this.clearRecordingWriter();this.resolveStart();this.startDone=null;this.update();}
+ }
+ clearRecordingWriter(){this.localRecorder=null;this.localRecorderStarted=false;this.localRecorderDone=null;this.localUpload=null;this.recordingAttempt=null;this.localWriterStopping=false;if(!this.recordingId)this.discardRecordingEmpty=false;}
+ async finishRecordingWriter(){
+  const id=this.recordingId;if(!id)return;this.localWriterStopping=true;
+  // MediaRecorder becomes inactive before the final dataavailable/stop events
+  // when it fails. Keep collecting that last blob before finishing the file.
+  if(this.localRecorderStarted){if(this.localRecorder.state!=='inactive')this.localRecorder.stop();await this.localRecorderDone;}
+  let failure=this.recordingFailure;try{await this.localUpload?.finish();}catch(error){failure ||= error;}
+  try{await this.api(`/api/recordings/${id}/finish`,this.discardRecordingEmpty?{discardEmpty:true}:{});this.recordingId=null;if(failure)throw failure;}
+  catch(error){throw failure||error;}
+  finally{this.clearRecordingWriter();if(!this.recordingId)this.recordingFailure=null;}
+ }
+ async stopRecording({throwOnError=false}={}){
+  if(this.startDone){if(this.recordingAttempt)this.recordingAttempt.cancelled=true;await this.startDone;}
+  let finishing=this.finishing;
+  if(!finishing&&this.recordingId){
+   finishing=this.finishing=(async()=>{
+    this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
+    try{await this.finishRecordingWriter();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');return {};}
+    catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);return {error};}
+    finally{this.finishing=null;this.update();}
+   })();this.update();
+  }
+  const result=await finishing;if(throwOnError&&result?.error)throw result.error;return result;
+ }
+ async action(button){
+  button.disabled=true;
+  try{
+   const action=button.dataset.production;
+   if(action==='choose-recording-folder')await this.chooseRecordingDirectory();if(action==='save-recording-preferences')await this.saveRecordingPreferences();
+   if(action==='record')await this.startRecording();if(action==='stop-record')await this.stopRecording();
+   if(action==='recover'){button.disabled=true;await this.api(`/api/recordings/${button.dataset.id}/finish`,{});this.toast(t('Recording recovered.','Gravação recuperada.'));}
+   if(action==='clear-images'){this.imageLoads={};this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}
+   if(action==='emoji')this.insertEmoji(button.dataset.emoji);
+   if(action==='snapshot')await this.snapshot?.();
+   if(action==='stop-clip')this.stopClip();
+   if(action==='play-clip'){
+    if(!this.getStream())throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
+    const file=this.element.querySelector('[name=clipFile]').files[0];if(!file||!['video/mp4','video/webm'].includes(file.type))throw Error(t('Choose a local MP4 or WebM video.','Escolha um vídeo local MP4 ou WebM.'));
+    this.stopClip();this.clipUrl=URL.createObjectURL(file);const clip=this.clip=document.createElement('video');clip.playsInline=true;clip.muted=!this.setClipAudio;clip.src=this.clipUrl;clip.onended=()=>{if(this.clip===clip)this.stopClip();};clip.onerror=()=>{if(this.clip!==clip)return;this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};try{this.setClipAudio?.(clip);await clip.play();if(this.clip===clip)this.onChange?.();}catch(error){if(this.clip!==clip)return;this.stopClip();throw error;}
+   }
+   if(action==='save-scene'){
+    const sceneId=this.element.querySelector('[name=scene]').value,generation=this.sceneGeneration||0;
+    const ensureCurrentScene=()=>{if((this.sceneGeneration||0)!==generation)throw Error(t('The scene changed before saving. Save the current scene again.','A cena mudou antes de ser guardada. Guarde novamente a cena atual.'));};
+    // Keep the selected slot, but save the current composition after its images settle.
+    // New text edits are never overwritten by an older pending image request.
+    let pending;while((pending=Object.values(this.imageLoads||{}).filter(load=>load.pending)).length){const loaded=await Promise.all(pending.map(load=>load.done));ensureCurrentScene();if(loaded.some(value=>!value))throw Error(t('The selected image could not be loaded. Choose another image before saving the scene.','Não foi possível carregar a imagem selecionada. Escolha outra imagem antes de guardar a cena.'));}
+    ensureCurrentScene();
+    const snapshot={...this.values},scenes={...(this.readScenes()||this.scenes),[sceneId]:snapshot};try{localStorage.setItem(this.sceneStorageKey,JSON.stringify(scenes));this.scenes=scenes;this.cleanComposition=JSON.stringify(snapshot);this.toast(t('Studio scene saved.','Cena do estúdio guardada.'));}catch{throw Error(t('The browser could not save this scene. Reduce image sizes.','O navegador não conseguiu guardar esta cena. Reduza o tamanho das imagens.'));}
+   }
+   if(action==='load-scene'){this.scenes=this.readScenes()||this.scenes;const values=this.scenes[this.element.querySelector('[name=scene]').value];if(!values)throw Error(t('Save this scene first.','Guarde primeiro esta cena.'));this.sceneGeneration=(this.sceneGeneration||0)+1;this.values=sceneValues(values);this.cleanComposition=JSON.stringify(this.values);const scene=this.values;for(const [name,value]of Object.entries(scene)){const el=this.element.querySelector(`[name="${name}"]`);if(el){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=value;else el.value=value;}}const notes=this.element.querySelector('.teleprompter');if(notes)notes.textContent=scene.notes;for(const name of ['micVolume','screenVolume'])this.setVolume?.(name,scene[name]);this.images={};const pending={logo:{},backgroundImage:{}};this.imageLoads={...pending};for(const name of ['logo','backgroundImage'])if(this.imageLoads[name]===pending[name]&&/^data:image\/(png|jpeg|webp);base64,/.test(scene[name])){const image=new Image();image.src=scene[name];await image.decode();if(this.imageLoads[name]===pending[name])this.images[name]=image;}}
+   if(action==='teleprompter'){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}else this.scrollTimer=setInterval(()=>{const el=this.element.querySelector('.teleprompter');el.scrollTop+=1;},50);}
+  }catch(error){this.toast?.(error.message,true);}finally{button.disabled=false;this.update();this.onChange?.();}
+ }
+ stopClip(){if(this.clip){this.clip.onended=null;this.clip.onerror=null;this.clip.pause();this.clip.src='';this.clip=null;}if(this.clipUrl){URL.revokeObjectURL(this.clipUrl);this.clipUrl=null;}this.setClipAudio?.(null);this.onChange?.();}
+ stopVisuals(){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}this.stopClip();}
+}

@@ -1,8 +1,92 @@
-# Go Streams 0.17.0
+# Streamland 1.2.0
 
-Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Versão Windows compilada e pacote macOS experimental, ainda sem execução validada num Mac. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
+Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. A verificação automática inclui Windows e macOS 15 em Intel e Apple Silicon; os relatórios de cada compilação identificam os testes efetivamente concluídos. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
-## Edição Electron 0.17.0
+Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Novo nome Streamland e compatibilidade (1.2.0)
+
+A aplicação passa a chamar-se **Streamland** na interface, nos instaladores, nos atalhos, nos pacotes e nos novos ficheiros exportados. Atualizar a instalação existente conserva projetos, definições, canais, playlists e sessões guardadas da aplicação. Encerre a aplicação antes de atualizar; as transmissões em curso não são retomadas automaticamente.
+
+As pastas de dados e dos perfis, bem como as identidades internas da instalação, mantêm-se para reutilizar os dados existentes: `%LOCALAPPDATA%\Go Streams\data` no Windows e `~/Library/Application Support/Go Streams` no Mac. As variáveis `GO_STREAMS_*`, os formatos das cópias de segurança e as pastas portáteis com o nome anterior continuam compatíveis. Estes nomes internos existem apenas para preservar a continuidade dos dados.
+
+Os resultados e limitações nas secções de versões anteriores descrevem o estado dessas versões.
+
+## Finalização das gravações e persistência das cenas (1.1.6)
+
+A gravação local do estúdio passa a usar um processo independente sobre a mesma imagem preparada e o mesmo áudio misturado. Ao parar, aguarda os últimos dados do navegador, a fila de envios e a conclusão do encoder da gravação, enquanto o direto continua. Não volta a abrir dispositivos nem exige software adicional. Gravar e transmitir em simultâneo utiliza um encoder adicional e consome mais CPU. As falhas do encoder ficam visíveis e preservam os dados recuperáveis. Uma falha apenas na atualização da lista já não anula a confirmação de que a gravação foi guardada ou recuperada.
+
+As cenas passam a guardar as notas privadas e os volumes separados do microfone e do áudio partilhado, além das definições visuais. Carregar uma cena restaura o teleponto e os ganhos de áudio; as cenas antigas recebem valores compatíveis. A mudança de idioma protege notas e volumes ainda por guardar. As notas permanecem no perfil local do navegador e não são desenhadas no vídeo composto; partilhar a própria janela da aplicação pode mostrar a interface.
+
+Uma paragem iniciada pelo próprio navegador também guarda automaticamente os últimos dados. Fechar a aplicação Windows ou usar o botão Sair aguarda os dois gravadores antes de encerrar o servidor. Uma falha na finalização mantém a interface disponível para recuperação e nova tentativa.
+
+Os fotogramas PNG do live aguardam a criação da imagem e comunicam falhas. O editor de sobreposições mantém a pré-visualização coerente ao limpar ou substituir uma imagem e ignora respostas tardias de um formulário fechado. O seletor de ecrã/janela no Windows permite percorrer páginas, incluindo fontes além das primeiras vinte, sempre com opção de cancelar.
+
+## Fiabilidade da captação e das definições (1.1.5)
+
+Guardar uma cena aguarda o carregamento das imagens selecionadas e preserva a transparência PNG/WebP. Imagens muito estreitas mantêm dimensões válidas. A mudança de idioma protege alterações de produção ainda por guardar. A verificação nativa do Electron descarrega gravações a partir dos dois estúdios, compara os ficheiros e confirma que a página permanece aberta.
+
+O início da captação rejeita pré-visualizações canceladas ou substituídas. A paragem escoa os dados já aceites uma única vez e mantém visíveis os erros de finalização. Ações sobre vídeos, playlists ou agendamentos removidos deixam de selecionar outro elemento. A palavra-passe SMTP só é reutilizada para o mesmo servidor, porta, modo de segurança e utilizador; uma nova identidade exige uma nova palavra-passe quando as notificações autenticadas estão ativas. A importação de projetos rejeita tipos inválidos nas datas dos agendamentos.
+
+## Produção no gravador e formatos ao vivo (1.1.4)
+
+O ícone **i** aparece apenas junto dos controlos relevantes do sistema. Não acompanha a navegação do menu lateral, a marca da aplicação, o site nem as ligações das redes sociais. A explicação abre por clique, toque ou ativação do ícone pelo teclado; passar o rato sobre o controlo original não abre a ajuda.
+
+O gravador de vídeo inclui as ferramentas de produção do estúdio ao vivo: imagem na imagem e apresentação lado a lado, câmara espelhada, logótipo, imagem e cor de fundo, cor da marca, nome/título do apresentador, faixas, texto em movimento e inserção de emojis. Pode ajustar separadamente os volumes do microfone e do áudio partilhado, guardar/carregar quatro cenas, reproduzir clips locais de introdução/encerramento e guardar o fotograma composto em PNG. As cenas do gravador ficam separadas das cenas do direto, no perfil local do navegador. Os clips substituem temporariamente a imagem e o áudio selecionado, regressando depois à câmara/ao ecrã; a opção de vídeo sem som mantém também os clips sem áudio. As notas privadas e o teleponto não são desenhados no vídeo, mas a partilha da própria janela da aplicação pode mostrar a interface. As ferramentas de imagem ficam ocultas no modo de gravação só de áudio.
+
+A captação ao vivo permite escolher **16:9, 9:16, 1:1, 4:3, 3:4 ou 21:9**, em 720p ou 1080p. Pode alterar a proporção de uma pré-visualização preparada antes de iniciar a saída, sem voltar a abrir os dispositivos. As dimensões ficam bloqueadas durante a transmissão ou gravação local para manter o formato do vídeo codificado. Estas opções utilizam os componentes incluídos e não exigem instalações adicionais no Windows ou Mac.
+
+## Recuperação e persistência (1.1.3)
+
+A captura VP8 preserva os metadados explícitos de gama e matriz de cores antes da codificação, nas gravações e nas fontes de direto partilhadas ou diretas. A leitura limitada do cabeçalho WebM aceita envios fragmentados. Os dois painéis preferem VP9; a alternativa VP8 usa um canvas sRGB por software para manter as cores consistentes durante a gravação. O teste de navegador repete a alternativa VP8 e compara as cores do vídeo descodificado. O processamento de áudio mantém-se.
+
+Cancelar um início de gravação pendente desliga imediatamente os dispositivos da pré-visualização. Os erros de envio ou finalização permanecem visíveis, a recuperação bem-sucedida atualiza o estado e as respostas antigas não repõem uma pasta predefinida desatualizada. A câmara pode ser reduzida arrastando o canto horizontal ou verticalmente, mantendo fixo o canto superior esquerdo.
+
+A informação fecha quando o respetivo campo é ocultado. Editar um canal ou playlist removido não abre um formulário de criação. As configurações OAuth e contas substitutas só entram em uso depois de serem guardadas; revogar uma conta encerra o chat mesmo quando o disco falha. O downloader conserva o caminho completo do FFmpeg personalizado. Os testes de navegador incluem falhas controladas, recuperação, transferência real de ficheiros e nova gravação após erro.
+
+## Proporções do gravador e ajuda por clique (1.1.2)
+
+Os botões de iniciar/parar e o tempo decorrido ficam junto da pré-visualização. Escolha Original, 16:9, 9:16, 1:1, 4:3 ou 3:4 antes de gravar. Pode alterar a proporção da pré-visualização preparada sem voltar a abrir os dispositivos. A área do ecrã é ajustada sem deformação, com margens quando necessário; o vídeo só de câmara preenche o formato e a câmara sobreposta mantém-se quadrada.
+
+O ícone **i** junto de cada controlo abre a respetiva explicação apenas por clique, toque ou ativação pelo teclado. Passar o rato ou focar o controlo original não abre a ajuda. Feche pelo mesmo ícone, Escape ou clique fora.
+
+## Revisão de fiabilidade (1.1.1)
+
+A finalização do gravador aguarda os últimos dados do navegador e coordena pedidos simultâneos de paragem. A seleção da área fica protegida durante a gravação, os valores da posição da câmara correspondem ao resultado e o contorno acompanha o tamanho real em ecrãs pequenos. As gravações mantêm a localização correta quando a pasta predefinida muda; o seletor abre na pasta atual quando esta ainda existe.
+
+As definições confirmadas como guardadas permanecem visíveis mesmo se a atualização do estado falhar. No Windows, os downloads e fontes YouTube utilizam o motor JavaScript incluído no Electron em modo Node, sem instalação adicional. A migração de dados repete bloqueios temporários de pastas durante um período limitado e preserva destinos criados entretanto. Os testes incluem estas falhas, gravações consecutivas, cancelamento da seleção, ficheiros de áudio/vídeo e posicionamento da câmara pelo teclado. Os workflows Windows e Mac executam dez ciclos completos e testes de navegador antes do empacotamento.
+
+## Video and audio recorder (1.1.0)
+
+Open **Video & audio recorder** to record a screen, window, selected area, camera, screen with a square camera overlay, or audio only. Select microphone, shared computer audio, both, or silent video. The browser/system picker must supply a live audio track for computer audio; if it does not, preparation explains the missing source and does not silently record without it. Windows Electron supports system loopback; Mac browser audio availability depends on the selected source and browser. No virtual audio driver installation is required or offered.
+
+Prepare a local preview, drag a rectangle over the source to choose the recorded area, and drag or resize the square camera overlay on the result. Percentage fields, arrow keys and a size slider provide keyboard alternatives. Choose a recording folder for this session or save/use the default. The optional 3/5/10-second countdown can be cancelled before recording starts. Video is saved as H.264/AAC MP4; audio-only recording is AAC M4A with no video track. Encoding runs during recording using bundled FFmpeg. Files go directly to the chosen local folder, and finalizing preserves recoverable local data if a disk or encoding error occurs.
+
+The recorder survives navigation between app pages. Closing its preview finishes the recording and releases devices. Recording does not create a broadcast or cloud copy. The OS still asks permission to access the screen, camera or microphone. Use `npm run test:recorder:browser` with the Playwright QA package for synthetic crop, camera drag/resize, countdown, folder, navigation, video/audio and responsive checks. Physical devices and native source pickers require manual verification.
+
+## Revisão 1.0.10
+
+A mudança de idioma aguarda as operações do chat e da pasta de gravação e protege mensagens, configurações de contas e preferências ainda por guardar. As atualizações de estado conservam os formulários do chat em edição; os campos ficam bloqueados enquanto se guarda a configuração. Após guardar, o segredo introduzido é retirado do campo. Mantêm-se as correções da ajuda contextual e a explicação sobre a exportação do projeto. Repor o foco do teclado após atualizar a vista já não reabre uma ajuda fechada sobre os botões vizinhos.
+
+## Interface e ajuda contextual 1.0.10
+
+O painel apresenta duas entradas: captação ao vivo e vídeos ou playlists preparados. O menu agrupa transmissão, conteúdos/destinos e aplicação. Clique no ícone de informação junto do controlo, ou ative esse ícone pelo teclado, para ler a explicação; use Escape para a fechar. As opções de imagem/apresentador e os clips expandem apenas quando necessário; a gravação local fica diretamente acessível.
+
+## Captação ao vivo 1.0.10
+
+Em **Origem**, escolha **Apenas microfone** para usar apenas o áudio do microfone, sem pedir acesso à câmara ou ao ecrã. A imagem emitida é o fundo, imagem e composição escolhidos no estúdio.
+
+Em **Gravação local**, use **Escolher pasta** e **Guardar preferências de gravação**. Por predefinição, a aplicação pergunta a pasta antes de cada gravação; desative essa opção e guarde para usar sempre a pasta escolhida. Os ficheiros são escritos diretamente nessa pasta e as gravações interrompidas mantêm os dados para recuperação.
+
+A nova área **Câmara e ecrã ao vivo / Live camera & screen** permite pré-visualizar uma câmara, um ecrã/janela ou o ecrã com câmara sobreposta. Inclui microfone selecionável, silenciamento, orientação horizontal/vertical e 720p/1080p. A pré-visualização não transmite: selecione os canais RTMP/RTMPS configurados e confirme o início. As funções anteriores de vídeos gravados, playlists, repetição, agendamentos e cópias de segurança continuam disponíveis.
+
+Cada destino tem uma ligação e estado próprios, reutilizando uma única codificação H.264/AAC; o limite simultâneo e as reservas dos canais são partilhados com as emissões de vídeos. Pode parar um destino no monitor ou todos os destinos ao vivo na área de captação. A origem ao vivo não permite pausa/retoma nem reprodução desde uma posição guardada: após uma interrupção, inicie um direto novo. A gravação opcional é exclusivamente local, guardada no computador em MP4; não existe gravação na nuvem. Recarregar/fechar a janela de captação interrompe a origem; a navegação interna mantém a pré-visualização. Use **Fechar pré-visualização e libertar dispositivos** quando terminar.
+
+Requer permissões de câmara/microfone/ecrã e MediaRecorder WebM: Electron incluído no Windows, Chrome/Edge ou Safari 18.4+ no Mac. O áudio do ecrã/separador depende do sistema e da origem escolhida. No Mac, as permissões são pedidas pelo navegador que apresenta a interface. O upload e a carga de CPU aumentam com cada destino. Confirme a receção nos painéis das plataformas; os ensaios locais RTMP não certificam publicação externa ou operação prolongada 24/7.
+
+Verificação: `npm run test:live` e `npm run test:live:browser` (este último utiliza câmara/microfone sintéticos). A validação de dispositivos reais e dos seletores nativos de ecrã é manual.
+
+## Edição Electron Windows
 
 A edição Electron tem janela e navegador incorporados. O instalador `.exe` cria atalhos no ambiente de trabalho e no menu Iniciar. Os dados mantêm-se em `%LOCALAPPDATA%\Go Streams\data`, separados dos ficheiros instalados, e o perfil Electron fica em `data\electron-session`. Atualizações e desinstalação preservam essa pasta.
 
@@ -10,25 +94,25 @@ Projetos e credenciais existentes são reutilizados. As preferências locais do 
 
 Ao fechar a janela Electron, o motor é encerrado. Se houver transmissões ou operações ativas, a aplicação pede confirmação antes de as parar. Os links externos HTTPS abrem no navegador predefinido. A janela não expõe Node.js à interface e mantém o sandbox e o isolamento de contexto.
 
-## Instalador Windows 0.16.0
+## Instalador Windows (MSI)
 
-Abra `GoStreams-0.16.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Go Streams`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
+Abra `Streamland-1.2.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Streamland`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
 
-Para atualizar, encerre o Go Streams e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
+Para atualizar, encerre o Streamland e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
 
 Na primeira instalação, os dados já existentes na pasta normal são reutilizados. Se o portable guardava os dados junto do executável, o instalador permite indicar essa pasta (a que contém `project.json`). A migração copia os conteúdos sem apagar a origem e nunca substitui dados de uma instalação já utilizada. Feche a versão portable antes de copiar o perfil do navegador.
 
 O código de atualização usa uma identidade MSI fixa entre versões e recusa versões anteriores. Os pacotes assinados do canal de atualização podem agora ser `.msi`, mantendo essa extensão após descarregar. A instalação é iniciada pelo utilizador depois de fechar a aplicação.
 
-O MSI foi gerado e o conteúdo pode ser verificado com `python scripts/verify-windows-installer.py release/GoStreams-0.16.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
+Depois de gerar o MSI, verifique o conteúdo com `python scripts/verify-windows-installer.py release/Streamland-1.2.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
 
 ## Abrir e atualizar
 
-Abra `GoStreams/GoStreams.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/GoStreams-0.15.5/GoStreams.exe`. Encerre a versão anterior pelo botão **Encerrar Go Streams** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
+Abra `Streamland/Streamland.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/Streamland-1.2.0/Streamland.exe`. Encerre a versão anterior pelo botão **Encerrar Streamland** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
 
 O pacote completo inclui Node.js, FFmpeg, FFprobe e yt-dlp. O utilizador final não precisa de instalar estas ferramentas, npm ou Python. Extraia a pasta completa e mantenha `runtime` e `vendor` junto da aplicação. Deixe os caminhos das ferramentas vazios nas Definições para usar as cópias incluídas; os caminhos personalizados continuam a ter prioridade. Windows utiliza Edge/Chrome e pode abrir no navegador predefinido. O launcher Windows usa o .NET Framework do Windows. Não inclui um navegador próprio.
 
-Ao substituir uma instalação, preserve a pasta `data` e faça uma cópia antes da atualização. O iniciador de uma pasta `GoStreams-VERSÃO` sem dados reutiliza a pasta de dados de uma versão irmã existente, preferindo a mais recente. Não copia nem apaga os dados anteriores. Por predefinição, os agendamentos ficam desarmados ao reabrir. Em Definições pode autorizar a manutenção dos agendamentos já ativos entre sessões. Isto não ativa os pausados nem reinicia emissões interrompidas; o motor precisa de estar aberto.
+Ao substituir uma instalação, preserve a pasta `data` e faça uma cópia antes da atualização. O iniciador de uma pasta `Streamland-VERSÃO` sem dados reutiliza a pasta de dados de uma versão irmã existente, preferindo a mais recente. Não copia nem apaga os dados anteriores. Por predefinição, os agendamentos ficam desarmados ao reabrir. Em Definições pode autorizar a manutenção dos agendamentos já ativos entre sessões. Isto não ativa os pausados nem reinicia emissões interrompidas; o motor precisa de estar aberto.
 
 ## Funções
 
@@ -113,7 +197,7 @@ A comparação visual completa com o original, a execução num Mac, os destinos
 - Uma playlist associada a um agendamento pendente não pode ser guardada vazia. Esvaziar uma playlist sem agendamentos elimina as preparações de canal que ficariam sem conteúdo.
 - Respostas tardias da atualização automática respeitam o campo que entretanto recebeu foco e a página atual. A navegação estável não é reconstruída desnecessariamente e os botões do monitor conservam o foco de teclado.
 - O editor de playlists preserva o vídeo selecionado ao acrescentar, ordenar ou retirar itens. Guardar uma fila pausada indica corretamente que não retoma a transmissão.
-- A cópia direta desativa visualmente os controlos de recodificação, conservando os valores ao guardar e ao voltar à recodificação. Pesquisas sem resultados têm mensagens próprias; testes de playlists vazias e normalização sem vídeos ficam indisponíveis.
+- A opção de preservar o formato original mantém os bitrates editáveis e desativa apenas a resolução e os fps quando não há sobreposições ativas, conservando os valores ao guardar. Pesquisas sem resultados têm mensagens próprias; testes de playlists vazias e normalização sem vídeos ficam indisponíveis.
 - Janelas de pré-visualização impedem a submissão nativa do formulário, evitando navegação acidental. O script opcional de interface inclui as novas regressões de codificação e playlist agendada; ainda não foi executado num navegador nesta versão.
 
 ## Alterações da 0.9.0
@@ -122,7 +206,7 @@ Validação local: 168 testes aprovados, sem falhas, e compilação Windows conc
 
 - Transporte SMTP comum a Windows e Mac: STARTTLS e TLS direto, AUTH PLAIN/LOGIN apenas na ligação cifrada, certificados e nome do servidor verificados, mensagens UTF-8, cancelamento e prazo máximo. Os testes incluem dois handshakes TLS reais sobre fluxos em memória, sem portas de rede nem envio externo, e regressões de certificado inválido, credenciais recusadas, respostas fragmentadas e injeção.
 - Menu lateral com botão para recolher/expandir, estado acessível e preferência local. Mantém todos os destinos e o comportamento compacto automático nos ecrãs pequenos. O controlo e a nova seleção de segurança SMTP estão incluídos no script de navegador.
-- Pacote `GoStreams-Mac/GoStreams.app`, gerado a partir do mesmo código. Deteta Node 24+, usa seletor nativo de ficheiros e guarda dados em `~/Library/Application Support/Go Streams`. Reabrir a aplicação reutiliza a sessão existente. Downloads usam grupos de processos próprios no Mac, para cancelar também os subprocessos.
+- Pacote `Streamland-Mac/Streamland.app`, gerado a partir do mesmo código. Deteta Node 24+, usa seletor nativo de ficheiros e guarda dados em `~/Library/Application Support/Go Streams`. Reabrir a aplicação reutiliza a sessão existente. Downloads usam grupos de processos próprios no Mac, para cancelar também os subprocessos.
 - Atualizações assinadas verificam a plataforma de destino; o editor pode gerar manifestos `win32` ou `darwin`. Não foi publicado um servidor de atualizações.
 
 O pacote Mac ainda não foi executado num Mac, nem assinado/notarizado pela Apple. É uma entrega experimental com verificações de estrutura e testes dos caminhos específicos através de dependências controladas; não equivale a uma certificação de compatibilidade. As dependências não estão incorporadas. As capturas novas foram lidas por extração de texto, mas a transferência dos píxeis falhou; não foi demonstrada igualdade visual com o Livecaster.
@@ -171,7 +255,7 @@ O REA confirmou os métodos `GetGoLiveDetailsByChannelId`, `UpdateAutoRestartOnE
 | Atualização de fila e repetição | Implementadas com reabertura de ligação; continuidade idêntica ao original não demonstrada |
 | Botões, formulários, pesquisas, paginação e ligações | Percursos principais testados com ações reais e API; 48 verificações de navegador aprovadas na 0.7.0; novo formulário da 0.8.0 testado por callbacks/API, navegador por repetir |
 | YouTube, SMTP e destinos RTMP externos | Implementados; integração externa real por validar |
-| Design e fluxo completo na janela original | Dashboard Go Streams inspecionado em três larguras; igualdade visual com o original não demonstrada |
+| Design e fluxo completo na janela original | Dashboard Streamland inspecionado em três larguras; igualdade visual com o original não demonstrada |
 | Atualizações | Verificação e download assinados, separados por plataforma; distribuição não configurada e instalação manual |
 | macOS | Pacote experimental gerado; arranque, seletor, SMTP e cancelamento adaptados; execução num Mac por validar |
 | Conta, licença, loja, suporte e serviços privados do fornecedor | Não replicados na aplicação independente |
@@ -307,7 +391,7 @@ Após terminar os serviços e os processos de vídeo, o servidor fecha também a
 
 Em **Entrar em direto → Banners e imagem** ou **Definições → Configurar sobreposições**, prepare os elementos antes de iniciar: dois banners independentes, no topo e em baixo, com texto e emojis, cores, tamanho, velocidade, direção e opacidade do fundo. Pode acrescentar uma imagem PNG, JPG, GIF animado ou WebP (até 2 MB e 4096 × 4096), com largura, posição horizontal/vertical e opacidade. A pré-visualização no editor é aproximada; utilize o teste local para verificar o resultado do motor.
 
-Guardar aplica as opções às próximas emissões e testes locais em todos os canais. As sessões em curso mantêm as opções com que começaram, incluindo após pausa e retoma. O motor inclui as sobreposições na saída enviada à plataforma, sem editar nem duplicar os vídeos originais. Isto ativa a recodificação mesmo que a cópia direta esteja selecionada e aumenta o trabalho do processador. As imagens estáticas são lidas a um fotograma por segundo; os banners mantêm o movimento à taxa de fotogramas da emissão. Os GIFs conservam a animação em repetição.
+Guardar aplica as opções às próximas emissões e testes locais em todos os canais. As sessões em curso mantêm as opções com que começaram, incluindo após pausa e retoma. O motor inclui as sobreposições na saída enviada à plataforma, sem editar nem duplicar os vídeos originais. As sobreposições utilizam a resolução e os fps do perfil selecionado e aumentam o trabalho do processador, mesmo quando a opção de preservar o formato original está selecionada. As imagens estáticas são lidas a um fotograma por segundo; os banners mantêm o movimento à taxa de fotogramas da emissão. Os GIFs conservam a animação em repetição.
 
 Os banners são desenhados uma vez pelo navegador, incluindo os emojis disponíveis no sistema, e guardados como pequenas imagens transparentes. A aplicação utiliza o FFmpeg incorporado; não requer instalar componentes adicionais. As imagens ficam na pasta de dados e são incluídas na cópia de segurança cifrada das definições ou de tudo. Os ficheiros de vídeo continuam excluídos dessa cópia. Para desativar, desmarque Ativar nos três elementos e guarde antes da próxima emissão.
 
@@ -334,25 +418,27 @@ Durante a validação do restauro, a interface pode consultar o estado, mas as a
 
 ### 0.15.3 - Arranque e janela Windows
 
-O iniciador Windows espera pela resposta autenticada do motor antes de abrir a interface, usa um perfil de navegador exclusivo e volta à mesma janela nas aberturas seguintes. Encerrar Go Streams fecha também a janela criada pelo iniciador, sem terminar o navegador pessoal. O ficheiro CloseGoStreams.cmd permite pedir o encerramento desta sessão, com confirmação, mesmo quando a interface não responde. O perfil desktop-browser e desktop-startup.log ficam na pasta de dados. Não são exportados nos pacotes. A página de arranque inclui uma mensagem visível e uma opção para tentar novamente se os módulos não carregarem.
+O iniciador Windows espera pela resposta autenticada do motor antes de abrir a interface, usa um perfil de navegador exclusivo e volta à mesma janela nas aberturas seguintes. Encerrar Streamland fecha também a janela criada pelo iniciador, sem terminar o navegador pessoal. O ficheiro CloseStreamland.cmd permite pedir o encerramento desta sessão, com confirmação, mesmo quando a interface não responde. O perfil desktop-browser e desktop-startup.log ficam na pasta de dados. Não são exportados nos pacotes. A página de arranque inclui uma mensagem visível e uma opção para tentar novamente se os módulos não carregarem.
 
 
 ### 0.15.4 - Janela adicional do Edge no arranque
 
-O arranque Windows seleciona explicitamente o perfil Default do navegador exclusivo do Go Streams, inicializa o marcador First Run sem reescrever preferências e suprime a recuperação de separadores e o início de sessão implícito nesse processo. As opções são iguais no iniciador nativo e no arranque por Node. Não são alteradas políticas ou preferências do Edge pessoal. A abertura visual num Windows normal continua a exigir validação fora do ambiente de execução restrito.
+O arranque Windows seleciona explicitamente o perfil Default do navegador exclusivo do Streamland, inicializa o marcador First Run sem reescrever preferências e suprime a recuperação de separadores e o início de sessão implícito nesse processo. As opções são iguais no iniciador nativo e no arranque por Node. Não são alteradas políticas ou preferências do Edge pessoal. A abertura visual num Windows normal continua a exigir validação fora do ambiente de execução restrito.
 
 
 ### 0.15.5 - Windows num ficheiro único
 
-O ficheiro GoStreams-0.15.5-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
+O ficheiro Streamland-1.2.0-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
 
-As definições ficam em %LOCALAPPDATA%/Go Streams/data. Se o EXE estiver junto a um portable anterior com data/project.json ou GoStreams/data/project.json, reutiliza esses dados. Uma pasta GoStreams-data ao lado do EXE permite escolher dados portáteis; GO_STREAMS_DATA tem prioridade. Os vídeos locais continuam referenciados no local original. A cópia do EXE para outro computador não transporta os dados locais nem as chaves DPAPI; use exportação/importação encriptada e leve os vídeos necessários.
+As definições ficam em %LOCALAPPDATA%/Go Streams/data. Se o EXE estiver junto a um portable anterior com data/project.json ou Streamland/data/project.json, reutiliza esses dados (também reconhece a pasta anterior GoStreams/data/project.json). Uma pasta Streamland-data ao lado do EXE permite escolher dados portáteis (GoStreams-data continua compatível); GO_STREAMS_DATA tem prioridade. Os vídeos locais continuam referenciados no local original. A cópia do EXE para outro computador não transporta os dados locais nem as chaves DPAPI; use exportação/importação encriptada e leve os vídeos necessários.
 
 Para reconstruir: node scripts/build.mjs --platform=win32, seguido de node scripts/build-single-file.mjs. O modo --verify verifica/extrai sem abrir a interface nem iniciar o motor; GO_STREAMS_CACHE pode apontar para uma pasta de teste. --close pede o encerramento com confirmação. O arranque visual fora do ambiente restrito continua pendente.
 
 
-## Mac 0.15.5: uma aplicacao clicavel
+## Mac: uma aplicação clicável
 
-Mac-Portable/GoStreams.app inclui o iniciador universal Intel/Apple Silicon, Node.js, FFmpeg, FFprobe, yt-dlp e o icone escolhido. Usa o browser disponivel no Mac (incluindo o browser predefinido do sistema); nao necessita de instalar runtimes. Requer macOS 13.5 ou posterior. As definicoes permanecem em ~/Library/Application Support/Go Streams, fora do pacote da aplicacao.
+Mac-Portable/Streamland.app inclui o iniciador universal Intel/Apple Silicon, Node.js, FFmpeg, FFprobe, yt-dlp e o icone escolhido. Usa o browser disponivel no Mac (incluindo o browser predefinido do sistema); nao necessita de instalar runtimes. Requer macOS 13.5 ou posterior. As definicoes permanecem em ~/Library/Application Support/Go Streams, fora do pacote da aplicacao.
 
-Para preparar: node scripts/build.mjs --platform=darwin; depois python scripts/package-mac-portable.py --destination release/GoStreams-0.15.5-Mac-Portable/Mac-Portable. O ZIP contem a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportacao tem de preservar/restaurar os modos do manifesto. O pacote completo e uma unica app no Finder; nao e um binario isolado que permita remover os recursos internos. A execucao real num Mac continua por testar, sem assinatura Developer ID ou notarizacao.
+Na máquina de desenvolvimento, prepare primeiro o iniciador universal com `node scripts/build-mac-launcher.mjs`; exige Go (1.27.3 em CI). `STREAMLAND_GO` permite indicar o executável Go; a variável anterior `GO_STREAMS_GO` continua aceite. Depois execute `node scripts/prepare-portable.mjs --platform=darwin` e `python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable`. O utilizador final não precisa de Go nem de ferramentas de desenvolvimento.
+
+O ZIP contém a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportação tem de preservar/restaurar os modos do manifesto. O pacote completo é uma única aplicação no Finder; os recursos internos fazem parte da aplicação. Os testes nativos em CI abrangem Intel e Apple Silicon em macOS 15; consulte os relatórios da compilação para os resultados concluídos. A assinatura Developer ID e a notarização não estão certificadas.

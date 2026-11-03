@@ -157,7 +157,7 @@
   "Mais antigos": "পুরোনো আগে",
   "Pesquisar": "খুঁজুন",
   "Verificação ainda não efetuada": "এখনও পরীক্ষা হয়নি",
-  "Atualizações do Go Streams": "Go Streams আপডেট",
+  "Atualizações do Streamland": "Streamland আপডেট",
   "Verificar agora": "এখন পরীক্ষা করুন",
   "Configurar canal de atualizações": "আপডেট উৎস নির্ধারণ",
   "A mostrar": "দেখানো হচ্ছে",
@@ -193,7 +193,7 @@
   "Pré-visualizar": "পূর্বরূপ",
   "Estúdio local": "স্থানীয় স্টুডিও",
   "ESTÚDIO": "স্টুডিও",
-  "Encerrar Go Streams": "Go Streams বন্ধ করুন",
+  "Encerrar Streamland": "Streamland বন্ধ করুন",
   "Menu principal": "প্রধান মেনু",
   "Voltar a ligar": "পুনরায় সংযোগ করুন",
   "+ Preparar transmissão": "+ সম্প্রচার প্রস্তুত করুন",
@@ -236,5 +236,7 @@
   "Banner superior": "উপরের টিকার",
   "Banner inferior": "নিচের টিকার",
   "Configurar sobreposições": "ওভারলে কনফিগার করুন",
-  "Guardar sobreposições": "ওভারলে সংরক্ষণ করুন"
+  "Guardar sobreposições": "ওভারলে সংরক্ষণ করুন",
+  "Preservar resolução e fps do vídeo original": "মূল ভিডিওর রেজোলিউশন ও ফ্রেম রেট বজায় রাখুন",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "সক্রিয় ওভারলে না থাকলে ফাইলের রেজোলিউশন ও ফ্রেম রেট বজায় থাকে। ভিডিও ও অডিওর বিটরেট প্রযোজ্য থাকে।"
 }

@@ -1,4 +1,4 @@
-// Native entry point for the self-contained Go Streams macOS application.
+// Native entry point for the self-contained Streamland macOS application.
 package main
 
 import (
@@ -22,7 +22,7 @@ func plan(executable, architecture string) (launchPlan, error) {
  p := launchPlan{filepath.Join(base, "runtime", "darwin-"+target, "node"), filepath.Join(base, "src", "server.mjs"), base}
  for _, file := range []string{p.node, p.server} {
   info, err := os.Stat(file)
-  if err != nil || !info.Mode().IsRegular() { return launchPlan{}, fmt.Errorf("The complete GoStreams.app is required. Missing file: %s", file) }
+  if err != nil || !info.Mode().IsRegular() { return launchPlan{}, fmt.Errorf("The complete Streamland.app is required. Missing file: %s", file) }
   if file == p.node && runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 { return launchPlan{}, fmt.Errorf("The bundled runtime has lost its execute permission. Extract the original Mac ZIP on a Mac: %s", file) }
  }
  return p, nil
@@ -46,9 +46,9 @@ func main() {
   if err == nil { err = command(p).Run() }
  }
  if err != nil {
-  fmt.Fprintln(os.Stderr, "Go Streams:", err)
+  fmt.Fprintln(os.Stderr, "Streamland:", err)
   if runtime.GOOS == "darwin" {
-   script := `function run(argv){var app=Application.currentApplication();app.includeStandardAdditions=true;app.displayAlert("Go Streams",{message:argv[0]});}`
+   script := `function run(argv){var app=Application.currentApplication();app.includeStandardAdditions=true;app.displayAlert("Streamland",{message:argv[0]});}`
    _ = exec.Command("/usr/bin/osascript", "-l", "JavaScript", "-e", script, "--", err.Error()).Run()
   }
   os.Exit(1)

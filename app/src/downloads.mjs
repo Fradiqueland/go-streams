@@ -1,4 +1,5 @@
 import {sameLocalFile} from './media-paths.mjs';
+import {downloaderEnvironment} from './tool-paths.mjs';
 import {StringDecoder} from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,12 +35,28 @@ export class Downloads {
       for (const d of s.downloads) if (['running','validating','importing','cancelling'].includes(d.status)) { d.status = 'interrupted'; d.error = 'O download foi interrompido ao fechar a aplicação.'; }
     });
   }
-  update(id, values) { this.store.update(s => { const item = s.downloads.find(d => d.id === id); if (item) Object.assign(item, values); }); }
+  update(id, values) {
+    try { this.store.update(s => { const item = s.downloads.find(d => d.id === id); if (item) Object.assign(item, values); }); }
+    catch(error) { const op=this.active.get(id);if(op)this.persistenceFailure(id,op);throw error; }
+  }
+  stopOwned(op) {
+    if(!op.killing)op.killing=stopProcessTree(op.child).catch(()=>false);
+    return op.killing;
+  }
+  persistenceFailure(id,op) {
+    if(op.persistenceError)return;
+    op.persistenceError=true;clearTimeout(op.timer);
+    const item=this.store.data.downloads.find(d=>d.id===id);
+    // Keep the previous disk state intact and expose the failure in this running session.
+    if(item)Object.assign(item,{status:'error',persistenceError:true,ended:new Date().toISOString(),error:'Não foi possível guardar o estado do download. Os ficheiros locais foram preservados; verifique o espaço e as permissões da pasta de dados.'});
+    if(op.child)this.stopOwned(op).then(stopped=>{op.treeStopped=stopped;if(!stopped)this.complete(id,op,'error','');});
+    else if(!op.completing)queueMicrotask(()=>this.complete(id,op,'error',''));
+  }
   markImported(id,mediaId) {
-    this.store.update(s=>{
+    try{this.store.update(s=>{
       const download=s.downloads.find(d=>d.id===id),media=s.media.find(m=>m.id===mediaId);
       if(download&&media&&!media.source){download.mediaId=mediaId;media.downloadUrl=download.url;}
-    });
+    });}catch(error){const op=this.active.get(id);if(op)this.persistenceFailure(id,op);throw error;}
   }
   start(input) {
     if (this.closing) throw new AppError('A aplicação está a encerrar.', 409);
@@ -56,13 +73,13 @@ export class Downloads {
     let child;
     try {
       const ffmpeg=toolsFor(settings).ffmpeg;
-      if(path.isAbsolute(ffmpeg))args.push('--ffmpeg-location',path.dirname(ffmpeg));
+      if(path.isAbsolute(ffmpeg))args.push('--ffmpeg-location',ffmpeg);
       args.push('--no-plugin-dirs','--js-runtimes',`node:${process.execPath}`,'--no-remote-components','--',url);
-      child = spawnOwnedTool(toolsFor(settings).ytdlp, args, { windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'] },{spawnProcess:this.spawn}); op.child = child;
+      child = spawnOwnedTool(toolsFor(settings).ytdlp, args, { windowsHide: true, shell: false, stdio: ['ignore','pipe','pipe'],env:downloaderEnvironment() },{spawnProcess:this.spawn}); op.child = child;
     }
     catch { this.complete(id,op,'error','Não foi possível iniciar as ferramentas de download. Extraia a aplicação completa ou reveja os caminhos nas Definições.'); return this.store.data.downloads.find(d=>d.id===id); }
     let lastProgress = -1, buffer = '', processError = false;
-    op.timer = setTimeout(() => { op.timeout = true; op.killing = stopProcessTree(child); }, 6*60*60*1000);
+    op.timer = setTimeout(() => { op.timeout = true; this.stopOwned(op); }, 6*60*60*1000);
     const decoder=new StringDecoder('utf8');
     const consume=chunk=>{
       buffer += chunk; const lines = buffer.split(/\r?\n/); buffer = lines.pop().slice(-2000);
@@ -72,15 +89,17 @@ export class Downloads {
         if (match) { const progress = Math.max(0,Math.min(99,Math.floor(Number(match[1])))); if (progress !== lastProgress) { lastProgress = progress; this.update(id,{progress}); } }
       }
     };
-    child.stdout.on('data',chunk=>consume(decoder.write(chunk)));
+    child.stdout.on('data',chunk=>{if(op.persistenceError)return;try{consume(decoder.write(chunk));}catch{this.persistenceFailure(id,op);}});
     child.stderr.on('data', () => {}); // Remote messages can contain signed URLs; never persist them.
     child.on('error', () => { processError = true; });
-    child.on('close', code => { consume(decoder.end());if(buffer)consume('\n');this.finalize(id,op,code,processError).catch(() => this.complete(id,op,'error','Não foi possível concluir a importação do vídeo.')); });
+    child.on('close', code => { try{if(!op.persistenceError){consume(decoder.end());if(buffer)consume('\n');}}catch{this.persistenceFailure(id,op);}this.finalize(id,op,code,processError).catch(() => this.complete(id,op,'error','Não foi possível concluir a importação do vídeo.')); });
     return entry;
   }
   async finalize(id,op,code,processError) {
+    if(this.active.get(id)!==op)return;
     if(op.killing)op.treeStopped=await op.killing;
     op.child = null;
+    if(op.persistenceError)return this.complete(id,op,'error','');
     if (op.cancelled || this.closing) return this.complete(id,op,'cancelled','');
     if (code !== 0 || processError || op.timeout) return this.complete(id,op,'error',processError ? 'yt-dlp indisponível. Extraia a aplicação completa ou reveja o caminho nas Definições.' : op.timeout ? 'O download excedeu seis horas.' : 'O download falhou. Verifique a ligação, a disponibilidade do vídeo e a versão do yt-dlp.');
     clearTimeout(op.timer);this.update(id,{status:'validating'});
@@ -91,6 +110,7 @@ export class Downloads {
     if(op.cancelled||this.closing)return this.complete(id,op,'cancelled','');
     this.update(id,{...metadata,title:op.title||'Vídeo descarregado',thumbnail:false});
     try{await runProcess(tools.ffmpeg,['-v','error','-protocol_whitelist','file,pipe','-ss','0','-i',output,'-frames:v','1','-vf','scale=480:-2','-y',path.join(op.directory,'thumb.jpg')]);this.update(id,{thumbnail:true});}catch{}
+    if(op.persistenceError)return this.complete(id,op,'error','');
     if(op.cancelled||this.closing)return this.complete(id,op,'cancelled','');
     if(!this.store.data.downloads.find(d=>d.id===id)?.addToLibrary)return this.complete(id,op,'completed','');
     this.update(id,{status:'importing'});
@@ -101,17 +121,19 @@ export class Downloads {
     return this.complete(id,op,'completed','');
   }
   complete(id,op,status,error) {
-    if (!this.active.has(id)) return;
+    if (this.active.get(id)!==op||op.completing) return;
+    op.completing=true;
     clearTimeout(op.timer);
-    this.update(id,{status,error,ended:new Date().toISOString(),...(status==='completed'?{progress:100}:{})});
-    if (status !== 'completed' && op.treeStopped !== false && !this.store.data.media.some(m => path.dirname(m.path) === op.directory)) {
+    try { if(!op.persistenceError)this.update(id,{status,error,ended:new Date().toISOString(),...(status==='completed'?{progress:100}:{})}); }
+    catch { /* update exposes a persistence error; capacity must still be released. */ }
+    if (!op.persistenceError && status !== 'completed' && op.treeStopped !== false && !this.store.data.media.some(m => path.dirname(m.path) === op.directory)) {
       const base = path.resolve(this.store.directory,'downloads') + path.sep;
       const target = path.resolve(op.directory);
       if (target.startsWith(base) && path.basename(target) === id) { try { fs.rmSync(target,{recursive:true,force:true}); } catch {} }
     }
     this.active.delete(id); op.resolve();
   }
-  cancel(id) { const op = this.active.get(id); if (!op) throw new AppError('O download já terminou.',409); if(!op.child)throw new AppError('O vídeo já foi descarregado e está a terminar a importação.',409); if(op.cancelled)return; op.cancelled = true; this.update(id,{status:'cancelling'}); op.killing = stopProcessTree(op.child); }
+  cancel(id) { const op = this.active.get(id); if (!op) throw new AppError('O download já terminou.',409); if(!op.child)throw new AppError('O vídeo já foi descarregado e está a terminar a importação.',409); if(op.cancelled)return; op.cancelled = true; try{this.update(id,{status:'cancelling'});}finally{this.stopOwned(op);} }
   async addToLibrary(id) {
     if(this.closing)throw new AppError('A aplicação está a encerrar.',409);
     const d=this.store.data.downloads.find(d=>d.id===id);if(!d||d.status!=='completed'||!d.path)throw new AppError('Download indisponível.',404);
@@ -126,5 +148,5 @@ export class Downloads {
     return thumbnail?path.join(directory,'thumb.jpg'):d.path;
   }
   remove(id) { if(this.importing?.has(id))throw new AppError('Aguarde a importação terminar.',409);if(this.active.has(id))throw new AppError('Cancele o download antes de o retirar da lista.',409);if(!this.store.data.downloads.some(d=>d.id===id))throw new AppError('Download não encontrado.',404);this.store.update(s=>{s.downloads=s.downloads.filter(d=>d.id!==id);}); }
-  async shutdown() { this.closing = true; const operations = [...this.active.values()]; for (const [id,op] of this.active) if(op.child)this.cancel(id); await Promise.all([...operations.map(op => op.done),...this.manualImports.values()]); }
+  async shutdown() { this.closing = true; const operations = [...this.active.values()]; for (const [id,op] of this.active) if(op.child){try{this.cancel(id);}catch{this.persistenceFailure(id,op);}} await Promise.all([...operations.map(op => op.done),...this.manualImports.values()]); }
 }

@@ -92,11 +92,15 @@ test('paused queue offers to save without claiming it resumes transmission',asyn
 });
 
 
-test('direct-copy mode disables transcoding controls but preserves their profile when saving',async()=>{
+test('source-preserving mode keeps bitrates editable and retains the selected profile when saving',async()=>{
  const h=ready();h.run("page='settings'");
  const form=h.fields('encoding-form',{copy:true,videoBitrate:'4500',audioBitrate:'192',fps:'60',aspect:'9:16'});
  await h.emit('change',form.elements.namedItem('copy'));
- for(const name of ['videoBitrate','audioBitrate','fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,true);
+ for(const name of ['videoBitrate','audioBitrate'])assert.equal(form.elements.namedItem(name).disabled,false);
+ for(const name of ['fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,true);
+ h.run("state.settings.overlays={image:{enabled:true}};syncEncodingControls()");
+ for(const name of ['videoBitrate','audioBitrate','fps','aspect'])assert.equal(form.elements.namedItem(name).disabled,false);
+ h.run("state.settings.overlays={};syncEncodingControls()");
  await h.emit('submit',form);
  assert.deepEqual(JSON.parse(h.requests[0].body).encoding,{copy:true,videoBitrate:4500,audioBitrate:192,fps:60,aspect:'9:16'});
  form.elements.namedItem('copy').checked=false;await h.emit('change',form.elements.namedItem('copy'));
@@ -111,6 +115,24 @@ test('playlist addition retains the selected video instead of resetting to the f
  h.fields('modal-form',{name:'Programme',quality:'720p',loop:false});h.element('#add-media-button').onclick();
  await h.submit({name:'Programme',quality:'720p',loop:false});
  assert.deepEqual(JSON.parse(h.requests[0].body).mediaIds,['second','second']);
+});
+
+for(const startedBeforeSave of [true,false])test('playlist drag '+(startedBeforeSave?'started before':'started during')+' save cannot replace the locked form or submit a duplicate',async()=>{
+ const pending=deferred(),h=ready({fetch:url=>url==='/api/playlists/p'?pending.promise:Promise.resolve(ok(empty()))});
+ const events=[new Map(),new Map()],rows=events.map((handlers,index)=>({dataset:{sequenceIndex:String(index)},addEventListener(type,handler){handlers.set(type,handler);}}));
+ h.element('#dialog').querySelectorAll=selector=>selector==='[data-sequence-index]'?rows:[];
+ h.run("state.playlists[0].mediaIds=['m','m'];playlistForm('p')");
+ const form=h.fields('modal-form',{name:'Programme',quality:'720p',loop:false});
+ const event={preventDefault(){},dataTransfer:{setData(){}}};
+ if(startedBeforeSave)events[0].get('dragstart')(event);
+ const saving=form.onsubmit(event);
+ try{
+  if(!startedBeforeSave)events[0].get('dragstart')(event);
+  events[1].get('drop')(event);
+  assert.equal(h.element('#modal-form'),form,'Saving form was replaced by a drag operation');
+  await form.onsubmit(event);
+  assert.equal(h.requests.filter(request=>request.url==='/api/playlists/p').length,1);
+ }finally{pending.resolve(ok({ok:true}));await saving;}
 });
 
 

@@ -40,6 +40,7 @@ try{
  }
  if(aborted)throw Error('Endurance check interrupted.');
  const live=jobs.map(j=>app.studio.jobs.get(j.id));
+ console.log(JSON.stringify({finalStates:live.map(j=>({channel:j.channelName,status:j.status,elapsed:j.elapsed,frame:j.frame,error:j.error,ended:j.ended}))}));
  if(live.some(j=>j.status!=='running'||j.elapsed<seconds-5))throw Error('One or more streams stopped making progress.');
  for(const j of live)app.studio.stop(j.id);await Promise.all(live.map(j=>j.completion));
  const report={ok:true,seconds,streams,wallSeconds:(Date.now()-started)/1000,minimumPlayoutSeconds:Math.min(...live.map(j=>j.elapsed)),transport:'FFmpeg offline null sink; no network or platform transmission',samples:sample};

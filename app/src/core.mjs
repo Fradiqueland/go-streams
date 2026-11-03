@@ -1,4 +1,5 @@
 import {hasOverlays,overlayArguments,overlayDefaults} from './overlays.mjs';
+import {appendProgramOutput} from './program-output.mjs';
 import {sameLocalFile,refreshManagedPaths} from './media-paths.mjs';
 import {StringDecoder} from 'node:string_decoder';
 import {windowsTool} from './system-tools.mjs';
@@ -60,7 +61,10 @@ export class Store {
     if(JSON.stringify(restored)!==JSON.stringify(this.data))this.update(s=>Object.assign(s,restored));
   }
   update(fn) {
-    const next = clone(this.data); const result = fn(next);
+    let next = clone(this.data); const result = fn(next);
+    // A callback can insert caller-owned objects or retain its draft/result.
+    // Commit an independent snapshot so later mutations cannot bypass saving.
+    next = clone(next);
     refreshManagedPaths(next,this.directory,this.data);
     if (fs.existsSync(this.file)) fs.copyFileSync(this.file, `${this.file}.bak`);
     atomicWrite(this.file, JSON.stringify(next, null, 2)); this.data = next; return result;
@@ -76,6 +80,7 @@ export class Vault {
   constructor(directory, { portable = process.platform !== 'win32' } = {}) {
     this.file = path.join(directory, portable ? 'vault.key' : 'vault.dpapi');
     const exists = fs.existsSync(this.file);
+    if (!exists && fs.existsSync(path.join(directory, 'chat-accounts.json'))) fail('A chave de proteção local está em falta. Preserve os dados e restaure a cópia de segurança.', 500);
     if (!exists && fs.existsSync(path.join(directory, 'project.json'))) {
       const saved = JSON.parse(fs.readFileSync(path.join(directory, 'project.json'), 'utf8'));
       if (saved.channels?.some(c => c.secret) || saved.notifications?.secret) fail('A chave de proteção local está em falta. Preserve os dados e restaure a cópia de segurança.', 500);
@@ -103,10 +108,10 @@ export class Vault {
     catch { fail('Não foi possível ler a chave do canal nesta conta.', 500); }
   }
 }
-export function runProcess(command, args, { timeout = 30000, maxBytes = 4 * 1024 * 1024, signal } = {}) {
+export function runProcess(command, args, { timeout = 30000, maxBytes = 4 * 1024 * 1024, signal, env } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new AppError('Operação cancelada.'));
-    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...(env?{env}:{}) });
     let stdout = '', stderr = '', issue, outputBytes=0;
     const outDecoder=new StringDecoder('utf8'),errDecoder=new StringDecoder('utf8');
     const abort = () => { issue = new AppError('Operação cancelada.'); child.kill(); };
@@ -208,6 +213,7 @@ export class Studio {
     const result = { imported: [], errors: [], conversionSuggested: [] }; const tools = toolsFor(this.store.data.settings);
     for (const file of paths) {
       if (this.closing) break;
+      let thumbnail;
       try {
         const meta = await probe(text(file, 'Caminho', 3000), tools.ffprobe);
         if (this.closing) break;
@@ -220,6 +226,7 @@ export class Studio {
         }
         let media = { ...meta, id: id(), title: path.basename(meta.path, path.extname(meta.path)), added: now(), thumbnail: false };
         const thumb = path.join(this.store.directory, 'thumbs', `${media.id}.jpg`);
+        thumbnail={path:thumb,mediaId:media.id};
         try { await this.runMediaProcess(tools.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-ss', String(Math.min(1, meta.duration / 2)), '-i', meta.path, '-frames:v', '1', '-vf', 'scale=480:-2', '-y', thumb]); media.thumbnail = true; } catch { /* Metadata is still useful when thumbnail decoding fails. */ }
         // Thumbnail creation yields: another import may have committed this path meanwhile.
         const committed=this.store.data.media.find(m=>!m.source&&sameLocalFile(m.path,meta.path));
@@ -229,7 +236,10 @@ export class Studio {
         const needsConversion = media.codec !== 'h264' || (media.audio && media.audio.codec !== 'aac') || path.extname(media.path).toLowerCase() !== '.mp4';
         if (convert && needsConversion) { const converted = await this.convertMedia(media.id); result.imported.push(converted.id); }
         else { result.imported.push(media.id); if (needsConversion) result.conversionSuggested.push(media.id); }
-      } catch (e) { result.errors.push({ file, message: e.message }); }
+      } catch (e) {
+        if(thumbnail&&!this.store.data.media.some(m=>m.id===thumbnail.mediaId))try{fs.unlinkSync(thumbnail.path);}catch{}
+        result.errors.push({ file, message: e.message });
+      }
     }
     return result;
   }
@@ -308,7 +318,7 @@ export class Studio {
     for (const key of ['media', 'channels', 'playlists', 'schedules']) {
       if (!Array.isArray(input[key]) || input[key].length > 1000) fail(`Lista ${key} inválida ou demasiado grande.`);
       const ids = input[key].map(x => x?.id);
-      if (ids.some(x => typeof x !== 'string' || !/^[\w-]{1,100}$/.test(x)) || new Set(ids).size !== ids.length) fail(`Identificadores inválidos em ${key}.`);
+      if (ids.some(x => typeof x !== 'string' || !/^[\w-]{1,100}$/.test(x) || Object.hasOwn(Object.prototype,x)) || new Set(ids).size !== ids.length) fail(`Identificadores inválidos em ${key}.`);
     }
     this.importingProject = true;
     let finishImport;const done=new Promise(resolve=>{finishImport=resolve;});this.pendingImports.add(done);
@@ -333,15 +343,19 @@ export class Studio {
         return { id: p.id, name: text(p.name, 'Nome da playlist', 100), mediaIds: p.mediaIds, loop: p.loop === true, quality: p.quality === '1080p' ? '1080p' : '720p' };
       });
       const playlistIds = new Set(playlists.map(p => p.id));
+      const playablePlaylistIds = new Set(playlists.filter(p=>p.mediaIds.length).map(p=>p.id));
       const schedules = input.schedules.map(s => {
         if (!(s.mediaId ? mediaIds.has(s.mediaId) && !s.playlistId : playlistIds.has(s.playlistId)) || !Array.isArray(s.channelIds) || !s.channelIds.length || new Set(s.channelIds).size !== s.channelIds.length || s.channelIds.some(cid => !channelIds.has(cid))) fail('O projeto contém um agendamento com referências inválidas.');
+        const historical=['triggered','cancelled','interrupted','error','missed'].includes(s.status);
+        if(!historical&&s.playlistId&&!playablePlaylistIds.has(s.playlistId))fail('O projeto contém um agendamento com uma playlist vazia.');
+        if(typeof s.at!=='string')fail('Data de agendamento inválida.');
         const date = new Date(s.at); if (!Number.isFinite(date.getTime())) fail('Data de agendamento inválida.');
         const timeZone = s.timeZone || 'UTC';
         try { if (typeof timeZone !== 'string') throw Error(); new Intl.DateTimeFormat('pt-PT', { timeZone }); } catch { fail('Fuso horário inválido.'); }
-        return { id: s.id, playlistId: s.playlistId || null, mediaId:s.mediaId || null, quality:s.quality==='1080p'?'1080p':'720p', autoRestart:s.autoRestart===undefined?undefined:s.autoRestart===true,pauseOnDisconnect:s.pauseOnDisconnect===true, channelIds: s.channelIds, at: date.toISOString(), timeZone, autoReconnect: s.autoReconnect === true, endOnVideoFailure: s.endOnVideoFailure !== false, status: date.getTime() > Date.now() ? 'pending' : 'missed', armed: false, created: now(), error: '' };
+        return { id: s.id, playlistId: s.playlistId || null, mediaId:s.mediaId || null, quality:s.quality==='1080p'?'1080p':'720p', autoRestart:s.autoRestart===undefined?undefined:s.autoRestart===true,pauseOnDisconnect:s.pauseOnDisconnect===true, channelIds: s.channelIds, at: date.toISOString(), timeZone, autoReconnect: s.autoReconnect === true, endOnVideoFailure: s.endOnVideoFailure !== false, status: historical?s.status:date.getTime() > Date.now() ? 'pending' : 'missed', armed: false, created: now(), error: '' };
       });
       const plans=Object.entries(input.channelPlans||{}).map(([cid,p])=>{
-        if(!p||typeof p!=='object'||!channelIds.has(cid)||Boolean(p.playlistId)===Boolean(p.mediaId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playlistIds.has(p.playlistId)))fail('Preparação de canal inválida no projeto.');
+        if(!p||typeof p!=='object'||!channelIds.has(cid)||Boolean(p.playlistId)===Boolean(p.mediaId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playablePlaylistIds.has(p.playlistId)))fail('Preparação de canal inválida no projeto.');
         const countdown=p.countdown??10;if(!Number.isInteger(countdown)||countdown<0||countdown>120)fail('Contagem inválida no projeto.');
         return[cid,{playlistId:p.playlistId||null,mediaId:p.mediaId||null,quality:p.quality==='1080p'?'1080p':'720p',countdown,endOnVideoFailure:p.endOnVideoFailure!==false,autoRestart:p.autoRestart===undefined?undefined:p.autoRestart===true,autoReconnect:p.autoReconnect===true,pauseOnDisconnect:p.pauseOnDisconnect!==false}];
       });
@@ -460,8 +474,14 @@ export class Studio {
     }).join('\n');
     fs.writeFileSync(manifest, contents, { mode: 0o600 });
     const context=this.contexts.get(job.id),overlays=context?.overlays||overlayDefaults,overlayEnabled=hasOverlays(overlays);
-    const encoding=overlayEnabled&&context?.encoding?{...context.encoding,copy:false}:context?.encoding;
+    const encoding=context?.encoding?{...context.encoding,copy:false}:context?.encoding;
     const encoded = encodingArgs(encoding, playlist.quality, media, { preview: job.preview });
+    const preserveInput=Boolean(context?.encoding?.copy&&!overlayEnabled);
+    if(preserveInput){
+      const vf=encoded.args.indexOf('-vf');if(vf>=0)encoded.args[vf+1]='pad=ceil(iw/2)*2:ceil(ih/2)*2';
+      const fps=media[0].fps||encoded.profile.fps;encoded.profile.fps=fps;
+      encoded.args[encoded.args.indexOf('-g')+1]=String(Math.max(1,Math.round(fps*2)));
+    }
     job.encoding = encoded.profile;
     const args = ['-hide_banner', '-loglevel', 'warning', '-progress', 'pipe:1', '-stats_period', '1', '-re'];
     if (!encoded.profile.copy) args.push('-xerror');
@@ -473,8 +493,8 @@ export class Studio {
       const vf=encoded.args.indexOf('-vf'),filter=encoded.args[vf+1];
       const plan=overlayArguments(overlays,this.store.directory,playlist.quality,encoded.profile.aspect,filter,encoded.needsSilence?2:1);
       const outputArgs=[...encoded.args];outputArgs.splice(vf,2);outputArgs[outputArgs.indexOf('0:v:0')]='['+plan.output+']';
-      args.push(...plan.inputs,'-filter_complex_threads','1','-filter_complex',plan.filter,...outputArgs);
-    }else args.push(...encoded.args);
+      args.push(...plan.inputs);appendProgramOutput(args,outputArgs,playlist.quality,encoded.profile.aspect,plan.filter);
+    }else appendProgramOutput(args,encoded.args,playlist.quality,encoded.profile.aspect,'',preserveInput?[media[0].width,media[0].height]:undefined);
     if (job.preview) {
       job.output = `${job.id}.mp4`;
       args.push('-t', '8', '-movflags', '+faststart', '-y', path.join(this.store.directory, 'previews', job.output));
@@ -493,7 +513,13 @@ export class Studio {
         if (key === 'frame') { job.frame = Number(value) || 0; if (job.frame > 0 && job.status === 'starting') { job.status = 'running'; this.notify(job,'running'); } }
         if (key === 'fps') job.fps = Number(value) || 0;
         if (key === 'bitrate') job.bitrate = value?.trim() || '';
-        if (key === 'out_time_us' && Number.isFinite(Number(value))) { const previous=job.elapsed; job.elapsed=Math.max(job.elapsed,baseElapsed+Math.max(0,Number(value)||0)/1000000); this.recordProgress(job,previous,job.elapsed); }
+        if (key === 'out_time_us' && Number.isFinite(Number(value))) {
+          const outputTime=Number(value),previous=job.elapsed;
+          job.elapsed=Math.max(job.elapsed,baseElapsed+Math.max(0,outputTime)/1000000);
+          // FFmpeg 6 stream copy can omit frame counts; a positive output timestamp also proves progress.
+          if(outputTime>0&&job.status==='starting'){job.status='running';this.notify(job,'running');}
+          this.recordProgress(job,previous,job.elapsed);
+        }
       }
     });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });
@@ -512,7 +538,7 @@ export class Studio {
       if (job.status === 'pausing') { job.status = 'paused'; job.secrets = []; this.notify(job,'paused'); return; }
       if (!stopped && code !== 0 && !job.preview && !job.endOnVideoFailure && !this.closing && /Error while decoding|Error opening input|Invalid data found when processing input/i.test(stderr)) {
         const failed = playbackPosition(media,this.playbackElapsed(job),playlist.loop);
-        const remaining = playlist.loop ? media.filter((_,index)=>index!==failed.index) : media.slice(failed.index+1);
+        const remaining = playlist.loop ? [...media.slice(failed.index+1),...media.slice(0,failed.index)] : media.slice(failed.index+1);
         if (remaining.length) {
           job.skippedVideos.push({id:media[failed.index].id,title:media[failed.index].title});
           this.flushVideo(job,'error',message); this.contexts.get(job.id).timelineBase=job.elapsed; job.secrets=[];
@@ -590,6 +616,7 @@ export class Studio {
     const job = this.jobs.get(jobId); if (!job) fail('Sessão não encontrada.', 404);
     if (!occupied(job)) return;
     if (job.status === 'stopping') return;
+    if (job.sourceType === 'live') return this.liveCapture.stopJob(job);
     job.status = 'stopping';
     if (job.child) this.interrupt(job);
     else this.finish(job, 'stopped');
@@ -659,7 +686,7 @@ export class Studio {
     const cycles=ctx.playlist.loop?Math.floor(local/oldTotal):0,offset=ctx.playlist.loop?local%oldTotal:local;
     // Recheck after FFmpeg stops: the current video may have advanced while draining.
     const current=playbackPosition(ctx.media,local,ctx.playlist.loop);
-    if(ctx.media.slice(0,current.index+1).some((m,i)=>op.media[i]?.id!==m.id)){
+    if(ctx.media.slice(0,current.index+1).some((m,i)=>op.media[i]?.id!==m.id||Math.abs(op.media[i].duration-m.duration)>0.01)){
       ctx.reconfiguration=null;job.status='paused';job.secrets=[];op.resolve(false);return;
     }
     for(const key of ['autoRestart','endOnVideoFailure','autoReconnect','pauseOnDisconnect'])if(op.input[key]!==undefined)job[key]=op.input[key];
@@ -671,7 +698,7 @@ export class Studio {
   }
   async restart(jobId,confirmed) {
     const job=this.jobs.get(jobId);
-    if(!job||job.preview||job.status==='stopping'||this.restartRequests.has(jobId))fail('Esta sessão não pode ser reiniciada.',409);
+    if(!job||job.preview||job.sourceType==='live'||job.status==='stopping'||this.restartRequests.has(jobId))fail('Esta sessão não pode ser reiniciada.',409);
     if(confirmed!==true)fail('Confirme o reinício da transmissão.');
     const request={cancelled:false};this.restartRequests.set(jobId,request);
     try{
@@ -709,7 +736,7 @@ export class Studio {
     if (!schedule) return;
     const source = schedule.mediaId ? this.store.data.media.find(m => m.id === schedule.mediaId) : this.store.data.playlists.find(p => p.id === schedule.playlistId);
     const details = { scheduleId, result: status, playlist: source?.title || source?.name || 'Conteúdo indisponível', channel: (schedule.channelIds || []).map(id => this.store.data.channels.find(c => c.id === id)?.name || 'Canal indisponível').join(', '), at: schedule.at, timeZone: schedule.timeZone || 'UTC', detail: error };
-    this.store.log('error', 'Agendamento: ' + status, {kind:'schedule', ...details});
+    try { this.store.log('error', 'Agendamento: ' + status, {kind:'schedule', ...details}); } catch {}
     try { this.onScheduleStatus?.(details); } catch {}
   }
   async tickSchedules(time) {
@@ -773,16 +800,28 @@ export class Studio {
       const addedId = result.imported[0]; if (!addedId) fail(result.errors[0]?.message || 'Falha ao importar vídeo normalizado.');
       this.store.update(s => { s.media.find(m => m.id === addedId).title = `${media.title} · ${normalize?'720p':'MP4'}`; });
       return { id: addedId };
-    } catch (e) { try { fs.unlinkSync(output); } catch {} throw e; }
+    } catch (e) {
+      // Import can commit the file before a later label write fails. Keep that
+      // usable library video; only discard output that was never incorporated.
+      if(!this.store.data.media.some(item=>!item.source&&sameLocalFile(item.path,output)))try { fs.unlinkSync(output); } catch {}
+      throw e;
+    }
     finally { this.pendingOperations.delete(mediaId); operation.resolve(); }
   }
-  async shutdown() {
+  shutdown() {
+    if(this.shutdownTask)return this.shutdownTask;
     this.closing = true;
-    const remoteShutdown=this.remoteSources?.shutdown();
-    const operations = [...this.pendingOperations.values()];
-    for (const op of operations) op.controller.abort();
-    for (const job of this.jobs.values()) this.stop(job.id);
-    await remoteShutdown;
-    await Promise.all([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
+    this.shutdownTask=Promise.resolve().then(async()=>{
+      // Observe every shutdown immediately, including synchronous throws. A
+      // failed sibling must not leave streams running or recordings undrained.
+      const services=Promise.allSettled([this.chat,this.recordings,this.feeds,this.liveCapture,this.remoteSources].filter(Boolean).map(service=>Promise.resolve().then(()=>service.shutdown())));
+      const operations = [...this.pendingOperations.values()];
+      for (const op of operations) op.controller.abort();
+      for (const job of this.jobs.values()) this.stop(job.id);
+      const work=Promise.allSettled([...this.jobs.values()].filter(j => !j.ended).map(j => j.completion).concat(operations.map(op => op.done),[...this.pendingImports],[...this.pendingPreparations],this.tickTask?[this.tickTask]:[]));
+      const results=[...await services,...await work],errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
+      if(errors.length)throw new AggregateError(errors,'O encerramento do estúdio terminou com falhas.');
+    });
+    return this.shutdownTask;
   }
 }

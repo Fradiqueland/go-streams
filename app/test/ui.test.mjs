@@ -6,12 +6,13 @@ import vm from 'node:vm';
 import * as ui from '../public/studio-ui.js';
 import * as extras from '../public/extras.js';
 import * as zones from '../public/timezones.js';
+import * as assistance from '../public/ui-help.js';
 // Exercises the actual view functions with DOM entry points stubbed. This is not a browser/layout test.
 function harness(){
  i18n.setLanguage('pt-PT',{persist:false});
  const elements=new Map();const element=selector=>{if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',value:selector==='#source-mode'?'video':'',open:false,hidden:false,elements:{namedItem(){return null;}},addEventListener(){},querySelectorAll(){return[];},querySelector(q){return element(q);},showModal(){this.open=true;},close(){this.open=false;}});return elements.get(selector);};
  const document={querySelector:element,querySelectorAll:()=>[],getElementById:id=>element('#'+id)};
- const context=vm.createContext({...i18n,...ui,...extras,...zones,document,location:{hash:''},localStorage:{getItem:()=>null},Intl,Date,structuredClone,URL,console,setTimeout,clearTimeout,fetch:()=>{throw Error('Unexpected request');}});
+ const context=vm.createContext({...i18n,...ui,...extras,...zones,...assistance,contextualHelp:null,document,location:{hash:''},localStorage:{getItem:()=>null},Intl,Date,structuredClone,URL,console,setTimeout,clearTimeout,fetch:()=>{throw Error('Unexpected request');}});
  const source=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8').replace(/^import .+;\r?\n/gm,'').split("document.addEventListener('click'")[0];vm.runInContext(source,context);
  return{context,elements,element,run:code=>vm.runInContext(code,context)};
 }

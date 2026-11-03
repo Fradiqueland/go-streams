@@ -44,7 +44,7 @@ export async function downloadVendorFile(entry,destination,{fetcher=fetch,signal
     let url=new URL(entry.url),response;
     for(let redirects=0;redirects<=5;redirects++){
       if(url.protocol!=='https:'||url.username||url.password||url.port||!downloadHosts.has(url.hostname))throw Error('Untrusted yt-dlp download URL');
-      response=await fetcher(url,{redirect:'manual',signal,headers:{'User-Agent':'GoStreams-portable-build','Accept-Encoding':'identity'}});
+      response=await fetcher(url,{redirect:'manual',signal,headers:{'User-Agent':'Streamland-portable-build','Accept-Encoding':'identity'}});
       if([301,302,303,307,308].includes(response.status)){
         const location=response.headers.get('location');await response.body?.cancel();
         if(!location||redirects===5)throw Error('Too many yt-dlp download redirects');

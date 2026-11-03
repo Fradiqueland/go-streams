@@ -117,8 +117,8 @@ internal static class SingleFileCache {
                 while (!acquired) {
                     try { acquired = mutex.WaitOne(100); } catch (AbandonedMutexException) { acquired = true; }
                     if (!acquired) {
-                        progress("Waiting for the other Go Streams launch",0,1);
-                        if (waiting.ElapsedMilliseconds > 180000) throw new IOException("Another launch is preparing Go Streams. Try again shortly.");
+                        progress("Waiting for the other Streamland launch",0,1);
+                        if (waiting.ElapsedMilliseconds > 180000) throw new IOException("Another launch is preparing Streamland. Try again shortly.");
                     }
                 }
                 if (Valid(directory,spec,progress)) { reused = true; return directory; }
@@ -148,7 +148,7 @@ internal static class SingleFileCache {
                             while ((count = input.Read(buffer,0,buffer.Length)) != 0) {
                                 if (written > file.Size-count) throw new InvalidDataException("Application file exceeds its expected size.");
                                 output.Write(buffer,0,count); sha.TransformBlock(buffer,0,count,null,0);
-                                written += count; done += count; progress("Preparing Go Streams",done,spec.Total);
+                                written += count; done += count; progress("Preparing Streamland",done,spec.Total);
                             }
                             sha.TransformFinalBlock(new byte[0],0,0);
                             if (written != file.Size || BitConverter.ToString(sha.Hash).Replace("-","").ToLowerInvariant() != file.Hash)
@@ -164,7 +164,7 @@ internal static class SingleFileCache {
                     Directory.Move(directory,previous); // Preserve a damaged cache rather than deleting an unknown tree.
                 }
                 Directory.Move(stage,directory); stage = null;
-                progress("Opening Go Streams",spec.Total,spec.Total);
+                progress("Opening Streamland",spec.Total,spec.Total);
                 return directory;
             } finally {
                 try { RemoveStage(stage,root); } catch { /* Keep an unsafe/locked staging folder; never follow a link. */ }
@@ -177,11 +177,11 @@ internal sealed class PreparingWindow : Form {
     Label status; ProgressBar bar; Stopwatch changed = Stopwatch.StartNew();
     internal bool Cancelled;
     internal PreparingWindow(string version) {
-        Text="Go Streams"; Width=490; Height=210; StartPosition=FormStartPosition.CenterScreen;
+        Text="Streamland"; Width=490; Height=210; StartPosition=FormStartPosition.CenterScreen;
         FormBorderStyle=FormBorderStyle.FixedDialog; MaximizeBox=false; MinimizeBox=false;
         BackColor=Color.FromArgb(23,44,67); ForeColor=Color.White;
         try { using(var icon=Assembly.GetExecutingAssembly().GetManifestResourceStream("GoStreams.Icon")) if(icon!=null)Icon=new Icon(icon); } catch { }
-        var title=new Label { Text="GO STREAMS",Left=26,Top=22,Width=420,Height=32,Font=new Font("Segoe UI",20,FontStyle.Bold) };
+        var title=new Label { Text="Streamland",Left=26,Top=22,Width=420,Height=32,Font=new Font("Segoe UI",20,FontStyle.Bold) };
         status=new Label { Text="Preparing your application...",Left=28,Top=71,Width=420,Height=38,Font=new Font("Segoe UI",10) };
         bar=new ProgressBar { Left=28,Top=120,Width=420,Height=19,Minimum=0,Maximum=100 };
         Controls.Add(title);Controls.Add(status);Controls.Add(bar);
@@ -202,13 +202,17 @@ internal static class GoStreamsSingleFile {
     internal static string DataDirectory(string outerRoot,string localData) {
         string chosen=Environment.GetEnvironmentVariable("GO_STREAMS_DATA");
         if (!String.IsNullOrWhiteSpace(chosen)) return Path.GetFullPath(chosen);
-        string sidecar=Path.Combine(outerRoot,"GoStreams-data");
-        if (Directory.Exists(sidecar)) return sidecar;
-        foreach (string existing in new[]{Path.Combine(outerRoot,"data"),Path.Combine(outerRoot,"GoStreams","data")})
+        foreach (string brand in new[]{"Streamland-data","GoStreams-data"}) {
+            string sidecar=Path.Combine(outerRoot,brand);
+            if (Directory.Exists(sidecar)) return sidecar;
+        }
+        foreach (string existing in new[]{Path.Combine(outerRoot,"data"),Path.Combine(outerRoot,"Streamland","data"),Path.Combine(outerRoot,"GoStreams","data")})
             if (File.Exists(Path.Combine(existing,"project.json"))) return existing;
         Version latest=new Version(0,0,0);string previous=null;
-        foreach(string folder in Directory.GetDirectories(outerRoot,"GoStreams-*")) {
-            Version version;string name=Path.GetFileName(folder).Substring(10),data=Path.Combine(folder,"data");
+        foreach(string folder in Directory.GetDirectories(outerRoot)) {
+            string folderName=Path.GetFileName(folder);
+            if (!folderName.StartsWith("Streamland-") && !folderName.StartsWith("GoStreams-")) continue;
+            Version version;string name=folderName.Substring(folderName.IndexOf('-')+1),data=Path.Combine(folder,"data");
             if (Version.TryParse(name,out version) && version>latest && File.Exists(Path.Combine(data,"project.json"))) {latest=version;previous=data;}
         }
         return previous??Path.Combine(localData,"Go Streams","data");
@@ -244,7 +248,7 @@ internal static class GoStreamsSingleFile {
         } catch(OperationCanceledException){return 2;}
         catch(Exception error){
             if(verify)Console.Error.WriteLine(error.Message);
-            else MessageBox.Show(error.Message+"\n\nExisting projects and video files were preserved.","Go Streams",MessageBoxButtons.OK,MessageBoxIcon.Error);
+            else MessageBox.Show(error.Message+"\n\nExisting projects and video files were preserved.","Streamland",MessageBoxButtons.OK,MessageBoxIcon.Error);
             return 1;
         } finally {if(preparing!=null)preparing.Dispose();}
     }

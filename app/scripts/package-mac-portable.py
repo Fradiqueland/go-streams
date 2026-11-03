@@ -1,4 +1,4 @@
-"""Prepare Mac-Portable/GoStreams.app and a ZIP with Unix metadata.
+"""Prepare Mac-Portable/Streamland.app and a ZIP with Unix metadata.
 Uses the built Mac app; the Windows release is not altered.
 """
 from pathlib import Path
@@ -9,7 +9,7 @@ def digest(file):
     with file.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
 def executable(relative):
-    return (relative=='Contents/MacOS/GoStreams' or relative.endswith('/vendor/yt-dlp/darwin/yt-dlp') or ('/runtime/darwin-' in relative and Path(relative).name in ('node','ffmpeg','ffprobe')))
+    return (relative=='Contents/MacOS/Streamland' or relative.endswith('/vendor/yt-dlp/darwin/yt-dlp') or ('/runtime/darwin-' in relative and Path(relative).name in ('node','ffmpeg','ffprobe')))
 
 def entries(bundle):
     for base, directories, files in os.walk(bundle,followlinks=False):
@@ -28,15 +28,15 @@ def entries(bundle):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--replace',action='store_true');parser.add_argument('--destination',type=Path);args=parser.parse_args()
     version=json.loads((ROOT/'package.json').read_text(encoding='utf-8'))['version'];release=ROOT/'release'
-    source=release/f'GoStreams-{version}-mac'/'GoStreams.app'
-    destination=(args.destination or release/'Mac-Portable').resolve();output=release/f'GoStreams-v{version}-Mac-Portable.zip';report_path=release/f'GoStreams-v{version}-Mac-Portable-verification.json'
+    source=release/f'Streamland-{version}-mac'/'Streamland.app'
+    destination=(args.destination or release/'Mac-Portable').resolve();output=release/f'Streamland-v{version}-Mac-Portable.zip';report_path=release/f'Streamland-v{version}-Mac-Portable-verification.json'
     if destination.name!='Mac-Portable' or not destination.is_relative_to(release.resolve()):raise ValueError('Portable destination must be a Mac-Portable folder inside release')
     destination.parent.mkdir(parents=True,exist_ok=True)
     if (destination.exists() or output.exists()) and not args.replace:raise FileExistsError('Preserve existing Mac-Portable delivery before rebuilding.')
     if destination.exists():
         if destination.is_symlink() or not destination.resolve().is_relative_to(release.resolve()):raise ValueError('Unsafe portable replacement')
         existing=json.loads((destination/'mac-portable-manifest.json').read_text(encoding='utf-8'))
-        if existing.get('product')!='Go Streams' or existing.get('version')!=version:raise ValueError('Unrelated portable folder')
+        if existing.get('product')!='Streamland' or existing.get('version')!=version:raise ValueError('Unrelated portable folder')
     metadata=plistlib.loads((source/'Contents/Info.plist').read_bytes())
     if metadata['CFBundleShortVersionString']!=version:raise ValueError('Stale application build')
     source_entries=list(entries(source))
@@ -48,6 +48,7 @@ def main():
         for file in (ROOT/folder).rglob('*'):
             if file.is_file():expect(file,'Contents/Resources/app/'+file.relative_to(ROOT).as_posix())
     for name in ['package.json','README.md']:expect(ROOT/name,'Contents/Resources/app/'+name)
+    if (ROOT/'STREAMYARD-FEATURE-SCOPE.md').is_file():expect(ROOT/'STREAMYARD-FEATURE-SCOPE.md','Contents/Resources/app/STREAMYARD-FEATURE-SCOPE.md')
     for target in ['darwin-x64','darwin-arm64']:
         directory=ROOT/'vendor/runtime'/target
         manifest=json.loads((directory/'manifest.json').read_text(encoding='utf-8'))
@@ -66,34 +67,34 @@ def main():
         if checksum!=entry.get('sha256',entry.get('gitSha1')):raise ValueError('Downloader integrity mismatch')
         expect(file,'Contents/Resources/app/vendor/yt-dlp/'+entry['path'])
     expect(directory/'manifest.json','Contents/Resources/app/vendor/yt-dlp/manifest.json')
-    launcher=ROOT/'vendor/mac-launcher/GoStreams';manifest=json.loads((launcher.parent/'manifest.json').read_text(encoding='utf-8'))
+    launcher=ROOT/'vendor/mac-launcher/Streamland';manifest=json.loads((launcher.parent/'manifest.json').read_text(encoding='utf-8'))
     if launcher.stat().st_size!=manifest['bytes'] or digest(launcher)!=manifest['sha256']:raise ValueError('Launcher integrity mismatch')
     if digest(ROOT/'scripts/mac-launcher/main.go')!=manifest['sourceSha256']:raise ValueError('Launcher source changed without rebuilding')
-    expect(launcher,'Contents/MacOS/GoStreams')
+    expect(launcher,'Contents/MacOS/Streamland')
     for name in ['LICENSE','PATENTS']:expect(launcher.parent/name,'Contents/Resources/Go-'+name+'.txt')
-    expect(ROOT/'public/icon.icns','Contents/Resources/GoStreams.icns')
+    expect(ROOT/'public/icon.icns','Contents/Resources/Streamland.icns')
     observed={relative for _,relative,mode,_ in source_entries if not stat.S_ISDIR(mode)}
     if observed!=set(expected)|{'Contents/Info.plist'}:raise ValueError('Unexpected application resources')
     for file,relative,mode,link in source_entries:
         if stat.S_ISDIR(mode) or relative=='Contents/Info.plist':continue
         if link is not None or digest(file)!=digest(expected[relative]):raise ValueError('Stale application resource: '+relative)
-    if metadata.get('CFBundleExecutable')!='GoStreams' or metadata.get('CFBundleIconFile')!='GoStreams.icns':raise ValueError('Invalid Mac entry or icon')
+    if metadata.get('CFBundleExecutable')!='Streamland' or metadata.get('CFBundleIconFile')!='Streamland.icns':raise ValueError('Invalid Mac entry or icon')
     scratch_root=ROOT/'.tmp';scratch_root.mkdir(exist_ok=True);stage=Path(tempfile.mkdtemp(prefix='mac-portable-',dir=scratch_root)).resolve()
     if not stage.is_relative_to(scratch_root.resolve()):raise ValueError('Unsafe packaging directory')
     try:
-        folder=stage/'Mac-Portable';folder.mkdir();shutil.copytree(source,folder/'GoStreams.app',symlinks=True,copy_function=shutil.copy2)
+        folder=stage/'Mac-Portable';folder.mkdir();shutil.copytree(source,folder/'Streamland.app',symlinks=True,copy_function=shutil.copy2)
         records=[]
-        for item,relative,mode,link in entries(folder/'GoStreams.app'):
+        for item,relative,mode,link in entries(folder/'Streamland.app'):
             if stat.S_ISDIR(mode):continue
-            records.append({'path':'GoStreams.app/'+relative,'mode':oct(stat.S_IMODE(mode)),'kind':'symlink' if link is not None else 'file','sha256':hashlib.sha256(link).hexdigest() if link is not None else digest(item),'bytes':len(link) if link is not None else item.stat().st_size})
-        manifest={'product':'Go Streams','version':version,'macEntry':'GoStreams.app','architectures':['x64','arm64'],'minimumMacOS':metadata['LSMinimumSystemVersion'],'externalRuntimesRequired':False,'nativeMacExecutionVerified':False,'appDeveloperIDSigned':False,'notarized':False,'files':records}
+            records.append({'path':'Streamland.app/'+relative,'mode':oct(stat.S_IMODE(mode)),'kind':'symlink' if link is not None else 'file','sha256':hashlib.sha256(link).hexdigest() if link is not None else digest(item),'bytes':len(link) if link is not None else item.stat().st_size})
+        manifest={'product':'Streamland','version':version,'macEntry':'Streamland.app','architectures':['x64','arm64'],'minimumMacOS':metadata['LSMinimumSystemVersion'],'externalRuntimesRequired':False,'nativeMacExecutionVerified':False,'appDeveloperIDSigned':False,'notarized':False,'files':records}
         (folder/'mac-portable-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
         note=(ROOT/'scripts/mac-portable-readme.txt').read_text(encoding='utf-8').replace('vVERSION','v'+version)
         (folder/'LEIA-ME.txt').write_text(note,encoding='utf-8')
         candidate=stage/output.name;packed={}
         with zipfile.ZipFile(candidate,'w',zipfile.ZIP_DEFLATED) as archive:
-            for item,relative,mode,link in entries(folder/'GoStreams.app'):
-                name='Mac-Portable/GoStreams.app/'+relative+('/' if stat.S_ISDIR(mode) else '')
+            for item,relative,mode,link in entries(folder/'Streamland.app'):
+                name='Mac-Portable/Streamland.app/'+relative+('/' if stat.S_ISDIR(mode) else '')
                 info=zipfile.ZipInfo(name);info.create_system=3;info.external_attr=mode<<16
                 if stat.S_ISDIR(mode):info.external_attr|=0x10
                 info.compress_type=zipfile.ZIP_DEFLATED;archive.writestr(info,b'' if stat.S_ISDIR(mode) else link if link is not None else item.read_bytes());packed[name]=(item,mode,link)

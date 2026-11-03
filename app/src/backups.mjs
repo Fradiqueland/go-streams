@@ -9,6 +9,8 @@ import {validateOperations} from './operations.mjs';
 import {validateNotifications} from './notifications.mjs';
 import {validateUpdates} from './updates.mjs';
 import {sourceUrl} from './remote-sources.mjs';
+// Keep the authenticated format identity so backups remain readable in both
+// Streamland and earlier versions; the application name is not a format version.
 const scrypt=promisify(crypto.scrypt),aad=Buffer.from('Go Streams encrypted backup v1');
 const maxBytes=16*1024*1024;
 const projectFields=['media','channels','playlists','schedules','channelPlans','history','downloads'];
@@ -17,7 +19,7 @@ function fail(message='Cópia de segurança inválida.'){throw new AppError(mess
 function password(value){if(typeof value!=='string'||value.length<10||value.length>1024)fail('Use uma palavra-passe com pelo menos 10 caracteres.');return value;}
 function scope(value){if(!['all','project','settings'].includes(value))fail();return value;}
 function text(value,max=3000){if(typeof value!=='string'||value.length>max||/[\x00-\x1f]/.test(value))fail();return value;}
-function ids(items,max=Infinity){if(!Array.isArray(items)||items.length>max)fail();const seen=new Set();for(const item of items){if(!item||typeof item.id!=='string'||!/^[\w-]{1,100}$/.test(item.id)||seen.has(item.id))fail();seen.add(item.id);}return seen;}
+function ids(items,max=Infinity){if(!Array.isArray(items)||items.length>max)fail();const seen=new Set();for(const item of items){if(!item||typeof item.id!=='string'||!/^[\w-]{1,100}$/.test(item.id)||Object.hasOwn(Object.prototype,item.id)||seen.has(item.id))fail();seen.add(item.id);}return seen;}
 function prefs(input){if(!input||!['en','es','fr','hi','ar','zh','bn','ru','id','pt-PT'].includes(input.language)||!['list','grid'].includes(input.layout)||typeof input.compact!=='boolean')fail('Preferências da interface inválidas.');return{language:input.language,layout:input.layout,compact:input.compact};}
 export async function exportBackup(store,vault,input){
  const selected=scope(input.scope),snapshot=structuredClone(store.data),data={};
@@ -50,13 +52,14 @@ export function prepareBackupRestore(payload,current,vault,directory,{persistAss
   next.channels=data.channels.map(c=>{const {key,secret,...rest}=c;if(secret!==undefined)fail();const valid=validateChannel({...c,key:key||'validation-only'});text(key,1000);return{...rest,...valid,key:undefined,secret:key?vault.encrypt(key):''};});
   next.channels=next.channels.map(({key,...c})=>c);
   next.playlists=data.playlists.map(p=>{text(p.name,100);if(!Array.isArray(p.mediaIds)||p.mediaIds.length>500||p.mediaIds.some(id=>!mediaIds.has(id))||typeof p.loop!=='boolean'||!['720p','1080p'].includes(p.quality))fail();return p;});
+  const nonemptyPlaylist=id=>next.playlists.some(playlist=>playlist.id===id&&playlist.mediaIds.length>0);
   next.schedules=data.schedules.map(s=>{
-   if(Boolean(s.mediaId)===Boolean(s.playlistId)||(s.mediaId&&!mediaIds.has(s.mediaId))||(s.playlistId&&!playlistIds.has(s.playlistId))||!Array.isArray(s.channelIds)||!s.channelIds.length||s.channelIds.some(id=>!channelIds.has(id))||new Set(s.channelIds).size!==s.channelIds.length||!Number.isFinite(Date.parse(s.at))||typeof s.armed!=='boolean'||!['pending','starting','triggered','missed','error','cancelled','interrupted'].includes(s.status))fail();
+   if(Boolean(s.mediaId)===Boolean(s.playlistId)||(s.mediaId&&!mediaIds.has(s.mediaId))||(s.playlistId&&!playlistIds.has(s.playlistId))||(s.playlistId&&['pending','starting'].includes(s.status)&&!nonemptyPlaylist(s.playlistId))||!Array.isArray(s.channelIds)||!s.channelIds.length||s.channelIds.some(id=>!channelIds.has(id))||new Set(s.channelIds).size!==s.channelIds.length||typeof s.at!=='string'||!Number.isFinite(Date.parse(s.at))||typeof s.armed!=='boolean'||!['pending','starting','triggered','missed','error','cancelled','interrupted'].includes(s.status))fail();
    try{new Intl.DateTimeFormat('en',{timeZone:s.timeZone||'UTC'});}catch{fail();}
    return s.status==='starting'?{...s,status:'interrupted',armed:false}:s;
   });
   next.channelPlans={};for(const [cid,p] of Object.entries(data.channelPlans||{})){
-   if(!channelIds.has(cid)||!p||Boolean(p.mediaId)===Boolean(p.playlistId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!playlistIds.has(p.playlistId))||!Number.isInteger(p.countdown)||p.countdown<0||p.countdown>120)fail();next.channelPlans[cid]=p;
+   if(!channelIds.has(cid)||!p||Boolean(p.mediaId)===Boolean(p.playlistId)||(p.mediaId&&!mediaIds.has(p.mediaId))||(p.playlistId&&!nonemptyPlaylist(p.playlistId))||!Number.isInteger(p.countdown)||p.countdown<0||p.countdown>120)fail();next.channelPlans[cid]=p;
   }
   ids(data.history||[],50000);next.history=data.history||[];
   ids(data.downloads||[]);next.downloads=(data.downloads||[]).map(d=>{

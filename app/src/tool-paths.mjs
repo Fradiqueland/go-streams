@@ -3,6 +3,12 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const appRoot=fileURLToPath(new URL('../',import.meta.url));
+// yt-dlp invokes process.execPath for JavaScript challenges. In the desktop
+// edition that executable is Electron, so its child must start as Node rather
+// than opening another application window. Do not change the GUI's environment.
+export function downloaderEnvironment({env=process.env,electron=process.versions.electron}={}) {
+  return electron?{...env,ELECTRON_RUN_AS_NODE:'1'}:env;
+}
 export function ytdlpPath(settings={}, {root=appRoot,platform=process.platform}={}) {
   if(settings.ytdlp)return settings.ytdlp;
   if(platform==='win32'||platform==='darwin'){

@@ -1,12 +1,50 @@
-import {ytdlpPath,mediaToolPath} from './tool-paths.mjs';
+import {APP_VERSION} from './version.mjs';
+import {ytdlpPath,mediaToolPath,downloaderEnvironment} from './tool-paths.mjs';
 import dns from 'node:dns/promises';
 import https from 'node:https';
 import net from 'node:net';
 import crypto from 'node:crypto';
+import {Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {AppError} from './errors.mjs';
 
 const invalid=()=>new AppError('Use a public HTTPS MP4 link or an individual YouTube video.');
+function abortable(work,signal,discard) {
+  return new Promise((resolve,reject)=>{
+    const abort=()=>{signal.removeEventListener('abort',abort);reject(new AppError('Remote source cancelled.'));};
+    signal.addEventListener('abort',abort,{once:true});
+    Promise.resolve(work).then(value=>{signal.removeEventListener('abort',abort);if(signal.aborted){discard?.(value);abort();}else resolve(value);},error=>{signal.removeEventListener('abort',abort);reject(error);});
+    if(signal.aborted)abort();
+  });
+}
+function requestedRange(value) {
+  if(value===undefined)return null;
+  const match=typeof value==='string'&&value.length<=100&&/^bytes=(\d*)-(\d*)$/.exec(value);
+  if(!match||!match[1]&&!match[2])throw new AppError('Invalid range.',416);
+  const start=match[1]?Number(match[1]):null,end=match[2]?Number(match[2]):null;
+  if(start!==null&&!Number.isSafeInteger(start)||end!==null&&!Number.isSafeInteger(end)||start!==null&&end!==null&&end<start||start===null&&end===0)throw new AppError('Invalid range.',416);
+  return start===null?{suffix:end}:{start,end};
+}
+function validatePartial(upstream,requested) {
+  if(upstream.statusCode!==206)return null;
+  const fail=()=>{throw new AppError('Remote source returned an invalid byte range.',502);};
+  const match=/^bytes (\d+)-(\d+)\/(\d+|\*)$/i.exec(String(upstream.headers['content-range']||''));
+  if(!match)fail();
+  const start=Number(match[1]),end=Number(match[2]),total=match[3]==='*'?null:Number(match[3]);
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||end<start||!Number.isSafeInteger(end-start+1)||total!==null&&(!Number.isSafeInteger(total)||end>=total))fail();
+  const length=upstream.headers['content-length'];
+  if(length!==undefined&&(!/^\d+$/.test(String(length))||Number(length)!==end-start+1))fail();
+  if(requested?.start!==undefined&&(start!==requested.start||requested.end!==null&&end>requested.end))fail();
+  if(requested?.suffix!==undefined&&(end-start+1>requested.suffix||total!==null&&(start!==Math.max(0,total-requested.suffix)||end!==total-1)))fail();
+  return end-start+1;
+}
+function exactRangeBytes(expected) {
+  let bytes=0;
+  return new Transform({
+    transform(chunk,encoding,done){bytes+=chunk.length;if(bytes>expected)done(new AppError('Remote source returned an invalid byte count.',502));else done(null,chunk);},
+    flush(done){done(bytes===expected?null:new AppError('Remote source returned an incomplete byte range.',502));}
+  });
+}
 export function sourceUrl(value) {
   if(typeof value!=='string'||value.length>4000||/[\x00-\x20]/.test(value))throw invalid();
   let u;try{u=new URL(value);}catch{throw invalid();}
@@ -59,14 +97,21 @@ export async function publicTarget(value,lookup=dns.lookup,{signal,timeout=15000
   if(!records.length||records.some(r=>!publicAddress(r.address)))throw new AppError('Private and reserved network addresses are not allowed.');
   return {url:u,address:records[0].address};
 }
-export async function openRemote(value,{range,signal,headers,lookup=dns.lookup,request=https.request}={}) {
+export async function openRemote(value,{range,signal,headers,lookup=dns.lookup,request=https.request,timeout=15000}={}) {
   for(let hop=0;hop<6;hop++){
     if(signal?.aborted)throw new AppError('Remote source cancelled.');
-    const {url,address}=await publicTarget(value,lookup,{signal});
+    const {url,address}=await publicTarget(value,lookup,{signal,timeout});
     const response=await new Promise((resolve,reject)=>{
-      const req=request(url,{method:'GET',agent:false,signal,headers:{'user-agent':'GoStreams/0.12',...mediaHeaders(headers),'accept-encoding':'identity',...(range?{Range:range}:{})},lookup:(_host,options,cb)=>options.all?cb(null,[{address,family:4}]):cb(null,address,4)},resolve);
-      req.setTimeout(15000,()=>req.destroy(new Error('Remote source timed out.')));
-      req.once('error',reject);req.end();
+      if(signal?.aborted)return reject(new AppError('Remote source cancelled.'));
+      let timer,settled=false;
+      const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);};
+      const finish=(error,stream)=>{if(settled){stream?.destroy();return;}settled=true;cleanup();if(error)reject(error);else resolve(stream);};
+      const abort=()=>{const error=new AppError('Remote source cancelled.');finish(error);req.destroy(error);};
+      const req=request(url,{method:'GET',agent:false,signal,headers:{'user-agent':`Streamland/${APP_VERSION}`,...mediaHeaders(headers),'accept-encoding':'identity',...(range?{Range:range}:{})},lookup:(_host,options,cb)=>options.all?cb(null,[{address,family:4}]):cb(null,address,4)},stream=>finish(null,stream));
+      req.setTimeout(timeout,()=>req.destroy(new Error('Remote source timed out.')));
+      req.once('error',error=>finish(error));
+      if(!settled){signal?.addEventListener('abort',abort,{once:true});timer=setTimeout(()=>{const error=new AppError('Remote source timed out.');finish(error);req.destroy(error);},timeout);}
+      if(signal?.aborted)abort();else req.end();
     });
     if([301,302,303,307,308].includes(response.statusCode)){
       const location=response.headers.location;response.destroy();if(!location)throw invalid();
@@ -94,10 +139,11 @@ export class RemoteSources {
     if(force&&(force===true||entry.resolved?.url===force)){entry.at=0;entry.resolved=null;}
     if(entry.resolved&&Date.now()-entry.at<5*60*1000)return entry.resolved;
     if(entry.pending)return entry.pending;
-    entry.pending=(async()=>{
+    // Install the shared promise before tool-path checks can fail synchronously.
+    entry.pending=Promise.resolve().then(async()=>{
       try{
         const settings=this.settings();
-        const {stdout}=await this.execute(ytdlpPath(settings),['--ignore-config','--no-playlist','--no-cache-dir','--no-plugin-dirs','--no-remote-components','--js-runtimes',`node:${process.execPath}`,'--skip-download','--dump-single-json','--no-warnings','--socket-timeout','15','--retries','1','-f','b[ext=mp4][protocol=https][vcodec!=none][acodec!=none]','--',entry.path],{timeout:45000,maxBytes:4*1024*1024,signal:this.controller.signal});
+        const {stdout}=await this.execute(ytdlpPath(settings),['--ignore-config','--no-playlist','--no-cache-dir','--no-plugin-dirs','--no-remote-components','--js-runtimes',`node:${process.execPath}`,'--skip-download','--dump-single-json','--no-warnings','--socket-timeout','15','--retries','1','-f','b[ext=mp4][protocol=https][vcodec!=none][acodec!=none]','--',entry.path],{timeout:45000,maxBytes:4*1024*1024,signal:this.controller.signal,env:downloaderEnvironment()});
         const info=JSON.parse(stdout);
         if(info.protocol!=='https'||info.ext!=='mp4'||info.is_live||info.is_upcoming||info.live_status==='is_live'||!(info.duration>0)||!info.url)throw Error();
         const url=new URL(info.url);
@@ -105,7 +151,7 @@ export class RemoteSources {
         entry.resolved={url:url.href,headers:mediaHeaders(info.http_headers),title:String(info.title||'YouTube video').replace(/[\x00-\x1f]/g,' ').slice(0,200)};entry.at=Date.now();return entry.resolved;
       }catch{throw new AppError('YouTube source unavailable. Check yt-dlp, video access and availability of a combined MP4 format.');}
       finally{entry.pending=null;}
-    })();
+    });
     return entry.pending;
   }
   controller=new AbortController();
@@ -113,26 +159,31 @@ export class RemoteSources {
     if(this.closed)throw new AppError('Remote sources are shutting down.',503);
     if(!['GET','HEAD'].includes(req.method))throw new AppError('Method not allowed.',405);
     if(this.requests.size>=32)throw new AppError('Too many active remote reads. Try again shortly.',429);
-    const range=req.headers.range;
-    if(range&&(range.length>100||!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)))throw new AppError('Invalid range.',416);
-    const controller=new AbortController();this.requests.add(controller);
-    const abort=()=>controller.abort();res.once('close',abort);
+    const range=req.headers.range,requested=requestedRange(range);
+    const controller=new AbortController();let finish;controller.done=new Promise(resolve=>{finish=resolve;});this.requests.add(controller);
+    const abort=()=>{if(!res.writableFinished)controller.abort();};res.once('close',abort);
+    if(res.destroyed)controller.abort();
     let upstream,rejectedUrl;
     try{
       for(let attempt=0;attempt<2;attempt++){
-        const resolved=await this.resolve(entry,attempt>0?rejectedUrl:false);
-        upstream=await this.open(resolved.url,{range,signal:controller.signal,headers:resolved.headers});
+        if(controller.signal.aborted)throw new AppError('Remote source cancelled.');
+        const resolved=await abortable(this.resolve(entry,attempt>0?rejectedUrl:false),controller.signal);
+        if(controller.signal.aborted)throw new AppError('Remote source cancelled.');
+        upstream=await abortable(this.open(resolved.url,{range,signal:controller.signal,headers:resolved.headers}),controller.signal,response=>response?.destroy());
         if(![401,403].includes(upstream.statusCode)||entry.source!=='youtube'||attempt)break;
         rejectedUrl=resolved.url;upstream.destroy();
       }
       if(![200,206,416].includes(upstream.statusCode))throw new AppError('Remote source unavailable. Check the link and your Internet connection.',502);
+      const expectedBytes=validatePartial(upstream,requested);
       const type=String(upstream.headers['content-type']||'').split(';')[0].toLowerCase();
+      const encoding=String(upstream.headers['content-encoding']||'identity').trim().toLowerCase();
+      if(upstream.statusCode!==416&&encoding!=='identity')throw new AppError('The video source must return uncompressed MP4 bytes.',415);
       if(upstream.statusCode!==416&&!['video/mp4','application/mp4','application/octet-stream','binary/octet-stream'].includes(type))throw new AppError('The link must return an MP4 video, not a webpage or playlist.',415);
       const headers={'Content-Type':'video/mp4','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
       for(const key of ['content-length','content-range','accept-ranges'])if(upstream.headers[key])headers[key]=upstream.headers[key];
       res.writeHead(upstream.statusCode,headers);
-      if(req.method==='HEAD'){upstream.destroy();res.end();}else await pipeline(upstream,res);
-    }finally{upstream?.destroy();res.removeListener('close',abort);this.requests.delete(controller);}
+      if(req.method==='HEAD'){upstream.destroy();res.end();}else if(expectedBytes!==null)await pipeline(upstream,exactRangeBytes(expectedBytes),res,{signal:controller.signal});else await pipeline(upstream,res,{signal:controller.signal});
+    }finally{upstream?.destroy();res.removeListener('close',abort);this.requests.delete(controller);finish();}
   }
   async handle(req,res) {
     const token=/^\/source\/([a-f0-9]{64})$/.exec(req.url)?.[1];
@@ -157,5 +208,5 @@ export class RemoteSources {
       return {source:entry.source,path:entry.path,title:resolved.title||name.slice(0,200),duration,width:v.width,height:v.height,fps:den?num/den:0,codec:v.codec_name,pixelFormat:v.pix_fmt,timeBase:v.time_base,audio:a?{codec:a.codec_name,rate:a.sample_rate,channels:a.channels,layout:a.channel_layout}:null,size:0,thumbnail:false};
     }catch{throw new AppError('Could not read the remote MP4 video. Check the link, Internet connection and format.');}
   }
-  async shutdown() {this.closed=true;this.controller.abort();for(const c of this.requests)c.abort();await Promise.allSettled([...this.entries.values()].map(e=>e.pending).filter(Boolean));this.entries.clear();}
+  async shutdown() {this.closed=true;this.controller.abort();const reads=[...this.requests];for(const c of reads)c.abort();await Promise.allSettled([...this.entries.values()].map(e=>e.pending).filter(Boolean).concat(reads.map(c=>c.done)));this.entries.clear();}
 }

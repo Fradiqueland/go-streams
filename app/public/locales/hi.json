@@ -157,7 +157,7 @@
   "Mais antigos": "पुराने पहले",
   "Pesquisar": "खोजें",
   "Verificação ainda não efetuada": "अभी जाँचा नहीं गया",
-  "Atualizações do Go Streams": "Go Streams अपडेट",
+  "Atualizações do Streamland": "Streamland अपडेट",
   "Verificar agora": "अभी जाँचें",
   "Configurar canal de atualizações": "अपडेट स्रोत सेट करें",
   "A mostrar": "दिखा रहे हैं",
@@ -193,7 +193,7 @@
   "Pré-visualizar": "पूर्वावलोकन",
   "Estúdio local": "स्थानीय स्टूडियो",
   "ESTÚDIO": "स्टूडियो",
-  "Encerrar Go Streams": "Go Streams बंद करें",
+  "Encerrar Streamland": "Streamland बंद करें",
   "Menu principal": "मुख्य मेनू",
   "Voltar a ligar": "फिर जुड़ें",
   "+ Preparar transmissão": "+ प्रसारण तैयार करें",
@@ -236,5 +236,7 @@
   "Banner superior": "ऊपरी टिकर",
   "Banner inferior": "निचला टिकर",
   "Configurar sobreposições": "ओवरले कॉन्फ़िगर करें",
-  "Guardar sobreposições": "ओवरले सहेजें"
+  "Guardar sobreposições": "ओवरले सहेजें",
+  "Preservar resolução e fps do vídeo original": "मूल वीडियो का रिज़ॉल्यूशन और फ़्रेम दर बनाए रखें",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "सक्रिय ओवरले के बिना, फ़ाइल का रिज़ॉल्यूशन और फ़्रेम दर बनाए रखता है। वीडियो और ऑडियो बिटरेट लागू रहती हैं।"
 }

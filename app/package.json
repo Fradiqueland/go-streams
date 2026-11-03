@@ -1,6 +1,6 @@
 {
-  "name": "go-streams",
-  "version": "0.17.0",
+  "name": "streamland",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Local video playout and RTMP streaming studio",
@@ -15,7 +15,11 @@
     "test:wire": "node --test --test-concurrency=1 test/optional/wire.test.mjs",
     "test:ui": "node scripts/ui-check.mjs",
     "build:installer": "python scripts/build-windows-installer.py",
-    "build:electron": "python scripts/build-electron-windows.py"
+    "build:electron": "python scripts/build-electron-windows.py",
+    "test:live": "node --test test/live-capture.test.mjs test/optional/live-wire.test.mjs",
+    "test:live:browser": "node scripts/verify-live-browser.mjs",
+    "test:review": "node scripts/review-loop.mjs 10",
+    "test:recorder:browser": "node scripts/verify-recorder-browser.mjs"
   },
   "main": "electron/main.cjs"
 }

@@ -1,4 +1,4 @@
-// Go Streams ZIP adapter: keep Unix modes and symlinks on Windows.
+// Streamland ZIP adapter: keep Unix modes and symlinks on Windows.
 // Used with JetBrains/go-dmg-writer, pinned in package-mac-dmg.py.
 package dmg
 
@@ -14,7 +14,7 @@ import (
  "github.com/jetbrains/go-dmg-writer/internal/hfsplus"
 )
 
-const installNote = "Go Streams - Intel and Apple Silicon\n\nDrag GoStreams.app to Applications, or copy it to a writable folder on your Mac.\nOpen GoStreams.app from that folder, then eject this disk image.\nNode.js, FFmpeg, FFprobe and yt-dlp are included for both processor architectures.\nSettings and sessions are saved in ~/Library/Application Support/Go Streams.\nYour original videos are kept in their existing locations.\nmacOS 13.5 or later is required.\nThis version is unsigned/not notarized; native Mac execution is still pending.\n\nCreated by Antonio Fradique\nhttps://AntonioFradique.net\n"
+const installNote = "Streamland - Intel and Apple Silicon\n\nDrag Streamland.app to Applications, or copy it to a writable folder on your Mac.\nOpen Streamland.app from that folder, then eject this disk image.\nNode.js, FFmpeg, FFprobe and yt-dlp are included for both processor architectures.\nSettings and sessions are saved in ~/Library/Application Support/Go Streams.\nYour original videos are kept in their existing locations.\nmacOS 13.5 or later is required.\nThis version is unsigned/not notarized; see the build reports for native Mac execution results.\n\nCreated by Antonio Fradique\nhttps://AntonioFradique.net\n"
 
 func zipSafe(name string) bool {
  return name!="" && !strings.HasPrefix(name,"/") && !strings.ContainsAny(name,"\\:") && path.Clean(name)==strings.TrimSuffix(name,"/") && name!="." && name!=".." && !strings.HasPrefix(name,"../")

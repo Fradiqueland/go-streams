@@ -44,6 +44,40 @@ test('interrupted Electron data migration does not publish a partial profile or 
  assert.ok(!fs.existsSync(target));assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'preserved');
  assert.deepEqual(fs.readdirSync(path.dirname(target)),[]);
 });
+
+test('Electron retries transient Windows migration publication locks without recopying or modifying the original',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','preserved');
+ fs.mkdirSync(target,{recursive:true});const rename=fs.renameSync.bind(fs),delays=[];let attempts=0;
+ t.mock.method(fs,'renameSync',(from,to)=>{if(to===target&&++attempts<3)throw Object.assign(Error('Controlled scanner lock'),{code:'EPERM'});return rename(from,to);});
+ assert.equal(dataPolicy.migrateData(target,source,{platform:'win32',pause:delay=>delays.push(delay)}).migrated,true);
+ assert.equal(attempts,3);assert.deepEqual(delays,[100,200]);
+ assert.equal(fs.readFileSync(path.join(target,'project.json'),'utf8'),'preserved');assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'preserved');
+ assert.deepEqual(fs.readdirSync(path.dirname(target)),['data']);
+});
+
+for(const withData of [false,true])test('Electron migration preserves a concurrently created '+(withData?'populated':'empty')+' destination during retry',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','portable original');let attempts=0;
+ t.mock.method(fs,'renameSync',()=>{attempts++;fs.mkdirSync(target);if(withData)fs.writeFileSync(path.join(target,'project.json'),'concurrent project');throw Object.assign(Error('Controlled competing destination'),{code:'EPERM'});});
+ assert.throws(()=>dataPolicy.migrateData(target,source,{platform:'win32',pause:()=>{}}),/destination folder changed/);
+ assert.equal(attempts,1);assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'portable original');
+ assert.deepEqual(fs.readdirSync(target),withData?['project.json']:[]);if(withData)assert.equal(fs.readFileSync(path.join(target,'project.json'),'utf8'),'concurrent project');
+ assert.deepEqual(fs.readdirSync(path.dirname(target)),['data']);
+});
+
+for(const [code,expected] of [['EACCES',6],['EIO',1]])test('Electron migration bounds '+code+' publication failures and preserves the portable source',t=>{
+ const root=fixture(t),source=path.join(root,'old'),target=path.join(root,'new','data');write(source,'project.json','portable original');let attempts=0,delays=0;
+ t.mock.method(fs,'renameSync',()=>{attempts++;throw Object.assign(Error('Controlled failure'),{code});});
+ assert.throws(()=>dataPolicy.migrateData(target,source,{platform:'win32',pause:()=>delays++}),error=>error.code===code);
+ assert.equal(attempts,expected);assert.equal(delays,expected-1);assert.ok(!fs.existsSync(target));
+ assert.equal(fs.readFileSync(path.join(source,'project.json'),'utf8'),'portable original');assert.deepEqual(fs.readdirSync(path.dirname(target)),[]);
+});
+
+test('Electron preferences migration also recovers from a transient Windows publication lock',t=>{
+ const root=fixture(t);write(root,'desktop-browser/Default/Local Storage/leveldb/data','saved preferences');const target=path.join(root,'electron-session'),rename=fs.renameSync.bind(fs);let attempts=0;
+ t.mock.method(fs,'renameSync',(from,to)=>{if(to===target&&++attempts===1)throw Object.assign(Error('Controlled busy folder'),{code:'EBUSY'});return rename(from,to);});
+ assert.equal(dataPolicy.migratePreferences(root,{platform:'win32',pause:()=>{}}),target);assert.equal(attempts,2);
+ assert.equal(fs.readFileSync(path.join(target,'Local Storage/leveldb/data'),'utf8'),'saved preferences');assert.equal(fs.readFileSync(path.join(root,'desktop-browser/Default/Local Storage/leveldb/data'),'utf8'),'saved preferences');
+});
 test('nested data migration and ambiguous portable projects are rejected',t=>{
  const root=fixture(t),source=path.join(root,'old');write(source,'project.json','project');
  assert.throws(()=>dataPolicy.migrateData(path.join(source,'nested','data'),source),/separate/);
@@ -61,7 +95,34 @@ test('Electron isolates its renderer and sends only HTTPS links to the system br
  const preferences=policy.rendererPreferences({});for(const key of ['nodeIntegration','nodeIntegrationInWorker','nodeIntegrationInSubFrames','webviewTag','allowRunningInsecureContent'])assert.equal(preferences[key],false);
  for(const key of ['sandbox','contextIsolation','webSecurity'])assert.equal(preferences[key],true);
 });
+
+test('Electron permits only explicitly saved HTTP destination dashboards and checks the current list',()=>{
+ const contents=new EventEmitter(),opened=[];contents.setWindowOpenHandler=handler=>contents.popup=handler;
+ let saved=['http://127.0.0.1:8080/producer'];
+ policy.wireNavigation(contents,{base:'http://127.0.0.1:4317',openExternal:url=>opened.push(url),httpUrls:()=>saved});
+ contents.popup({url:'http://127.0.0.1:8080/producer'});
+ assert.deepEqual(opened,['http://127.0.0.1:8080/producer']);
+ for(const url of ['http://127.0.0.1:8080/other','http://example.com/','http://user:secret@127.0.0.1:8080/producer','file:///C:/Windows/cmd.exe'])contents.popup({url});
+ assert.equal(opened.length,1);
+ saved=[];contents.popup({url:'http://127.0.0.1:8080/producer'});assert.equal(opened.length,1);
+ assert.equal(policy.externalUrl('http://example.com/'),null);
+});
+
+test('an unavailable system browser cannot throw through Electron navigation handlers',()=>{
+ const contents=new EventEmitter();contents.setWindowOpenHandler=handler=>contents.popup=handler;
+ policy.wireNavigation(contents,{base:'http://127.0.0.1:4317',openExternal(){throw Error('System browser unavailable');}});
+ assert.deepEqual(contents.popup({url:'https://example.test/producer'}),{action:'deny'});
+ let prevented=false;assert.doesNotThrow(()=>contents.emit('will-navigate',{preventDefault(){prevented=true;}},'https://example.test/producer'));assert.equal(prevented,true);
+});
 function backend(){return {studio:{jobs:new Map(),pendingImports:new Set(),pendingPreparations:new Set(),pendingOperations:new Set()},downloads:{active:new Map()},async close(){}};}
+test('explicit Electron activation restores and raises the window without keeping it on top',()=>{
+ for(const minimized of [false,true]){
+  const calls=[];const window={isDestroyed:()=>false,isMinimized:()=>minimized};
+  for(const action of ['restore','show','moveTop','focus'])window[action]=()=>calls.push(action);
+  policy.activateWindow(window);assert.deepEqual(calls,minimized?['restore','show','moveTop','focus']:['show','moveTop','focus']);
+ }
+ policy.activateWindow(null);policy.activateWindow({isDestroyed:()=>true});
+});
 test('closing Electron during a stream requires confirmation and preserves the running application when declined',async()=>{
  const b=backend();b.studio.jobs.set('live',{ended:false});let closed=0,finished=0;b.close=async()=>closed++;
  const quit=policy.shutdownCoordinator({backend:b,confirm:async()=>false,finish:async()=>finished++});
@@ -71,6 +132,6 @@ test('repeated Electron close requests share one confirmation and drain the back
  const b=backend();b.downloads.active.set('download',{});let release,asked=0,closed=0,finished=0;
  b.close=async()=>closed++;
  const quit=policy.shutdownCoordinator({backend:b,confirm:()=>{asked++;return new Promise(resolve=>release=resolve);},finish:async()=>finished++});
- const a=quit(),c=quit();release(true);assert.equal(await a,true);assert.equal(await c,true);
+ const a=quit(),c=quit();await Promise.resolve();release(true);assert.equal(await a,true);assert.equal(await c,true);
  assert.equal(asked,1);assert.equal(closed,1);assert.equal(finished,1);await quit();assert.equal(closed,1);
 });

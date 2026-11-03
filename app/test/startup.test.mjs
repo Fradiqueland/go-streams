@@ -20,8 +20,10 @@ test('cold-start readiness is authenticated and independent of tool checks',asyn
  assert.equal(response.status,200);assert.equal(response.headers.get('x-go-streams-ready'),'1');
  assert.deepEqual(await response.json(),{ready:true});
  assert.equal((await dispatch(app,'/api/ready',{headers:{...headers,Origin:'https://foreign.example'}})).status,403);
- const page=await dispatch(app,'/',{headers});assert.match(await page.text(),/id="startup-status"/);
+ const page=await dispatch(app,'/',{headers});const html=await page.text();assert.match(html,/id="startup-status"/);assert.match(html,/<html[^>]+translate="no"/);assert.match(html,/class="notranslate"/);assert.match(html,/id="language-select"/);
  assert.equal((await dispatch(app,'/boot.js',{headers})).status,200);
+ const help=await dispatch(app,'/ui-help.js',{headers});assert.equal(help.status,200);assert.equal(help.headers.get('content-type'),'text/javascript');
+ assert.deepEqual(help.body,fs.readFileSync(new URL('../public/ui-help.js',import.meta.url)));
  const favicon=await dispatch(app,'/icon.ico?v=0.15.5',{headers});
  assert.equal(favicon.status,200);assert.equal(favicon.headers.get('content-type'),'image/vnd.microsoft.icon');
  assert.deepEqual(favicon.body,fs.readFileSync(new URL('../public/icon.ico',import.meta.url)));
@@ -35,7 +37,7 @@ test('Windows app windows use a dedicated visible profile and retain the browser
  openBrowser('http://127.0.0.1:4317/',{platform:'win32',directory:'D:/Go Streams/data',prepareProfile:dir=>path.join(dir,'desktop-browser'),exists:()=>true,spawnProcess:(...args)=>{call=args;const p=new EventEmitter();p.unref=()=>{};return p;}});
  assert.ok(call[1].includes('--user-data-dir='+path.join('D:/Go Streams/data','desktop-browser')));
  assert.ok(call[1].includes('--no-first-run'));
- for(const flag of ['--profile-directory=Default','--hide-crash-restore-bubble','--disable-sync','--disable-features=msImplicitSignin','--edge-skip-compat-layer-relaunch'])assert.ok(call[1].includes(flag),flag);assert.equal(call[2].windowsHide,false);
+ for(const flag of ['--profile-directory=Default','--hide-crash-restore-bubble','--disable-sync','--disable-features=msImplicitSignin,Translate,msEdgeTranslate','--edge-skip-compat-layer-relaunch'])assert.ok(call[1].includes(flag),flag);assert.equal(call[2].windowsHide,false);
  assert.ok(!call[1].includes('--no-sandbox'));
 });
 

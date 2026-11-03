@@ -157,7 +157,7 @@
   "Mais antigos": "الأقدم أولًا",
   "Pesquisar": "بحث",
   "Verificação ainda não efetuada": "لم يتم التحقق بعد",
-  "Atualizações do Go Streams": "تحديثات Go Streams",
+  "Atualizações do Streamland": "تحديثات Streamland",
   "Verificar agora": "تحقق الآن",
   "Configurar canal de atualizações": "إعداد مصدر التحديثات",
   "A mostrar": "عرض",
@@ -193,7 +193,7 @@
   "Pré-visualizar": "معاينة",
   "Estúdio local": "الاستوديو المحلي",
   "ESTÚDIO": "الاستوديو",
-  "Encerrar Go Streams": "إغلاق Go Streams",
+  "Encerrar Streamland": "إغلاق Streamland",
   "Menu principal": "القائمة الرئيسية",
   "Voltar a ligar": "إعادة الاتصال",
   "+ Preparar transmissão": "+ إعداد البث",
@@ -236,5 +236,7 @@
   "Banner superior": "الشريط العلوي",
   "Banner inferior": "الشريط السفلي",
   "Configurar sobreposições": "إعداد التراكبات",
-  "Guardar sobreposições": "حفظ التراكبات"
+  "Guardar sobreposições": "حفظ التراكبات",
+  "Preservar resolução e fps do vídeo original": "الحفاظ على دقة الفيديو الأصلي ومعدل إطاراته",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "عند عدم وجود تراكبات نشطة، يحافظ على دقة الملف ومعدل إطاراته. تظل معدلات بت الفيديو والصوت مطبقة."
 }

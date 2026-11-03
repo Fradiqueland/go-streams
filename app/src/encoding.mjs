@@ -1,16 +1,13 @@
 import { AppError } from './errors.mjs';
+import {videoAspects as encodingAspects,videoDimensions as outputDimensions} from '../public/video-geometry.js';
+export {encodingAspects,outputDimensions};
 
 export const encodingDefaults = { copy: false, videoBitrate: 2500, audioBitrate: 128, fps: 30, aspect: '16:9' };
 export function validateEncoding(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError('Configuração de codificação inválida.');
   const output = { ...encodingDefaults, ...input };
-  if (typeof output.copy !== 'boolean' || ![500,1000,2000,2500,3000,4500,5000,8000,10000].includes(output.videoBitrate) || ![64,96,128,192,256,320].includes(output.audioBitrate) || ![25,30,60].includes(output.fps) || !['16:9','4:3','1:1','21:9','9:16'].includes(output.aspect)) throw new AppError('Escolha valores de codificação suportados.');
+  if (typeof output.copy !== 'boolean' || ![500,1000,2000,2500,3000,4500,5000,8000,10000].includes(output.videoBitrate) || ![64,96,128,192,256,320].includes(output.audioBitrate) || ![25,30,60].includes(output.fps) || !encodingAspects.includes(output.aspect)) throw new AppError('Escolha valores de codificação suportados.');
   return Object.fromEntries(Object.keys(encodingDefaults).map(k => [k, output[k]]));
-}
-export function outputDimensions(quality, aspect) {
-  const base = quality === '1080p' ? 1080 : 720;
-  const [w,h] = aspect.split(':').map(Number);
-  return w >= h ? [Math.round(base*w/h/2)*2,base] : [base,Math.round(base*h/w/2)*2];
 }
 export function encodingArgs(settings, quality, media, { preview = false } = {}) {
   const profile = validateEncoding(settings || { ...encodingDefaults, videoBitrate: quality === '1080p' ? 4500 : 2500 });

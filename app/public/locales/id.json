@@ -157,7 +157,7 @@
   "Mais antigos": "Terlama dahulu",
   "Pesquisar": "Cari",
   "Verificação ainda não efetuada": "Belum diperiksa",
-  "Atualizações do Go Streams": "Pembaruan Go Streams",
+  "Atualizações do Streamland": "Pembaruan Streamland",
   "Verificar agora": "Periksa sekarang",
   "Configurar canal de atualizações": "Atur sumber pembaruan",
   "A mostrar": "Menampilkan",
@@ -193,7 +193,7 @@
   "Pré-visualizar": "Pratinjau",
   "Estúdio local": "Studio lokal",
   "ESTÚDIO": "STUDIO",
-  "Encerrar Go Streams": "Tutup Go Streams",
+  "Encerrar Streamland": "Tutup Streamland",
   "Menu principal": "Menu utama",
   "Voltar a ligar": "Sambungkan ulang",
   "+ Preparar transmissão": "+ Siapkan siaran",
@@ -236,5 +236,7 @@
   "Banner superior": "Teks berjalan atas",
   "Banner inferior": "Teks berjalan bawah",
   "Configurar sobreposições": "Konfigurasi overlay",
-  "Guardar sobreposições": "Simpan overlay"
+  "Guardar sobreposições": "Simpan overlay",
+  "Preservar resolução e fps do vídeo original": "Pertahankan resolusi dan laju bingkai video asli",
+  "Sem sobreposições ativas, preserva a resolução e os fps do ficheiro. Os bitrates de vídeo e áudio continuam a aplicar-se.": "Tanpa overlay aktif, resolusi dan laju bingkai berkas dipertahankan. Bitrate video dan audio tetap berlaku."
 }

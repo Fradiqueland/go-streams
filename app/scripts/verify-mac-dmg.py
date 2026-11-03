@@ -155,17 +155,17 @@ def validate(image,archive,report_path):
    assert files-expected=={'Applications','READ-ME-FIRST.txt'},'Unexpected files'
    assert hfs.read(hfs.by_path['Applications'])==b'/Applications'
    assert stat.S_ISLNK(hfs.by_path['Applications']['mode'])
-   assert b'Drag GoStreams.app' in hfs.read(hfs.by_path['READ-ME-FIRST.txt'])
-   launcher=hfs.by_path['GoStreams.app/Contents/MacOS/GoStreams']
+   assert b'Drag Streamland.app' in hfs.read(hfs.by_path['READ-ME-FIRST.txt'])
+   launcher=hfs.by_path['Streamland.app/Contents/MacOS/Streamland']
    assert launcher['mode']&0o111 and hfs.read(launcher).startswith(b'#!/bin/sh\n')
    for arch,cpu in [('x64',0x1000007),('arm64',0x100000c)]:
-    root='GoStreams.app/Contents/Resources/app/runtime/darwin-'+arch+'/'
+    root='Streamland.app/Contents/Resources/app/runtime/darwin-'+arch+'/'
     for file in ['node','ffmpeg','ffprobe']:
      rec=hfs.by_path[root+file];stream=hfs.chunks(rec['fork']);first=next(stream);stream.close()
      assert struct.unpack_from('<II',first)==(0xfeedfacf,cpu) and rec['mode']&0o111
-   assert hfs.by_path['GoStreams.app/Contents/Resources/app/vendor/yt-dlp/darwin/yt-dlp']['mode']&0o111
-   app_info=plistlib.loads(hfs.read(hfs.by_path['GoStreams.app/Contents/Info.plist']))
-   assert app_info==plistlib.loads(z.read('GoStreams.app/Contents/Info.plist'))
+   assert hfs.by_path['Streamland.app/Contents/Resources/app/vendor/yt-dlp/darwin/yt-dlp']['mode']&0o111
+   app_info=plistlib.loads(hfs.read(hfs.by_path['Streamland.app/Contents/Info.plist']))
+   assert app_info==plistlib.loads(z.read('Streamland.app/Contents/Info.plist'))
   result=dict(ok=True,path=str(image),bytes=image.stat().st_size,sha256=sha(image),zipSha256=sha(archive),
               zipEntriesMatched=matched,originalSymlinksPreserved=symlinks,executableFilesPreserved=executables,
               filesystem='HFSX',container='UDIF/UDZO',architectures=['x64','arm64'],
