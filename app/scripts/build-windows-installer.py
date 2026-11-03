@@ -96,11 +96,12 @@ using(var output=File.Create(Path.Combine(args[1],name+".bin")))input.CopyTo(out
     run([compiler(),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll','/win32icon:'+str(ROOT/'public/icon.ico'),'/out:'+str(application/'Streamland.exe'),ROOT/'scripts/Launcher.cs',assembly])
     return application
 
-def build_msi(application,output,version,*,test_identity=None):
+def build_msi(application,output,version,*,test_identity=None,legacy_directory_policy=False):
     try:import msilib, msilib.schema, msilib.sequence
     except ImportError:raise RuntimeError('Build the MSI with Windows Python 3.11 or 3.12 (msilib is included there).')
     if not re.fullmatch(r'\d{1,3}\.\d{1,3}\.\d{1,5}',version):raise ValueError('Invalid installer version')
     if output.exists():raise FileExistsError('Preserve the existing MSI before rebuilding: '+str(output))
+    if legacy_directory_policy and test_identity is None:raise ValueError('Legacy directory policy is reserved for isolated upgrade verification')
     upgrade=UPGRADE_CODE if test_identity is None else guid('test-upgrade:'+test_identity)
     product=guid('product:'+upgrade+':'+version)
     registry=REGISTRY_KEY if test_identity is None else REGISTRY_KEY+'\\Verification\\'+test_identity
@@ -116,9 +117,16 @@ def build_msi(application,output,version,*,test_identity=None):
         ('UpgradeCode',upgrade),('INSTALLLEVEL','1'),('DefaultUIFont','Normal'),
         ('REBOOT','ReallySuppress'),('MSIRESTARTMANAGERCONTROL','DisableShutdown'),
         ('ARPPRODUCTICON','Streamland.exe'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
-        ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYDATADIR'),
+        ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYDATADIR;PREVIOUSINSTALLDIR;INSTALLDIR'),
         ('REINSTALLMODE','amus'),('ARPCOMMENTS','User projects and profiles are preserved when updating or uninstalling.')
     ])
+    if not legacy_directory_policy:
+        # Profile components have registry key paths, so Windows Installer cannot
+        # infer their prior application folder. Capture it before the old product
+        # removes its registration; preserve an explicitly supplied INSTALLDIR.
+        add('AppSearch',[('PREVIOUSINSTALLDIR','RegisteredInstallDirectory')])
+        add('RegLocator',[('RegisteredInstallDirectory',1,registry,'InstallDirectory',18)])
+        add('CustomAction',[('RestoreInstallDirectory',51,'INSTALLDIR','[PREVIOUSINSTALLDIR]')])
     add('Directory',[
         ('TARGETDIR',None,'SourceDir'),('LocalAppDataFolder','TARGETDIR','.'),
         ('ProgramsDir','LocalAppDataFolder','Programs'),('INSTALLDIR','ProgramsDir','STREAM~1|Streamland'),
@@ -155,6 +163,16 @@ def build_msi(application,output,version,*,test_identity=None):
         ('PortableSource',1,registry,'LegacyPortableRoot','[SourceDir]','Registration'),
         ('PortableData',1,registry,'LegacyDataDirectory','[LEGACYDATADIR]','Registration')
     ])
+    if not legacy_directory_policy:
+        # The deployed predecessor cannot recover a custom INSTALLDIR during its
+        # nested uninstall. Retire only its confirmed packaged launcher in the captured,
+        # registered folder. Standard RemoveFiles participates in MSI rollback.
+        add('Component',[('LegacyBrandCleanup',guid('legacy-brand-cleanup:'+upgrade),'INSTALLDIR',260,'OLDPRODUCTS AND PREVIOUSINSTALLDIR','LegacyBrandCleanupMarker')])
+        add('FeatureComponents',[('Main','LegacyBrandCleanup')])
+        add('Registry',[('LegacyBrandCleanupMarker',1,registry,'StreamlandLegacyCleanup',version,'LegacyBrandCleanup')])
+        add('RemoveFile',[
+            ('RetireLegacyLauncher','LegacyBrandCleanup','GoStreams.exe','PREVIOUSINSTALLDIR',1)
+        ])
     executable=identity('F','Streamland.exe')
     # Shortcut icon resources must be PE files with the target's .exe extension.
     # The launcher is small and already embeds the selected application icon.
@@ -173,8 +191,13 @@ def build_msi(application,output,version,*,test_identity=None):
     execute=[(action,condition,1510 if action=='RemoveExistingProducts' else sequence) for action,condition,sequence in msilib.sequence.InstallExecuteSequence]
     # Related products must be detected before downgrade protection is evaluated.
     execute=[(action,condition,250 if action=='LaunchConditions' else sequence) for action,condition,sequence in execute]
+    if not legacy_directory_policy:
+        execute=[(action,condition,50 if action=='AppSearch' else sequence) for action,condition,sequence in execute]
+        if not any(action=='AppSearch' for action,_,_ in execute):execute.append(('AppSearch',None,50))
+        execute.append(('RestoreInstallDirectory','PREVIOUSINSTALLDIR AND NOT INSTALLDIR',60))
     add('InstallExecuteSequence',execute)
     ui=[('FindRelatedProducts',None,200),('LaunchConditions',None,250),('CostInitialize',None,800),('FileCost',None,900),('CostFinalize',None,1000),('WelcomeDlg','NOT REMOVE~="ALL"',1100),('ProgressDlg',None,1290),('ExecuteAction',None,1300),('ExitDialog',None,-1),('FatalError',None,-3),('UserExit',None,-2)]
+    if not legacy_directory_policy:ui.extend([('AppSearch',None,50),('RestoreInstallDirectory','PREVIOUSINSTALLDIR AND NOT INSTALLDIR',60)])
     add('InstallUISequence',ui)
     add('TextStyle',[('Normal','Tahoma',9,None,0),('Title','Tahoma',13,None,1)])
     welcome=msilib.Dialog(db,'WelcomeDlg',50,50,400,300,3,'Streamland '+version,'Install','Install','Cancel')

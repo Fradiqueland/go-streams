@@ -43,7 +43,20 @@ def validate(package):
     assert all(row[8]=='Streamland.exe' for row in shortcuts) and properties['ARPPRODUCTICON']=='Streamland.exe'
     assert all(row[0]==properties['UpgradeCode'] for row in upgrades)
     assert sequence['InstallInitialize']<sequence['RemoveExistingProducts']<sequence['ProcessComponents']
-    assert not rows(db,'CustomAction'), 'Shipping package must not execute custom installer scripts'
+    # A property-only Type 51 action restores the previous application directory;
+    # executable, DLL, script and arbitrary additional custom actions stay forbidden.
+    assert rows(db,'CustomAction')==[('RestoreInstallDirectory','51','INSTALLDIR','[PREVIOUSINSTALLDIR]')], 'Unexpected installer custom action'
+    assert rows(db,'AppSearch')==[('PREVIOUSINSTALLDIR','RegisteredInstallDirectory')]
+    assert rows(db,'RegLocator')==[('RegisteredInstallDirectory','1',registry['InstallRegistration'][2],'InstallDirectory','18')]
+    for table in ['InstallExecuteSequence','InstallUISequence']:
+        actions={row[0]:row for row in rows(db,table)}
+        assert int(actions['AppSearch'][2])<int(actions['RestoreInstallDirectory'][2])<int(actions['CostInitialize'][2])
+        assert actions['RestoreInstallDirectory'][1]=='PREVIOUSINSTALLDIR AND NOT INSTALLDIR'
+    assert components['LegacyBrandCleanup'][4]=='OLDPRODUCTS AND PREVIOUSINSTALLDIR'
+    assert set(rows(db,'RemoveFile'))=={
+        ('RemoveEmptyStartMenu','Registration','','GoStreamsMenu','2'),
+        ('RetireLegacyLauncher','LegacyBrandCleanup','GoStreams.exe','PREVIOUSINSTALLDIR','1')
+    }, 'Unexpected installer cleanup target'
     assert not rows(db,'RemoveRegistry'), 'Shipping package must not remove existing user registry trees'
     summary=db.GetSummaryInformation(0)
     assert summary.GetProperty(msilib.PID_WORDCOUNT)&8, 'Package unexpectedly requests elevation'
@@ -114,7 +127,7 @@ def native_fixture(work):
     (source/'GoStreams.exe').write_bytes(b'legacy fixture launcher; not executed')
     (source/'.installed').write_text('go-streams-installed-v1\n')
     (source/'revision.txt').write_text('baseline')
-    one=work/'baseline.msi';baseline=legacy_builder.build_msi(source,one,'1.1.6',test_identity=test_id)
+    one=work/'baseline.msi';baseline=legacy_builder.build_msi(source,one,'1.1.6',test_identity=test_id,legacy_directory_policy=True)
     (source/'GoStreams.exe').unlink()
     (source/'Streamland.exe').write_bytes(b'Streamland fixture launcher; not executed')
     (source/'revision.txt').write_text('updated')
@@ -134,7 +147,10 @@ def native_fixture(work):
     failing=work/'rollback.msi';shutil.copy2(two,failing)
     db=msilib.OpenDatabase(str(failing),msilib.MSIDBOPEN_TRANSACT)
     msilib.add_data(db,'CustomAction',[('VerificationFailure',19,None,'Controlled rollback verification')])
-    msilib.add_data(db,'InstallExecuteSequence',[('VerificationFailure','OLDPRODUCTS',4100)])
+    # Execute the pending removal/copy script inside the transaction before
+    # provoking failure. This exercises real rollback of the legacy-file cleanup.
+    view=db.OpenView("DELETE FROM `InstallExecuteSequence` WHERE `Action`='InstallExecute'");view.Execute(None);view.Close()
+    msilib.add_data(db,'InstallExecuteSequence',[('InstallExecute',None,6500),('VerificationFailure','OLDPRODUCTS',6550)])
     db.Commit();db=None;gc.collect()
     for relative,value in [('project.json',b'project'),('vault.dpapi',b'protected credentials'),('desktop-browser/Default/Network/Cookies',b'authenticated sessions'),('desktop-browser/Default/Preferences',b'profile preferences')]:
         file=data/relative;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(value)
@@ -146,9 +162,9 @@ def native_fixture(work):
     msi.MsiEnableLogW.argtypes=[ctypes.c_uint,ctypes.c_wchar_p,ctypes.c_uint]
     options='INSTALLDIR="'+str(install)+'" REBOOT=ReallySuppress'
     installed=[]
-    def apply(file,name):
+    def apply(file,name,override=True):
         msi.MsiEnableLogW(0x3fff,str(work/(name+'.log')),3)
-        return int(msi.MsiInstallProductW(str(file),options))
+        return int(msi.MsiInstallProductW(str(file),options if override else 'REBOOT=ReallySuppress'))
     try:
         code=apply(one,'install')
         if code not in (0,3010):return {'nativeInstallTested':False,'installerResult':code,'log':str(work/'install.log')}
@@ -157,17 +173,24 @@ def native_fixture(work):
         assert (install/'GoStreams.exe').is_file() and not (install/'Streamland.exe').exists()
         assert (desktop/'Go Streams.lnk').is_file() and (menu/'Go Streams'/'Go Streams.lnk').is_file()
         assert snapshot()==original
-        rejected=apply(failing,'rollback')
+        (install/'user-added.txt').write_text('Unknown application files must survive')
+        (install/'CloseGoStreams.cmd').write_text('User-created helper must survive')
+        application_before={str(file.relative_to(install)):hashlib.sha256(file.read_bytes()).hexdigest() for file in install.rglob('*') if file.is_file()}
+        # Upgrade must discover the registered custom directory without /INSTALLDIR.
+        rejected=apply(failing,'rollback',override=False)
         assert rejected not in (0,3010), 'Controlled failed upgrade unexpectedly succeeded'
         assert (install/'revision.txt').read_text()=='baseline', 'Failed upgrade did not roll back application files'
         assert (install/'GoStreams.exe').is_file() and not (install/'Streamland.exe').exists(), 'Rollback did not restore the predecessor launcher'
         assert (desktop/'Go Streams.lnk').is_file() and not (desktop/'Streamland.lnk').exists(), 'Rollback did not restore the predecessor shortcut'
         assert snapshot()==original, 'Rollback changed existing user data'
-        code=apply(two,'upgrade');assert code in (0,3010), 'Upgrade failed: '+str(code)
+        assert {str(file.relative_to(install)):hashlib.sha256(file.read_bytes()).hexdigest() for file in install.rglob('*') if file.is_file()}==application_before, 'Executed file cleanup/copy did not roll back exactly'
+        code=apply(two,'upgrade',override=False);assert code in (0,3010), 'Upgrade failed: '+str(code)
         installed.append(upgraded['productCode'])
         assert (install/'revision.txt').read_text()=='updated'
         assert (install/'Streamland.exe').is_file(), 'Upgrade did not install Streamland.exe'
         assert not (install/'GoStreams.exe').exists(), 'Upgrade left the predecessor GoStreams.exe in the application folder'
+        assert (install/'CloseGoStreams.cmd').read_text()=='User-created helper must survive'
+        assert (install/'user-added.txt').read_text()=='Unknown application files must survive'
         assert not (desktop/'Go Streams.lnk').exists() and not (menu/'Go Streams'/'Go Streams.lnk').exists()
         assert (menu/'Streamland'/'Streamland.lnk').is_file()
         assert snapshot()==original
@@ -175,8 +198,11 @@ def native_fixture(work):
         uninstall=int(msi.MsiConfigureProductExW(upgraded['productCode'],0,2,'REMOVE=ALL REBOOT=ReallySuppress'))
         assert uninstall in (0,3010), 'Uninstall failed: '+str(uninstall)
         assert not (install/'revision.txt').exists() and not (desktop/'Streamland.lnk').exists()
+        assert not (install/'Streamland.exe').exists(), 'Uninstall lost the registered custom directory'
+        assert (install/'CloseGoStreams.cmd').read_text()=='User-created helper must survive'
+        assert (install/'user-added.txt').read_text()=='Unknown application files must survive'
         assert snapshot()==original
-        return {'nativeInstallTested':True,'shortcutsCreated':True,'failedUpgradeRolledBack':True,'upgradeCompleted':True,'legacyBrandUpgradeCompleted':True,'legacyShortcutsAndExecutableRetired':True,'uninstallPreservedData':True,'profileHashesUnchanged':True}
+        return {'nativeInstallTested':True,'shortcutsCreated':True,'failedUpgradeRolledBack':True,'upgradeCompleted':True,'legacyBrandUpgradeCompleted':True,'legacyShortcutsAndExecutableRetired':True,'uninstallPreservedData':True,'profileHashesUnchanged':True,'registeredCustomDirectoryReused':True,'executedFileCleanupRolledBack':True,'unknownApplicationFilesPreserved':True}
     except Exception:
         # Keep native failures actionable without weakening installation checks.
         # These paths and logs belong only to the isolated synthetic fixture.
