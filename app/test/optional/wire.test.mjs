@@ -13,7 +13,7 @@ test('real HTTP socket authenticates the launcher, serves the app and rejects fo
  const root=temp(t),app=await createApplication({directory:root,port:0,clock:false,portableVault:true});t.after(()=>app.close());
  const noCookie=await fetch(app.base+'/api/state');assert.equal(noCookie.status,401);
  const launch=await fetch(app.url,{redirect:'manual'});assert.equal(launch.status,303);const cookie=launch.headers.get('set-cookie').split(';')[0];
- const page=await fetch(app.base+'/',{headers:{Cookie:cookie}});assert.equal(page.status,200);assert.ok((await page.text()).includes('GO <strong>STREAMS'));
+ const page=await fetch(app.base+'/',{headers:{Cookie:cookie}});assert.equal(page.status,200);const html=await page.text();assert.match(html,/<title>Streamland\b/);assert.match(html,/<a class="brand"[^>]*aria-label="Streamland"/);
  const state=await fetch(app.base+'/api/state',{headers:{Cookie:cookie}});assert.equal(state.status,200);assert.deepEqual((await state.json()).jobs,[]);
  const rejected=await fetch(app.base+'/api/channels',{method:'POST',headers:{Cookie:cookie,Origin:'https://foreign.example','Content-Type':'application/json','X-Go-Streams':'1'},body:'{}'});assert.equal(rejected.status,403);
 });

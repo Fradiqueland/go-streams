@@ -65,9 +65,6 @@ jobs:
         run: |
           qa="$RUNNER_TEMP/streamland-ui-qa"
           GO_STREAMS_PLAYWRIGHT_PACKAGE="$qa/package.json" npm run test:recorder:browser
-      - name: Complete ten regression review cycles
-        run: |
-          npm run test:review
       - name: Build and exercise the native Mac application
         run: |
           node scripts/build.mjs --platform=darwin
@@ -75,6 +72,9 @@ jobs:
           node scripts/verify-mac-runtime.mjs "release/Streamland-$version-mac/Streamland.app"
       - name: Package Mac portable
         run: python scripts/package-mac-portable.py
+      - name: Complete ten regression review cycles
+        run: |
+          npm run test:review
       - name: Upload Mac package and verification reports
         if: always()
         uses: actions/upload-artifact@v7.0.2

@@ -71,11 +71,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:recorder:browser
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Complete ten regression review cycles
-        run: |
-          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
-          npm run test:review
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare Electron and installer compiler
         run: |
           $toolchain = Get-Content electron/toolchain.json -Raw | ConvertFrom-Json
@@ -110,6 +105,11 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $report = Get-Content "release/Streamland-$version-Electron-build.json" -Raw | ConvertFrom-Json
           node scripts/verify-electron.mjs "$($report.application)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Complete ten regression review cycles
+        run: |
+          $env:PATH = "$PWD\vendor\runtime\win32-x64;$PWD\vendor\yt-dlp\win32;$env:PATH"
+          npm run test:review
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload installer and verification reports
         if: always()
