@@ -13,7 +13,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   mac:
-    runs-on: macos-26-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
       run:
@@ -79,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: Streamland-Mac-Portable
+          name: Streamland-Mac-Portable-${{ runner.arch }}
           path: |
             app/release/*Mac-Portable.zip
             app/release/*Mac-Portable-verification.json

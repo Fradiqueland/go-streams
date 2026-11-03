@@ -141,7 +141,7 @@ node scripts/prepare-portable.mjs --platform=darwin
 python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable
 ```
 
-The first command builds the universal native Mac launcher from `app/scripts/mac-launcher/` and writes it with its integrity manifest under `app/vendor/mac-launcher/`. It requires Go on the build machine; CI uses Go 1.27.3. Set `STREAMLAND_GO` to select a Go executable, or use the compatible `GO_STREAMS_GO` variable. End users do not need Go or development tools. The generated `Streamland.app` contains both processor runtimes and requires macOS 13.5 or later. Native execution is verified on Apple Silicon in CI; the included Intel runtime has not been executed on Intel hardware. No Developer ID signing or notarization is claimed.
+The first command builds the universal native Mac launcher from `app/scripts/mac-launcher/` and writes it with its integrity manifest under `app/vendor/mac-launcher/`. It requires Go on the build machine; CI uses Go 1.27.3. Set `STREAMLAND_GO` to select a Go executable, or use the compatible `GO_STREAMS_GO` variable. End users do not need Go or development tools. The generated `Streamland.app` contains both processor runtimes and requires macOS 13.5 or later. The Mac CI matrix runs native startup, runtime, interface and recording checks on macOS 15 for Intel and Apple Silicon. Each build publishes its verification reports; consult those reports for completed checks. No Developer ID signing or notarization is claimed.
 
 ## Verification
 

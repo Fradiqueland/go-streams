@@ -1,6 +1,6 @@
 # Streamland 1.2.0
 
-Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
+Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. A verificação automática inclui Windows e macOS 15 em Intel e Apple Silicon; os relatórios de cada compilação identificam os testes efetivamente concluídos. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
 
@@ -9,6 +9,8 @@ Consulte também [as funções do estúdio e a configuração do chat](STREAMYAR
 A aplicação passa a chamar-se **Streamland** na interface, nos instaladores, nos atalhos, nos pacotes e nos novos ficheiros exportados. Atualizar a instalação existente conserva projetos, definições, canais, playlists e sessões guardadas da aplicação. Encerre a aplicação antes de atualizar; as transmissões em curso não são retomadas automaticamente.
 
 As pastas de dados e dos perfis, bem como as identidades internas da instalação, mantêm-se para reutilizar os dados existentes: `%LOCALAPPDATA%\Go Streams\data` no Windows e `~/Library/Application Support/Go Streams` no Mac. As variáveis `GO_STREAMS_*`, os formatos das cópias de segurança e as pastas portáteis com o nome anterior continuam compatíveis. Estes nomes internos existem apenas para preservar a continuidade dos dados.
+
+Os resultados e limitações nas secções de versões anteriores descrevem o estado dessas versões.
 
 ## Finalização das gravações e persistência das cenas (1.1.6)
 
@@ -439,4 +441,4 @@ Mac-Portable/Streamland.app inclui o iniciador universal Intel/Apple Silicon, No
 
 Na máquina de desenvolvimento, prepare primeiro o iniciador universal com `node scripts/build-mac-launcher.mjs`; exige Go (1.27.3 em CI). `STREAMLAND_GO` permite indicar o executável Go; a variável anterior `GO_STREAMS_GO` continua aceite. Depois execute `node scripts/prepare-portable.mjs --platform=darwin` e `python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable`. O utilizador final não precisa de Go nem de ferramentas de desenvolvimento.
 
-O ZIP contém a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportação tem de preservar/restaurar os modos do manifesto. O pacote completo é uma única aplicação no Finder; os recursos internos fazem parte da aplicação. A execução nativa é verificada em Apple Silicon no CI; a execução em hardware Intel, a assinatura Developer ID e a notarização não estão certificadas.
+O ZIP contém a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportação tem de preservar/restaurar os modos do manifesto. O pacote completo é uma única aplicação no Finder; os recursos internos fazem parte da aplicação. Os testes nativos em CI abrangem Intel e Apple Silicon em macOS 15; consulte os relatórios da compilação para os resultados concluídos. A assinatura Developer ID e a notarização não estão certificadas.
