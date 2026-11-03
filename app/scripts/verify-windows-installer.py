@@ -166,7 +166,8 @@ def native_fixture(work):
         code=apply(two,'upgrade');assert code in (0,3010), 'Upgrade failed: '+str(code)
         installed.append(upgraded['productCode'])
         assert (install/'revision.txt').read_text()=='updated'
-        assert (install/'Streamland.exe').is_file() and not (install/'GoStreams.exe').exists()
+        assert (install/'Streamland.exe').is_file(), 'Upgrade did not install Streamland.exe'
+        assert not (install/'GoStreams.exe').exists(), 'Upgrade left the predecessor GoStreams.exe in the application folder'
         assert not (desktop/'Go Streams.lnk').exists() and not (menu/'Go Streams'/'Go Streams.lnk').exists()
         assert (menu/'Streamland'/'Streamland.lnk').is_file()
         assert snapshot()==original
@@ -176,6 +177,19 @@ def native_fixture(work):
         assert not (install/'revision.txt').exists() and not (desktop/'Streamland.lnk').exists()
         assert snapshot()==original
         return {'nativeInstallTested':True,'shortcutsCreated':True,'failedUpgradeRolledBack':True,'upgradeCompleted':True,'legacyBrandUpgradeCompleted':True,'legacyShortcutsAndExecutableRetired':True,'uninstallPreservedData':True,'profileHashesUnchanged':True}
+    except Exception:
+        # Keep native failures actionable without weakening installation checks.
+        # These paths and logs belong only to the isolated synthetic fixture.
+        traces={}
+        for name in ['install','rollback','upgrade']:
+            file=work/(name+'.log')
+            if not file.exists():continue
+            raw=file.read_bytes();text=raw.decode('utf-16' if raw.startswith((b'\xff\xfe',b'\xfe\xff')) else 'utf-8',errors='replace')
+            lines=[line for line in text.splitlines() if any(word in line.lower() for word in ['findexisting','findrelated','removeexisting','gostreams.exe','streamland.exe','installdir','oldproducts','return value 3'])]
+            traces[name]=lines[-100:]
+        files={name:[str(file.relative_to(folder)) for file in folder.rglob('*') if file.is_file()] for name,folder in [('application',install),('desktop',desktop),('menu',menu)]}
+        print(json.dumps({'nativeInstallerFailure':True,'fixtureFiles':files,'installerTraces':traces}),flush=True)
+        raise
     finally:
         for product in reversed(installed):msi.MsiConfigureProductExW(product,0,2,'REMOVE=ALL REBOOT=ReallySuppress')
         msi.MsiEnableLogW(0,None,0)
