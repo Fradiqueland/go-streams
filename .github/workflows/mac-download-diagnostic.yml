@@ -1,0 +1,137 @@
+name: Diagnose Mac browser downloads
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['.github/workflows/mac-download-diagnostic.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mac-download-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  download:
+    runs-on: macos-26-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Prepare isolated browser diagnostic
+        run: |
+          qa="$RUNNER_TEMP/streamland-download-diagnostic"
+          npm install --prefix "$qa" --no-package-lock --ignore-scripts --no-audit --no-fund playwright@1.56.1
+          node "$qa/node_modules/playwright/cli.js" install chromium
+          cat > "$qa/diagnose-download.mjs" <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import http from 'node:http';
+          import assert from 'node:assert/strict';
+          import { createRequire } from 'node:module';
+          const { chromium }=createRequire(process.env.DIAGNOSTIC_PLAYWRIGHT_PACKAGE)('playwright');
+          const output=path.join(process.env.RUNNER_TEMP,'streamland-download-diagnostic-results');
+          fs.mkdirSync(output,{recursive:true});
+          const payload=JSON.stringify({version:1,exported:new Date().toISOString(),channels:[],media:[],playlists:[],schedules:[]});
+          const server=http.createServer((request,response)=>{
+            const isExport=request.url==='/api/export';
+            response.once('finish',()=>console.log(JSON.stringify({http:request.url,status:response.statusCode,finished:true})));
+            if(isExport){
+              response.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Disposition':'attachment; filename="streamland-project.json"'});
+              response.end(payload);
+            }else{
+              response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
+              response.end('<!doctype html><html><title>Streamland download diagnostic</title><a id="export" download href="/api/export">Export project</a></html>');
+            }
+          });
+          await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+          const base='http://127.0.0.1:'+server.address().port;
+          async function bounded(stage,operation,ms=20000){
+            let timer;
+            try{return await Promise.race([operation(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(stage+' timed out after '+ms+'ms')),ms);})]);}
+            finally{clearTimeout(timer);}
+          }
+          const cases=[
+            {name:'system-persistent',executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',persistent:true},
+            {name:'system-context',executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',persistent:false},
+            {name:'matched-persistent',executablePath:chromium.executablePath(),persistent:true},
+            {name:'system-persistent-routed',executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',persistent:true,routed:true},
+            {name:'matched-persistent-routed',executablePath:chromium.executablePath(),persistent:true,routed:true},
+            {name:'system-persistent-native-export',executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',persistent:true,routed:true,continueExport:true}
+          ];
+          const results=[];
+          for(const scenario of cases){
+            const downloads=path.join(output,scenario.name,'downloads');
+            fs.mkdirSync(downloads,{recursive:true});
+            const report={name:scenario.name,persistent:scenario.persistent,routed:Boolean(scenario.routed),executablePath:scenario.executablePath,downloads,events:[],passed:false};
+            let browser,context,download;
+            try{
+              const options={executablePath:scenario.executablePath,headless:true,chromiumSandbox:true,downloadsPath:downloads,timeout:60000};
+              if(scenario.persistent){
+                context=await chromium.launchPersistentContext(path.join(process.env.RUNNER_TEMP,'streamland-download-profile-'+scenario.name),{...options,acceptDownloads:true});
+                browser=context.browser();
+              }else{
+                browser=await chromium.launch(options);context=await browser.newContext({acceptDownloads:true});
+              }
+              report.version=browser.version();
+              const protocol=await browser.newBrowserCDPSession();
+              report.protocol=await protocol.send('Browser.getVersion');
+              for(const name of ['Browser.downloadWillBegin','Browser.downloadProgress'])protocol.on(name,event=>{
+                report.events.push({name,...event});console.log(JSON.stringify({scenario:scenario.name,event:name,...event}));
+              });
+              console.log(JSON.stringify({scenario:scenario.name,version:report.version,protocol:report.protocol,downloads}));
+              if(scenario.routed)await context.route('**/*',async route=>{
+                const request=route.request();
+                if(!request.url().startsWith(base+'/'))return route.abort();
+                const isExport=new URL(request.url()).pathname==='/api/export';
+                if(isExport&&scenario.continueExport){console.log(JSON.stringify({scenario:scenario.name,route:'/api/export',event:'continue'}));return route.continue();}
+                console.log(JSON.stringify({scenario:scenario.name,route:new URL(request.url()).pathname,event:'fulfill'}));
+                await route.fulfill({
+                  status:200,
+                  headers:isExport?{'Content-Type':'application/json; charset=utf-8','Content-Disposition':'attachment; filename="streamland-project.json"'}:{'Content-Type':'text/html; charset=utf-8'},
+                  body:isExport?payload:'<!doctype html><html><title>Streamland download diagnostic</title><a id="export" download href="/api/export">Export project</a></html>'
+                });
+              });
+              const page=await context.newPage();
+              await page.goto(base);
+              [download]=await Promise.all([page.waitForEvent('download',{timeout:20000}),page.locator('#export').click({noWaitAfter:true,timeout:20000})]);
+              report.filename=download.suggestedFilename();
+              console.log(JSON.stringify({scenario:scenario.name,stage:'download-event',filename:report.filename}));
+              report.failure=await bounded('download.failure',()=>download.failure());
+              assert.equal(report.failure,null);assert.equal(report.filename,'streamland-project.json');
+              const file=await bounded('download.path',()=>download.path());
+              assert.ok(file);assert.equal(fs.readFileSync(file,'utf8'),payload);
+              report.bytes=fs.statSync(file).size;report.passed=true;
+            }catch(error){
+              report.error=String(error.stack||error);console.log(JSON.stringify({scenario:scenario.name,stage:'failure',error:report.error}));
+            }finally{
+              report.files=fs.readdirSync(downloads).map(name=>({name,bytes:fs.statSync(path.join(downloads,name)).size}));
+              console.log(JSON.stringify({scenario:scenario.name,stage:'files-before-close',files:report.files}));
+              if(!report.passed&&download)void download.cancel().catch(()=>{});
+              const began=Date.now();
+              try{if(context)await bounded('context.close',()=>context.close(),60000);if(!scenario.persistent&&browser)await bounded('browser.close',()=>browser.close(),15000);}
+              catch(error){report.closeError=String(error.message||error);report.passed=false;}
+              report.closeMs=Date.now()-began;
+              fs.writeFileSync(path.join(output,scenario.name,'result.json'),JSON.stringify(report,null,2));
+              results.push(report);console.log(JSON.stringify({scenario:scenario.name,passed:report.passed,closeMs:report.closeMs,error:report.error||report.closeError||null}));
+            }
+          }
+          server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+          fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));
+          console.log(JSON.stringify({results:results.map(({name,passed,version,error,closeError,files,events})=>({name,passed,version,error,closeError,files,events}))}));
+          process.exit(results.every(result=>result.passed)?0:1);
+          JS
+      - name: Compare system Chrome and matching Chromium downloads
+        timeout-minutes: 10
+        run: |
+          qa="$RUNNER_TEMP/streamland-download-diagnostic"
+          DIAGNOSTIC_PLAYWRIGHT_PACKAGE="$qa/package.json" node "$qa/diagnose-download.mjs"
+      - name: Upload download diagnostic
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: Streamland-Mac-Download-Diagnostic
+          path: ${{ runner.temp }}/streamland-download-diagnostic-results
+          if-no-files-found: error
+          retention-days: 7
