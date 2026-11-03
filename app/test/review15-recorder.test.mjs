@@ -95,14 +95,14 @@ for(const [format,extension]of [['mp4','mp4'],['webm','webm'],[undefined,'webm']
  tools.update([{id:'local-take',created:'2026-11-02T00:00:00Z',status:'completed',bytes:1048576,...(format?{format}:{})}]);
  const html=fields.get('.recording-files').innerHTML;
  assert.ok(html.includes('href="/api/recordings/local-take/file"'));
- assert.ok(html.includes('download="GoStreams-local-take.'+extension+'"'));
+ assert.ok(html.includes('download="Streamland-local-take.'+extension+'"'));
 });
 
 test('live recording download attributes escape file identifiers and formats',()=>{
  const fields=new Map(),tools=new ProductionTools({getStream:()=>null});
  tools.element={querySelector:selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);}};
  tools.update([{id:'take"one',format:'webm"test',created:'2026-11-02T00:00:00Z',status:'completed',bytes:1}]);
- assert.ok(fields.get('.recording-files').innerHTML.includes('download="GoStreams-take&quot;one.webm&quot;test"'));
+ assert.ok(fields.get('.recording-files').innerHTML.includes('download="Streamland-take&quot;one.webm&quot;test"'));
 });
 
 test('loading an empty scene slot does not cancel a pending save to a valid slot',async t=>{

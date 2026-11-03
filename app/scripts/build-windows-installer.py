@@ -52,7 +52,7 @@ def prepare_application(work,portable=None,application_root=None):
         code.write_text('''using System;using System.IO;using System.Reflection;
 class ExtractResources {static void Main(string[] args) {var assembly=Assembly.LoadFile(Path.GetFullPath(args[0]));
 foreach(string name in new[]{"GoStreams.Payload","GoStreams.Manifest"}) {
-using(var input=assembly.GetManifestResourceStream(name)) {if(input==null)throw new Exception("Not a Go Streams single-file executable");
+using(var input=assembly.GetManifestResourceStream(name)) {if(input==null)throw new Exception("Not a Streamland single-file executable");
 using(var output=File.Create(Path.Combine(args[1],name+".bin")))input.CopyTo(output);}}}}
 ''',encoding='utf-8')
         extract=work/'ExtractResources.exe'
@@ -92,8 +92,8 @@ using(var output=File.Create(Path.Combine(args[1],name+".bin")))input.CopyTo(out
     (application/'.installed').write_text('go-streams-installed-v1\n',encoding='ascii')
     version=json.loads((ROOT/'package.json').read_text('utf-8'))['version']
     assembly=work/'AssemblyVersion.cs'
-    assembly.write_text('using System.Reflection;\n[assembly: AssemblyTitle("Go Streams")]\n[assembly: AssemblyProduct("Go Streams")]\n[assembly: AssemblyCompany("Antonio Fradique")]\n[assembly: AssemblyVersion("'+version+'.0")]\n[assembly: AssemblyFileVersion("'+version+'.0")]\n',encoding='utf-8')
-    run([compiler(),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll','/win32icon:'+str(ROOT/'public/icon.ico'),'/out:'+str(application/'GoStreams.exe'),ROOT/'scripts/Launcher.cs',assembly])
+    assembly.write_text('using System.Reflection;\n[assembly: AssemblyTitle("Streamland")]\n[assembly: AssemblyProduct("Streamland")]\n[assembly: AssemblyCompany("Antonio Fradique")]\n[assembly: AssemblyVersion("'+version+'.0")]\n[assembly: AssemblyFileVersion("'+version+'.0")]\n',encoding='utf-8')
+    run([compiler(),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll','/win32icon:'+str(ROOT/'public/icon.ico'),'/out:'+str(application/'Streamland.exe'),ROOT/'scripts/Launcher.cs',assembly])
     return application
 
 def build_msi(application,output,version,*,test_identity=None):
@@ -104,27 +104,27 @@ def build_msi(application,output,version,*,test_identity=None):
     upgrade=UPGRADE_CODE if test_identity is None else guid('test-upgrade:'+test_identity)
     product=guid('product:'+upgrade+':'+version)
     registry=REGISTRY_KEY if test_identity is None else REGISTRY_KEY+'\\Verification\\'+test_identity
-    db=msilib.init_database(str(output),msilib.schema,'Go Streams' if test_identity is None else 'Go Streams Installer Verification',product,version,'Antonio Fradique')
+    db=msilib.init_database(str(output),msilib.schema,'Streamland' if test_identity is None else 'Streamland Installer Verification',product,version,'Antonio Fradique')
     summary=db.GetSummaryInformation(20)
     summary.SetProperty(msilib.PID_TEMPLATE,'x64;1033')
     summary.SetProperty(msilib.PID_PAGECOUNT,500)
     summary.SetProperty(msilib.PID_WORDCOUNT,10) # compressed, long names, non-elevated per-user package
-    summary.SetProperty(msilib.PID_APPNAME,'Go Streams MSI Builder')
+    summary.SetProperty(msilib.PID_APPNAME,'Streamland MSI Builder')
     summary.Persist()
     add=lambda table,rows:msilib.add_data(db,table,rows)
     add('Property',[
         ('UpgradeCode',upgrade),('INSTALLLEVEL','1'),('DefaultUIFont','Normal'),
         ('REBOOT','ReallySuppress'),('MSIRESTARTMANAGERCONTROL','DisableShutdown'),
-        ('ARPPRODUCTICON','GoStreams.exe'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
+        ('ARPPRODUCTICON','Streamland.exe'),('ARPURLINFOABOUT','https://AntonioFradique.net'),
         ('SecureCustomProperties','OLDPRODUCTS;NEWERPRODUCTS;LEGACYDATADIR'),
         ('REINSTALLMODE','amus'),('ARPCOMMENTS','User projects and profiles are preserved when updating or uninstalling.')
     ])
     add('Directory',[
         ('TARGETDIR',None,'SourceDir'),('LocalAppDataFolder','TARGETDIR','.'),
-        ('ProgramsDir','LocalAppDataFolder','Programs'),('INSTALLDIR','ProgramsDir','GOSTRE~1|Go Streams'),
-        ('DesktopFolder','TARGETDIR','.'),('ProgramMenuFolder','TARGETDIR','.'),('GoStreamsMenu','ProgramMenuFolder','GOSTRE~1|Go Streams')
+        ('ProgramsDir','LocalAppDataFolder','Programs'),('INSTALLDIR','ProgramsDir','STREAM~1|Streamland'),
+        ('DesktopFolder','TARGETDIR','.'),('ProgramMenuFolder','TARGETDIR','.'),('GoStreamsMenu','ProgramMenuFolder','STREAM~1|Streamland')
     ])
-    add('Feature',[('Main',None,'Go Streams','Complete application and all included runtimes',1,1,'INSTALLDIR',0)])
+    add('Feature',[('Main',None,'Streamland','Complete application and all included runtimes',1,1,'INSTALLDIR',0)])
     directories={'':'INSTALLDIR'}
     files=sorted(file for file in application.rglob('*') if file.is_file())
     if any(file.is_symlink() or any(p in ('data','.tmp') for p in file.relative_to(application).parts) for file in files):raise ValueError('Private data or symlink in installation')
@@ -155,20 +155,20 @@ def build_msi(application,output,version,*,test_identity=None):
         ('PortableSource',1,registry,'LegacyPortableRoot','[SourceDir]','Registration'),
         ('PortableData',1,registry,'LegacyDataDirectory','[LEGACYDATADIR]','Registration')
     ])
-    executable=identity('F','GoStreams.exe')
+    executable=identity('F','Streamland.exe')
     # Shortcut icon resources must be PE files with the target's .exe extension.
     # The launcher is small and already embeds the selected application icon.
-    add('Icon',[('GoStreams.exe',msilib.Binary(str(application/'GoStreams.exe')))])
+    add('Icon',[('Streamland.exe',msilib.Binary(str(application/'Streamland.exe')))])
     add('Shortcut',[
-        ('DesktopShortcut','DesktopFolder','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreams.exe',0,1,'INSTALLDIR'),
-        ('StartMenuShortcut','GoStreamsMenu','GOSTRE~1|Go Streams','Registration','[#'+executable+']',None,'Go Streams',None,'GoStreams.exe',0,1,'INSTALLDIR')
+        ('DesktopShortcut','DesktopFolder','STREAM~1|Streamland','Registration','[#'+executable+']',None,'Streamland',None,'Streamland.exe',0,1,'INSTALLDIR'),
+        ('StartMenuShortcut','GoStreamsMenu','STREAM~1|Streamland','Registration','[#'+executable+']',None,'Streamland',None,'Streamland.exe',0,1,'INSTALLDIR')
     ])
     add('CreateFolder',[('GoStreamsMenu','Registration')])
     add('RemoveFile',[('RemoveEmptyStartMenu','Registration',None,'GoStreamsMenu',2)])
     add('Upgrade',[(upgrade,None,version,None,1,None,'OLDPRODUCTS'),(upgrade,version,None,None,258,None,'NEWERPRODUCTS')])
     add('LaunchCondition',[
-        ('Installed OR VersionNT64','Go Streams requires 64-bit Windows.'),
-        ('Installed OR NOT NEWERPRODUCTS','A newer Go Streams is already installed. Your data has not been changed.')
+        ('Installed OR VersionNT64','Streamland requires 64-bit Windows.'),
+        ('Installed OR NOT NEWERPRODUCTS','A newer Streamland is already installed. Your data has not been changed.')
     ])
     execute=[(action,condition,1510 if action=='RemoveExistingProducts' else sequence) for action,condition,sequence in msilib.sequence.InstallExecuteSequence]
     # Related products must be detected before downgrade protection is evaluated.
@@ -177,22 +177,22 @@ def build_msi(application,output,version,*,test_identity=None):
     ui=[('FindRelatedProducts',None,200),('LaunchConditions',None,250),('CostInitialize',None,800),('FileCost',None,900),('CostFinalize',None,1000),('WelcomeDlg','NOT REMOVE~="ALL"',1100),('ProgressDlg',None,1290),('ExecuteAction',None,1300),('ExitDialog',None,-1),('FatalError',None,-3),('UserExit',None,-2)]
     add('InstallUISequence',ui)
     add('TextStyle',[('Normal','Tahoma',9,None,0),('Title','Tahoma',13,None,1)])
-    welcome=msilib.Dialog(db,'WelcomeDlg',50,50,400,300,3,'Go Streams '+version,'Install','Install','Cancel')
-    welcome.text('Heading',18,14,364,30,3,'{\\Title}Install Go Streams '+version)
-    welcome.text('Intro',18,50,364,34,3,'All application components will be installed. Close Go Streams before updating.')
+    welcome=msilib.Dialog(db,'WelcomeDlg',50,50,400,300,3,'Streamland '+version,'Install','Install','Cancel')
+    welcome.text('Heading',18,14,364,30,3,'{\\Title}Install Streamland '+version)
+    welcome.text('Intro',18,50,364,34,3,'All application components will be installed. Close Streamland before updating.')
     welcome.text('Folder',18,91,364,38,3,'Application folder:\n[INSTALLDIR]')
     welcome.text('Data',18,137,364,43,3,'Projects, settings, credentials and browser profiles stay in your user data folder. Updating and uninstalling preserve that folder.')
-    welcome.text('LegacyLabel',18,187,364,29,3,'Optional: previous portable data folder (containing project.json). Leave empty to reuse your normal Go Streams data.')
+    welcome.text('LegacyLabel',18,187,364,29,3,'Optional: previous portable data folder (containing project.json). Leave empty to reuse your normal Streamland data.')
     welcome.control('LegacyData','Edit',18,220,364,19,3,'LEGACYDATADIR',None,'Install',None)
     install=welcome.pushbutton('Install',210,264,80,20,3,'Install / Repair','Cancel')
     install.event('[REINSTALL]','ALL','Installed',1);install.event('EndDialog','Return','1',2)
     welcome.pushbutton('Cancel',302,264,80,20,3,'Cancel',None).event('EndDialog','Exit')
-    progress=msilib.Dialog(db,'ProgressDlg',50,50,400,145,1,'Installing Go Streams','Status',None,None)
-    progress.text('Heading',18,15,364,28,3,'{\\Title}Installing Go Streams')
+    progress=msilib.Dialog(db,'ProgressDlg',50,50,400,145,1,'Installing Streamland','Status',None,None)
+    progress.text('Heading',18,15,364,28,3,'{\\Title}Installing Streamland')
     progress.text('Status',18,56,364,22,3,'Please wait while Windows installs the application.')
     progress.control('Progress','ProgressBar',18,90,364,14,65537,None,None,None,None).mapping('SetProgress','Progress')
-    for name,message in [('ExitDialog','Setup is complete. Your user data has been preserved. If installed, open Go Streams using its desktop or Start menu shortcut.'),('FatalError','Installation did not complete. Your existing projects and profiles have been preserved.'),('UserExit','Installation was cancelled. Your user data has not been removed.')]:
-        dialog=msilib.Dialog(db,name,50,50,400,165,3,'Go Streams','Finish','Finish','Finish')
+    for name,message in [('ExitDialog','Setup is complete. Your user data has been preserved. If installed, open Streamland using its desktop or Start menu shortcut.'),('FatalError','Installation did not complete. Your existing projects and profiles have been preserved.'),('UserExit','Installation was cancelled. Your user data has not been removed.')]:
+        dialog=msilib.Dialog(db,name,50,50,400,165,3,'Streamland','Finish','Finish','Finish')
         dialog.text('Message',18,25,364,75,3,message)
         dialog.pushbutton('Finish',302,128,80,20,3,'Close',None).event('EndDialog','Return')
     db.Commit()
@@ -200,7 +200,7 @@ def build_msi(application,output,version,*,test_identity=None):
     msilib.FCICreate(str(cab),cab_files)
     add('Media',[(1,len(files),None,'#ApplicationCab',None,None)])
     msilib.add_stream(db,'ApplicationCab',str(cab));db.Commit();db=None
-    return {'version':version,'productCode':product,'upgradeCode':upgrade,'files':records,'cabinetSHA256':digest(cab),'dataDirectory':'%LOCALAPPDATA%\\Go Streams\\data','installDirectory':'%LOCALAPPDATA%\\Programs\\Go Streams','shortcuts':['Desktop','Start menu'],'userDataIncluded':False,'nativeInstallTested':False}
+    return {'version':version,'productCode':product,'upgradeCode':upgrade,'files':records,'cabinetSHA256':digest(cab),'dataDirectory':'%LOCALAPPDATA%\\Go Streams\\data','installDirectory':'%LOCALAPPDATA%\\Programs\\Streamland','shortcuts':['Desktop','Start menu'],'userDataIncluded':False,'nativeInstallTested':False}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True)
@@ -212,7 +212,7 @@ def main():
     work=ROOT/'.tmp'/('installer-'+version+'-'+uuid.uuid4().hex[:8]);work.mkdir(parents=True)
     application=prepare_application(work,args.portable,args.application_root)
     print(json.dumps({'phase':'application-ready','path':str(application),'version':version}),flush=True)
-    candidate=work/('GoStreams-'+version+'-Windows-Setup.msi')
+    candidate=work/('Streamland-'+version+'-Windows-Setup.msi')
     report=build_msi(application,candidate,version)
     output=ROOT/'release'/candidate.name
     if output.exists() and not args.replace:raise FileExistsError('Preserve the existing installer or pass --replace: '+str(output))
@@ -224,7 +224,7 @@ def main():
         if work.parent.resolve()!=(ROOT/'.tmp').resolve() or not work.name.startswith('installer-'):raise ValueError('Unsafe build staging cleanup')
         try:shutil.rmtree(work);report['workCleaned']=True
         except OSError as error:report.update(workCleaned=False,cleanupError=str(error))
-    (ROOT/'release'/('GoStreams-'+version+'-Windows-Setup-build.json')).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    (ROOT/'release'/('Streamland-'+version+'-Windows-Setup-build.json')).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({'installer':str(output),'bytes':report['bytes'],'sha256':report['sha256'],'work':str(work)}),flush=True)
 
 if __name__=='__main__':main()

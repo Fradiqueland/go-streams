@@ -39,7 +39,7 @@ function transport(options={}){
 }
 for(const options of [{},{fragment:true},{login:true},{challenge:true}])test('SMTP upgrades before authentication and sends UTF-8 MIME '+JSON.stringify(options),async()=>{
  const f=transport(options);assert.deepEqual(await sendSmtp(config,message,undefined,f.connectors),{accepted:true});
- assert.deepEqual(f.writes.filter(w=>!w.secure).map(w=>w.data),['EHLO go-streams.local\r\n','STARTTLS\r\n']);
+ assert.deepEqual(f.writes.filter(w=>!w.secure).map(w=>w.data),['EHLO streamland.local\r\n','STARTTLS\r\n']);
  assert.equal(f.tlsOptions[0].socket,f.raw);assert.equal(f.tlsOptions[0].rejectUnauthorized,true);assert.equal(f.tlsOptions[0].servername,config.host);assert.equal(f.tlsOptions[0].minVersion,'TLSv1.2');
  const data=f.writes.find(w=>w.data.startsWith('From:')).data;
  assert.ok(data.includes('Content-Transfer-Encoding: base64'));const body=data.split('\r\n\r\n')[1].replace(/\r\n\.\r\n$/,'');assert.equal(Buffer.from(body,'base64').toString(),message.body);

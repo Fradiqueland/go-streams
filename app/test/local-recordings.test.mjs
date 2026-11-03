@@ -63,7 +63,7 @@ test('invalid recording folders and a failed preference write preserve prior pre
 });
 
 test('a recording folder write probe never removes an already-existing file with the same name',t=>{
- const {root,recordings}=fixture(t),nonce=crypto.randomUUID(),existing=path.join(root,'.gostreams-writecheck-'+nonce);fs.writeFileSync(existing,'existing user file');
+ const {root,recordings}=fixture(t),nonce=crypto.randomUUID(),existing=path.join(root,'.streamland-writecheck-'+nonce);fs.writeFileSync(existing,'existing user file');
  t.mock.method(crypto,'randomUUID',()=>nonce);assert.throws(()=>recordings.configure({directory:root,askEveryTime:false}));
  assert.equal(fs.existsSync(existing),true,'The existing file must survive a failed exclusive create');assert.equal(fs.readFileSync(existing,'utf8'),'existing user file');
 });

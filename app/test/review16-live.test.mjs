@@ -32,7 +32,7 @@ test('the live snapshot stays pending until PNG encoding completes and releases 
  f.panel.canvas={toBlob(callback,type){assert.equal(type,'image/png');encode=callback;}};f.panel.drawFrame=()=>{draws++;};
  const creating=f.tools.action(button);await tick();assert.equal(button.disabled,true);assert.equal(f.links.length,0);
  const blob=new Blob(['PNG bytes'],{type:'image/png'});encode(blob);await creating;
- assert.equal(button.disabled,false);assert.equal(draws,1);assert.deepEqual(f.objects,[blob]);assert.equal(f.links.length,1);assert.equal(f.links[0].clicked,true);assert.match(f.links[0].download,/^GoStreams-.*\.png$/);assert.deepEqual(f.messages,[]);
+ assert.equal(button.disabled,false);assert.equal(draws,1);assert.deepEqual(f.objects,[blob]);assert.equal(f.links.length,1);assert.equal(f.links[0].clicked,true);assert.match(f.links[0].download,/^Streamland-.*\.png$/);assert.deepEqual(f.messages,[]);
  assert.equal(f.timers.length,1);f.timers[0]();assert.deepEqual(f.revoked,['blob:snapshot-1']);
 });
 

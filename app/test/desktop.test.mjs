@@ -13,7 +13,7 @@ import {spawnOwnedTool,stopProcessTree} from '../src/processes.mjs';
 import {verifyRelease} from '../src/updates.mjs';
 import {buildMac} from '../scripts/build-mac.mjs';
 test('macOS keeps writable user data outside the application bundle',()=>{
- assert.equal(defaultDataDirectory('/Applications/GoStreams.app',{platform:'darwin',home:'/Users/Antonio'}),path.join('/Users/Antonio','Library','Application Support','Go Streams'));
+ assert.equal(defaultDataDirectory('/Applications/Streamland.app',{platform:'darwin',home:'/Users/Antonio'}),path.join('/Users/Antonio','Library','Application Support','Go Streams'));
  assert.equal(defaultDataDirectory('D:/App',{platform:'win32',home:'C:/Users/User'}),path.join('D:/App','data'));
 });
 
@@ -72,11 +72,11 @@ test('Mac bundle builder copies only runtime files and emits a relocatable launc
   for(const dir of ['src','public','data'])fs.mkdirSync(path.join(root,dir));fs.writeFileSync(path.join(root,'src','server.mjs'),'// fixture');fs.writeFileSync(path.join(root,'public','index.html'),'<html>test</html>');fs.copyFileSync(new URL('../public/icon.icns',import.meta.url),path.join(root,'public','icon.icns'));fs.writeFileSync(path.join(root,'data','secret'),'DO NOT COPY');
   fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'0.9.0'}));fs.writeFileSync(path.join(root,'README.md'),'Read me');
   vendorFixture(root,{macBinary:true});runtimeFixture(root);
-  const native=universalFixture(),launcherDir=path.join(root,'vendor','mac-launcher');fs.mkdirSync(launcherDir,{recursive:true});fs.writeFileSync(path.join(launcherDir,'GoStreams'),native);for(const name of ['LICENSE','PATENTS'])fs.writeFileSync(path.join(launcherDir,name),'Go fixture '+name);fs.writeFileSync(path.join(launcherDir,'manifest.json'),JSON.stringify({bytes:native.length,sha256:crypto.createHash('sha256').update(native).digest('hex')}));
-  const bundle=buildMac(root),launcher=fs.readFileSync(path.join(bundle,'Contents','MacOS','GoStreams'));
+  const native=universalFixture(),launcherDir=path.join(root,'vendor','mac-launcher');fs.mkdirSync(launcherDir,{recursive:true});fs.writeFileSync(path.join(launcherDir,'Streamland'),native);for(const name of ['LICENSE','PATENTS'])fs.writeFileSync(path.join(launcherDir,name),'Go fixture '+name);fs.writeFileSync(path.join(launcherDir,'manifest.json'),JSON.stringify({bytes:native.length,sha256:crypto.createHash('sha256').update(native).digest('hex')}));
+  const bundle=buildMac(root),launcher=fs.readFileSync(path.join(bundle,'Contents','MacOS','Streamland'));
   assert.deepEqual(launcher,native);assert.deepEqual(inspectMachO(launcher).map(s=>s.arch),['x64','arm64']);
-  assert.deepEqual(fs.readFileSync(path.join(bundle,'Contents','Resources','GoStreams.icns')),fs.readFileSync(new URL('../public/icon.icns',import.meta.url)));
-  assert.match(fs.readFileSync(path.join(bundle,'Contents','Info.plist'),'utf8'),/CFBundleIconFile<\/key><string>GoStreams.icns/);
+  assert.deepEqual(fs.readFileSync(path.join(bundle,'Contents','Resources','Streamland.icns')),fs.readFileSync(new URL('../public/icon.icns',import.meta.url)));
+  assert.match(fs.readFileSync(path.join(bundle,'Contents','Info.plist'),'utf8'),/CFBundleIconFile<\/key><string>Streamland.icns/);
   assert.ok(fs.existsSync(path.join(bundle,'Contents','Resources','app','src','server.mjs')));assert.ok(!fs.existsSync(path.join(bundle,'Contents','Resources','app','data')));
   assert.ok(fs.existsSync(path.join(bundle,'Contents','Resources','app','vendor','yt-dlp','darwin','yt-dlp')));
   assert.equal(fs.existsSync(path.join(bundle,'Contents','Resources','app','vendor','yt-dlp','win32')),false);

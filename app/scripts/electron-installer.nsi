@@ -15,21 +15,21 @@ Unicode true
 !ifndef UNINSTALL_KEY
  !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\GoStreams.Electron"
 !endif
-Name "Go Streams ${PRODUCT_VERSION}"
+Name "Streamland ${PRODUCT_VERSION}"
 OutFile "${OUTPUT_FILE}"
-InstallDir "$LOCALAPPDATA\Programs\Go Streams Electron"
+InstallDir "$LOCALAPPDATA\Programs\Streamland Electron"
 InstallDirRegKey HKCU "${INSTALL_KEY}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 32
-BrandingText "Go Streams - Antonio Fradique"
+BrandingText "Streamland - Antonio Fradique"
 Icon "${APP_ICON}"
 UninstallIcon "${APP_ICON}"
 ShowInstDetails show
 ShowUninstDetails show
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\GoStreams.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Open Go Streams"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\Streamland.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Open Streamland"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 Page custom LegacyDataPage LegacyDataLeave
@@ -46,17 +46,21 @@ Var LegacyFolder
 Var LegacyInput
 Var ShortcutDesktop
 Var ShortcutMenu
+Var LegacyShortcutMenu
+Var LegacyInstall
 Var DataRoot
 
 Function .onInit
  SetShellVarContext current
  SetRegView 64
  StrCpy $ShortcutDesktop "$DESKTOP"
- StrCpy $ShortcutMenu "$SMPROGRAMS\Go Streams"
+ StrCpy $ShortcutMenu "$SMPROGRAMS\Streamland"
+ StrCpy $LegacyShortcutMenu "$SMPROGRAMS\Go Streams"
  StrCpy $DataRoot "$LOCALAPPDATA\Go Streams"
  !ifdef TEST_ROOT
   StrCpy $ShortcutDesktop "${TEST_ROOT}\Desktop"
-  StrCpy $ShortcutMenu "${TEST_ROOT}\StartMenu\Go Streams"
+  StrCpy $ShortcutMenu "${TEST_ROOT}\StartMenu\Streamland"
+  StrCpy $LegacyShortcutMenu "${TEST_ROOT}\StartMenu\Go Streams"
   StrCpy $DataRoot "${TEST_ROOT}\UserData"
  !endif
  ReadRegStr $LegacyFolder HKCU "Software\Antonio Fradique\Go Streams" "LegacyDataDirectory"
@@ -64,7 +68,7 @@ Function .onInit
  ${If} $0 != ""
   ${VersionCompare} "$0" "${PRODUCT_VERSION}" $1
   ${If} $1 == 1
-   MessageBox MB_OK|MB_ICONEXCLAMATION "A newer Go Streams Electron is already installed. Your data was preserved." /SD IDOK
+   MessageBox MB_OK|MB_ICONEXCLAMATION "A newer Streamland Electron is already installed. Your data was preserved." /SD IDOK
    SetErrorLevel 2
    Abort
   ${EndIf}
@@ -108,14 +112,14 @@ Function LegacyDataPage
  ${If} $0 == error
   Abort
  ${EndIf}
- ${NSD_CreateLabel} 0 0 100% 56u "Existing projects in the normal Go Streams user folder are reused automatically.$\r$\n$\r$\nIf your portable edition used its own data folder, select that folder below. The original is kept. Leave empty for a new installation."
+ ${NSD_CreateLabel} 0 0 100% 56u "Existing projects in the normal Streamland user folder are reused automatically.$\r$\n$\r$\nIf your portable edition used its own data folder, select that folder below. The original is kept. Leave empty for a new installation."
  Pop $0
  ${NSD_CreateDirRequest} 0 67u 78% 14u "$LegacyFolder"
  Pop $LegacyInput
  ${NSD_CreateBrowseButton} 81% 66u 19% 16u "Browse..."
  Pop $0
  ${NSD_OnClick} $0 LegacyBrowse
- ${NSD_CreateLabel} 0 100u 100% 40u "Select the folder containing project.json. Close the old Go Streams before opening the Electron edition."
+ ${NSD_CreateLabel} 0 100u 100% 40u "Select the folder containing project.json. Close the old Streamland before opening the Electron edition."
  Pop $0
  nsDialogs::Show
 FunctionEnd
@@ -138,13 +142,20 @@ Function LegacyDataLeave
  ${EndIf}
 FunctionEnd
 
-Section "Go Streams" Main
+Section "Streamland" Main
  SetShellVarContext current
  SetRegView 64
  ; Silent setup skips the directory page and its validation callback.
  ; Enforce the data boundary before inspecting or creating application files.
  Call .onVerifyInstDir
  ; Never replace a running Electron executable or terminate an active stream.
+ IfFileExists "$INSTDIR\Streamland.exe" 0 check_legacy_running
+ ClearErrors
+ FileOpen $0 "$INSTDIR\Streamland.exe" a
+ IfErrors running
+ FileClose $0
+ check_legacy_running:
+ ; The predecessor can still hold the shared engine/profile open during upgrade.
  IfFileExists "$INSTDIR\GoStreams.exe" 0 check_directory
  ClearErrors
  FileOpen $0 "$INSTDIR\GoStreams.exe" a
@@ -152,7 +163,7 @@ Section "Go Streams" Main
  FileClose $0
  Goto check_directory
  running:
-  MessageBox MB_OK|MB_ICONEXCLAMATION "Close Go Streams before updating, then run setup again. Your projects and sessions have not been removed." /SD IDOK
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Close Streamland before updating, then run setup again. Your projects and sessions have not been removed." /SD IDOK
   SetErrorLevel 2
   Abort
  check_directory:
@@ -182,16 +193,30 @@ Section "Go Streams" Main
   SetErrorLevel 2
   Abort
  install_files:
+ StrCpy $LegacyInstall 0
+ IfFileExists "$INSTDIR\GoStreams.exe" 0 +2
+  StrCpy $LegacyInstall 1
  SetOutPath "$INSTDIR"
  ClearErrors
  File /r "${APPLICATION_DIR}\*"
  IfErrors install_failed
- WriteUninstaller "$INSTDIR\Uninstall Go Streams.exe"
+ WriteUninstaller "$INSTDIR\Uninstall Streamland.exe"
  IfErrors install_failed
+ ; Only retire predecessor files after this installation has passed ownership,
+ ; running-process and copy checks. Never remove user data or whole directories.
+ ${If} $LegacyInstall == 1
+  ClearErrors
+  Delete "$INSTDIR\GoStreams.exe"
+  Delete "$INSTDIR\Uninstall Go Streams.exe"
+  IfErrors install_failed
+  Delete "$ShortcutDesktop\Go Streams.lnk"
+  Delete "$LegacyShortcutMenu\Go Streams.lnk"
+  RMDir "$LegacyShortcutMenu"
+ ${EndIf}
  CreateDirectory "$ShortcutDesktop"
  CreateDirectory "$ShortcutMenu"
- CreateShortCut "$ShortcutDesktop\Go Streams.lnk" "$INSTDIR\GoStreams.exe" "" "$INSTDIR\GoStreams.exe" 0
- CreateShortCut "$ShortcutMenu\Go Streams.lnk" "$INSTDIR\GoStreams.exe" "" "$INSTDIR\GoStreams.exe" 0
+ CreateShortCut "$ShortcutDesktop\Streamland.lnk" "$INSTDIR\Streamland.exe" "" "$INSTDIR\Streamland.exe" 0
+ CreateShortCut "$ShortcutMenu\Streamland.lnk" "$INSTDIR\Streamland.exe" "" "$INSTDIR\Streamland.exe" 0
  WriteRegStr HKCU "${INSTALL_KEY}" "InstallDir" "$INSTDIR"
  WriteRegStr HKCU "${INSTALL_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
  !ifndef TEST_ROOT
@@ -200,13 +225,13 @@ Section "Go Streams" Main
    WriteRegStr HKCU "Software\Antonio Fradique\Go Streams" "LegacyDataDirectory" "$LegacyFolder"
   ${EndIf}
  !endif
- WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Go Streams (Electron)"
+ WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Streamland (Electron)"
  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "Antonio Fradique"
- WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\GoStreams.exe"
+ WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\Streamland.exe"
  WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
- WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall Go Streams.exe$\"'
- WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '$\"$INSTDIR\Uninstall Go Streams.exe$\" /S'
+ WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall Streamland.exe$\"'
+ WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '$\"$INSTDIR\Uninstall Streamland.exe$\" /S'
  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
  Goto install_complete
@@ -221,10 +246,10 @@ Function un.onInit
  SetShellVarContext current
  SetRegView 64
  StrCpy $ShortcutDesktop "$DESKTOP"
- StrCpy $ShortcutMenu "$SMPROGRAMS\Go Streams"
+ StrCpy $ShortcutMenu "$SMPROGRAMS\Streamland"
  !ifdef TEST_ROOT
   StrCpy $ShortcutDesktop "${TEST_ROOT}\Desktop"
-  StrCpy $ShortcutMenu "${TEST_ROOT}\StartMenu\Go Streams"
+  StrCpy $ShortcutMenu "${TEST_ROOT}\StartMenu\Streamland"
  !endif
  FileOpen $0 "$INSTDIR\.gostreams-electron-install" r
  IfErrors refuse_uninstall
@@ -232,18 +257,20 @@ Function un.onInit
  FileClose $0
  StrCmp $1 "net.antoniofradique.gostreams$\r$\n" valid_uninstall
  refuse_uninstall:
-  MessageBox MB_OK|MB_ICONSTOP "The Go Streams installation marker is missing. No files were removed." /SD IDOK
+  MessageBox MB_OK|MB_ICONSTOP "The Streamland installation marker is missing. No files were removed." /SD IDOK
   SetErrorLevel 2
   Abort
  valid_uninstall:
  ; Refuse uninstall while the application is running.
+ IfFileExists "$INSTDIR\Streamland.exe" 0 uninstall_ready
  ClearErrors
- FileOpen $0 "$INSTDIR\GoStreams.exe" a
+ FileOpen $0 "$INSTDIR\Streamland.exe" a
  IfErrors refuse_running
  FileClose $0
+ uninstall_ready:
  Return
  refuse_running:
-  MessageBox MB_OK|MB_ICONEXCLAMATION "Close Go Streams before uninstalling. Its user data is retained." /SD IDOK
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Close Streamland before uninstalling. Its user data is retained." /SD IDOK
   SetErrorLevel 2
   Abort
 FunctionEnd
@@ -254,9 +281,9 @@ Section "Uninstall"
  ; Generated exact file list: never recursively delete a user-selected folder.
  !include "${OWNED_FILES_INCLUDE}"
  Delete "$INSTDIR\.gostreams-electron-install"
- Delete "$INSTDIR\Uninstall Go Streams.exe"
- Delete "$ShortcutDesktop\Go Streams.lnk"
- Delete "$ShortcutMenu\Go Streams.lnk"
+ Delete "$INSTDIR\Uninstall Streamland.exe"
+ Delete "$ShortcutDesktop\Streamland.lnk"
+ Delete "$ShortcutMenu\Streamland.lnk"
  RMDir "$ShortcutMenu"
  RMDir "$INSTDIR"
  DeleteRegKey HKCU "${INSTALL_KEY}"

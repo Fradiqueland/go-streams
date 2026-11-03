@@ -12,14 +12,14 @@ function manifest(overrides={}){const release={product:'go-streams',platform:pro
 function make(fetcher){const store=new Store(fs.mkdtempSync(path.join(root,'data-')));const u=new Updates(store,{fetcher});closers.push(u);u.save({feed:'https://updates.example.test/latest.json',publicKey:key});return u;}
 
 test('signed Electron NSIS updates retain their executable extension without starting setup',{skip:process.platform!=='win32'},async()=>{
- const envelope=manifest({url:'https://updates.example.test/GoStreams-99.0.0-Electron-Setup.exe',format:'nsis'});
+ const envelope=manifest({url:'https://updates.example.test/Streamland-99.0.0-Electron-Setup.exe',format:'nsis'});
  const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(envelope):archive));
  await u.check();assert.equal(u.release.format,'nsis');await u.download();
  assert.ok(u.state().package.endsWith('.exe'));assert.equal(u.state().format,'nsis');assert.deepEqual(fs.readFileSync(u.state().package),archive);
 });
 
 test('signed Windows installers retain their MSI extension and leave existing user profiles unchanged',{skip:process.platform!=='win32'},async()=>{
- const envelope=manifest({url:'https://updates.example.test/GoStreams-99.0.0-Setup.msi',format:'msi'});
+ const envelope=manifest({url:'https://updates.example.test/Streamland-99.0.0-Setup.msi',format:'msi'});
  const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(envelope):archive));
  const cookies=path.join(u.store.directory,'desktop-browser','Default','Network','Cookies');fs.mkdirSync(path.dirname(cookies),{recursive:true});fs.writeFileSync(cookies,'existing sessions');
  await u.check();assert.equal(u.release.format,'msi');await u.download();
@@ -49,7 +49,7 @@ for(const operation of ['check','download'])for(const stage of ['partial','end']
  const bytes=operation==='check'?Buffer.from(JSON.stringify(manifest())):archive;
  let release,started;const gate=new Promise(r=>{release=r;}),reading=new Promise(r=>{started=r;});
  let target;
- if(operation==='download'){const folder=path.join(u.store.directory,'updates');fs.mkdirSync(folder,{recursive:true});target=path.join(folder,'GoStreams-99.0.0.zip');fs.writeFileSync(target,'previously verified');}
+ if(operation==='download'){const folder=path.join(u.store.directory,'updates');fs.mkdirSync(folder,{recursive:true});target=path.join(folder,'Streamland-99.0.0.zip');fs.writeFileSync(target,'previously verified');}
  u.fetcher=async()=>({ok:true,body:{async *[Symbol.asyncIterator](){yield stage==='partial'?bytes.subarray(0,2):bytes;started();await gate;if(stage==='partial')yield bytes.subarray(2);}}});
  const outcome=u[operation]().then(value=>({value}),error=>({error}));await reading;const closing=u.shutdown();release();await closing;
  assert.ok((await outcome).error);assert.equal(u.state().state,'error');
@@ -59,7 +59,7 @@ for(const operation of ['check','download'])for(const stage of ['partial','end']
 for(const stage of ['write-zero','flush','close'])test('update '+stage+' disk failure reports an error, cleans partial files and releases cancellation state',async t=>{
  const u=make(async url=>new Response(url.endsWith('json')?JSON.stringify(manifest()):archive));await u.check();
  const folder=path.join(u.store.directory,'updates');fs.mkdirSync(folder,{recursive:true});
- const previous=path.join(folder,'GoStreams-99.0.0.zip');fs.writeFileSync(previous,'previously verified');
+ const previous=path.join(folder,'Streamland-99.0.0.zip');fs.writeFileSync(previous,'previously verified');
  if(stage==='write-zero')t.mock.method(fs,'writeSync',()=>0);
  if(stage==='flush')t.mock.method(fs,'fsyncSync',()=>{throw Object.assign(Error('Controlled full disk'),{code:'ENOSPC'});});
  if(stage==='close'){

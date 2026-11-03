@@ -8,7 +8,7 @@ const {userPaths,migrateData,migratePreferences,discoverLegacy}=require('./data-
 const {rendererPreferences,activateWindow,wireNavigation,activeWork,prepareRendererClose,cancelRendererClose,shutdownCoordinator}=require('./window-policy.cjs');
 const {wireCapturePermissions,chooseCaptureSource}=require('./capture-policy.cjs');
 
-app.setName('Go Streams');
+app.setName('Streamland');
 app.setAppUserModelId('net.antoniofradique.gostreams');
 app.enableSandbox();
 const local=process.env.LOCALAPPDATA||path.join(app.getPath('home'),'AppData','Local');
@@ -51,11 +51,11 @@ async function start(){
  }});
  // The loopback origin stays fixed so user preferences survive every upgrade.
  const profile=migratePreferences(paths.data),browserSession=session.fromPath(profile);
- window=new BrowserWindow({width:1440,height:960,minWidth:760,minHeight:520,show:false,title:'Go Streams',icon:path.join(root,'public','icon.ico'),autoHideMenuBar:true,backgroundColor:'#f5f6fa',webPreferences:rendererPreferences(browserSession)});
+ window=new BrowserWindow({width:1440,height:960,minWidth:760,minHeight:520,show:false,title:'Streamland',icon:path.join(root,'public','icon.ico'),autoHideMenuBar:true,backgroundColor:'#f5f6fa',webPreferences:rendererPreferences(browserSession)});
  wireCapturePermissions(browserSession,{contents:window.webContents,base:backend.base,
   confirmMedia:async types=>{
    const devices=types.includes('video')?(types.includes('audio')?'camera and microphone':'camera'):'microphone';
-   const result=await dialog.showMessageBox(window,{type:'question',title:'Go Streams - Live capture',message:`Allow Go Streams to use your ${devices} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
+   const result=await dialog.showMessageBox(window,{type:'question',title:'Streamland - Live capture',message:`Allow Streamland to use your ${devices} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
    return result.response===1;
   },
   getSources:()=>desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:0,height:0}}),
@@ -77,7 +77,7 @@ async function start(){
   cancel:()=>cancelRendererClose(window?.webContents,{base:backend.base,unavailable:rendererGone}),
   confirm:async()=>{
   if(smokeCloseFixture)return true;
-  const result=await dialog.showMessageBox(window,{type:'question',buttons:['Keep Go Streams open','Stop operations and close'],defaultId:0,cancelId:0,title:'Go Streams',message:'There are active streams or operations. Stop them and close Go Streams?'});
+  const result=await dialog.showMessageBox(window,{type:'question',buttons:['Keep Streamland open','Stop operations and close'],defaultId:0,cancelId:0,title:'Streamland',message:'There are active streams or operations. Stop them and close Streamland?'});
   return result.response===1;
  }});
  requestQuit=async()=>{quitRequests++;try{return await coordinatedQuit();}finally{quitRequests--;}};
@@ -110,7 +110,7 @@ async function smokeRecordingDownloads(browserSession,runProcess){
     handler=(event,item)=>{
      if(item.getURL()!==backend.base+href)return;
      downloadItem=item;
-     try{if(item.getFilename()!=='GoStreams-'+id+'.mp4')throw Error('Recording download filename differs: '+route);item.setSavePath(destination);item.once('done',(_,state)=>state==='completed'?resolve():reject(Error('Recording download failed: '+state)));}catch(error){item.cancel();reject(error);}
+     try{if(item.getFilename()!=='Streamland-'+id+'.mp4')throw Error('Recording download filename differs: '+route);item.setSavePath(destination);item.once('done',(_,state)=>state==='completed'?resolve():reject(Error('Recording download failed: '+state)));}catch(error){item.cancel();reject(error);}
     };
     browserSession.on('will-download',handler);
    });
@@ -199,15 +199,15 @@ async function verifySmokeWindowClose(){
  fs.writeFileSync(fixture.proofPath,JSON.stringify(fixture.proof,null,2));
 }
 async function fail(error){
- const message=error.code==='EADDRINUSE'?'Close the previous Go Streams before opening the Electron edition. Its projects and sessions have been preserved.':String(error.message||error);
+ const message=error.code==='EADDRINUSE'?'Close the previous Streamland before opening the Electron edition. Its projects and sessions have been preserved.':String(error.message||error);
  if(smoke){fs.mkdirSync(paths.data,{recursive:true});fs.writeFileSync(path.join(paths.data,'electron-smoke-error.txt'),message);}
- else dialog.showErrorBox('Go Streams',message);
+ else dialog.showErrorBox('Streamland',message);
  quitting=true;await backend?.close().catch(()=>{});app.exit(1);
 }
 async function reportQuitFailure(error){
  if(smoke)return fail(error);
  if(quitErrorVisible)return;
  quitErrorVisible=true;
- try{activateWindow(window);await dialog.showMessageBox(window,{type:'error',title:'Go Streams',message:'Go Streams could not finish closing.',detail:String(error.message||error)+'\nThe window has been kept open. You can retry closing.',buttons:['Keep open']});}
+ try{activateWindow(window);await dialog.showMessageBox(window,{type:'error',title:'Streamland',message:'Streamland could not finish closing.',detail:String(error.message||error)+'\nThe window has been kept open. You can retry closing.',buttons:['Keep open']});}
  finally{quitErrorVisible=false;}
 }

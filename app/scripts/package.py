@@ -10,23 +10,23 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
 
 root = Path(__file__).resolve().parents[1]
 version = json.loads((root / 'package.json').read_text(encoding='utf-8'))['version']
-release = root / 'release' / f'GoStreams-{version}'
+release = root / 'release' / f'Streamland-{version}'
 destination = Path(sys.argv[1]).resolve()
 destination.mkdir(parents=True, exist_ok=True)
 platform = sys.argv[2] if len(sys.argv) > 2 else 'all'
 if platform not in ('win32','darwin','all'):raise ValueError('Invalid platform')
 suffix = {'win32':'-Windows','darwin':'-Mac','all':''}[platform]
-output = destination / f'GoStreams-v{version}{suffix}.zip'
+output = destination / f'Streamland-v{version}{suffix}.zip'
 handle, name = tempfile.mkstemp(prefix='.' + output.stem + '-', suffix='.zip', dir=destination)
 os.close(handle)
 candidate = Path(name)
 try:
     with ZipFile(candidate, 'w', ZIP_DEFLATED) as archive:
         for base, prefix, folders, files in [
-            (release, 'GoStreams', ['src', 'public', 'vendor', 'runtime'], ['GoStreams.exe', 'CloseGoStreams.cmd', 'package.json', 'README.md', 'STREAMYARD-FEATURE-SCOPE.md']),
+            (release, 'Streamland', ['src', 'public', 'vendor', 'runtime'], ['Streamland.exe', 'CloseStreamland.cmd', 'package.json', 'README.md', 'STREAMYARD-FEATURE-SCOPE.md']),
             (root, 'source', ['src', 'public', 'scripts', 'test', 'electron'], ['package.json', 'README.md', 'STREAMYARD-FEATURE-SCOPE.md', '.gitignore']),
         ]:
-            if prefix == 'GoStreams' and platform == 'darwin':continue
+            if prefix == 'Streamland' and platform == 'darwin':continue
             for folder in folders:
                 for file in sorted((base / folder).rglob('*')):
                     if file.is_file() and '__pycache__' not in file.parts:
@@ -35,14 +35,34 @@ try:
                 archive.write(base / name, f'{prefix}/{name}')
         archive.write(root / 'vendor' / 'yt-dlp' / 'manifest.json', 'source/vendor/yt-dlp/manifest.json')
         archive.write(root / 'vendor' / 'runtime' / 'downloads.json', 'source/vendor/runtime/downloads.json')
-        mac_root = root / 'release' / f'GoStreams-{version}-mac'
+        launcher_directory = root / 'vendor' / 'mac-launcher'
+        for notice in ('LICENSE', 'PATENTS'):
+            archive.write(launcher_directory / notice, 'source/vendor/mac-launcher/' + notice)
+        # Windows source packages can be rebuilt without a precompiled Mac
+        # launcher. Include a generated launcher only with its matching source
+        # and integrity manifest, and retain its executable permission.
+        launcher = launcher_directory / 'Streamland'
+        if launcher.is_file():
+            launcher_manifest = launcher_directory / 'manifest.json'
+            metadata = json.loads(launcher_manifest.read_text('utf-8'))
+            launcher_bytes = launcher.read_bytes()
+            source_bytes = (root / 'scripts' / 'mac-launcher' / 'main.go').read_bytes()
+            if len(launcher_bytes) != metadata['bytes'] or hashlib.sha256(launcher_bytes).hexdigest() != metadata['sha256'] or hashlib.sha256(source_bytes).hexdigest() != metadata['sourceSha256']:
+                raise RuntimeError('Stale generated Mac launcher: rebuild before packaging the source')
+            info = ZipInfo('source/vendor/mac-launcher/Streamland')
+            info.create_system = 3
+            info.external_attr = 0o100755 << 16
+            info.compress_type = ZIP_DEFLATED
+            archive.writestr(info, launcher_bytes)
+            archive.write(launcher_manifest, 'source/vendor/mac-launcher/manifest.json')
+        mac_root = root / 'release' / f'Streamland-{version}-mac'
         if platform in ('all','darwin') and not mac_root.is_dir():raise RuntimeError('Mac bundle is missing')
         for file in (sorted(mac_root.rglob('*')) if platform in ('all','darwin') else []):
             if file.is_file():
                 relative = file.relative_to(mac_root).as_posix()
-                info = ZipInfo('GoStreams-Mac/' + relative)
+                info = ZipInfo('Streamland-Mac/' + relative)
                 info.create_system = 3
-                info.external_attr = ((0o100755 if relative.endswith('/Contents/MacOS/GoStreams') or relative.endswith('/vendor/yt-dlp/darwin/yt-dlp') or ('/runtime/darwin-' in relative and file.name in ('node','ffmpeg','ffprobe')) else 0o100644) << 16)
+                info.external_attr = ((0o100755 if relative.endswith('/Contents/MacOS/Streamland') or relative.endswith('/vendor/yt-dlp/darwin/yt-dlp') or ('/runtime/darwin-' in relative and file.name in ('node','ffmpeg','ffprobe')) else 0o100644) << 16)
                 info.compress_type = ZIP_DEFLATED
                 archive.writestr(info, file.read_bytes())
     with ZipFile(candidate) as archive:
@@ -52,8 +72,8 @@ try:
         if len(names) != len(set(names)):
             raise RuntimeError('Duplicate package entries')
         prefixes = []
-        if platform in ('win32', 'all'): prefixes.append(('GoStreams', ['win32-x64'], 'win32'))
-        if platform in ('darwin', 'all'): prefixes.append(('GoStreams-Mac/GoStreams.app/Contents/Resources/app', ['darwin-x64', 'darwin-arm64'], 'darwin'))
+        if platform in ('win32', 'all'): prefixes.append(('Streamland', ['win32-x64'], 'win32'))
+        if platform in ('darwin', 'all'): prefixes.append(('Streamland-Mac/Streamland.app/Contents/Resources/app', ['darwin-x64', 'darwin-arm64'], 'darwin'))
         for prefix, targets, os_name in prefixes:
             if json.loads(archive.read(prefix + '/package.json'))['version'] != version:
                 raise RuntimeError('Stale application version in package')
@@ -77,7 +97,7 @@ try:
             member = prefix + '/vendor/yt-dlp/' + os_name + '/yt-dlp' + ('.exe' if os_name == 'win32' else '')
             if member not in names: raise RuntimeError('Missing bundled downloader')
             if os_name == 'darwin':
-                for executable in [member, 'GoStreams-Mac/GoStreams.app/Contents/MacOS/GoStreams']:
+                for executable in [member, 'Streamland-Mac/Streamland.app/Contents/MacOS/Streamland']:
                     if stat.S_IMODE(archive.getinfo(executable).external_attr >> 16) != 0o755:
                         raise RuntimeError('Missing Mac executable permission: ' + executable)
     os.replace(candidate, output)

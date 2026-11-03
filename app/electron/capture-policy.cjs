@@ -12,7 +12,7 @@ async function chooseCaptureSource(sources,{showMessageBox,systemAudio=false}){
   const buttons=['Cancel',...options.map((source,index)=>`${start+index+1}. ${source.name.slice(0,100)}`)];
   const previous=page>0?buttons.push('Previous page')-1:-1,next=page+1<pages?buttons.push('Next page')-1:-1;
   const audio=systemAudio?'System audio will also be captured. Your microphone is controlled separately.':'Only the selected screen or window will be captured.';
-  const result=await showMessageBox({type:'question',title:'Go Streams - Share screen or window',message:'Choose what to share',detail:audio+(pages>1?` Page ${page+1} of ${pages}. Use the page buttons to see other screens and windows.`:''),buttons,defaultId:0,cancelId:0});
+  const result=await showMessageBox({type:'question',title:'Streamland - Share screen or window',message:'Choose what to share',detail:audio+(pages>1?` Page ${page+1} of ${pages}. Use the page buttons to see other screens and windows.`:''),buttons,defaultId:0,cancelId:0});
   const selected=result.response;
   if(!Number.isInteger(selected)||selected<=0)return null;
   if(selected<=options.length)return options[selected-1];

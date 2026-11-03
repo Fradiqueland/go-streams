@@ -47,8 +47,8 @@ builder.main()
 `;
 
 for(const [kind,script,name,report] of [
- ['msi','build-windows-installer.py','GoStreams-1.2.3-Windows-Setup.msi','GoStreams-1.2.3-Windows-Setup-build.json'],
- ['electron','build-electron-windows.py','GoStreams-1.2.3-Electron-Setup.exe','GoStreams-1.2.3-Electron-build.json'],
+ ['msi','build-windows-installer.py','Streamland-1.2.3-Windows-Setup.msi','Streamland-1.2.3-Windows-Setup-build.json'],
+ ['electron','build-electron-windows.py','Streamland-1.2.3-Electron-Setup.exe','Streamland-1.2.3-Electron-build.json'],
 ])test(kind+' installer publishes successfully in a fresh checkout without a release folder',{skip:!available},t=>{
  const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const root=fs.mkdtempSync(path.join(parent,'installer-publish-'));
  t.after(()=>{assert.ok(root.startsWith(parent+path.sep));fs.rmSync(root,{recursive:true,force:true});});

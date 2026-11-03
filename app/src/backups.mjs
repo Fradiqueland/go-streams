@@ -9,6 +9,8 @@ import {validateOperations} from './operations.mjs';
 import {validateNotifications} from './notifications.mjs';
 import {validateUpdates} from './updates.mjs';
 import {sourceUrl} from './remote-sources.mjs';
+// Keep the authenticated format identity so backups remain readable in both
+// Streamland and earlier versions; the application name is not a format version.
 const scrypt=promisify(crypto.scrypt),aad=Buffer.from('Go Streams encrypted backup v1');
 const maxBytes=16*1024*1024;
 const projectFields=['media','channels','playlists','schedules','channelPlans','history','downloads'];

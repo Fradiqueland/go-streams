@@ -67,7 +67,7 @@ export class LiveCapturePanel {
    if(!this.canvas||!this.output){this.toast(text('Open a local preview first.','Abra primeiro a pré-visualização local.'),true);return;}
    this.drawFrame?.();
    const blob=await new Promise((resolve,reject)=>this.canvas.toBlob(value=>value?resolve(value):reject(Error(text('The PNG image could not be created. Try again.','Não foi possível criar a imagem PNG. Tente novamente.'))),'image/png'));
-   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='GoStreams-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';try{a.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),10000);}
+   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Streamland-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';try{a.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),10000);}
   }});
   this.production.mount(this.element);
   if(this.element.parentNode!==container){container.innerHTML='';container.appendChild(this.element);}

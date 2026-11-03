@@ -136,7 +136,7 @@ test('snapshot preserves the clicked frame while its watermark loads and the pre
  const button={dataset:{production:'snapshot'}},creating=tools.action(button);assert.equal(button.disabled,true);assert.equal(typeof decoded,'function');assert.equal(encode,undefined);assert.equal(copies.length,1);assert.equal(copies[0].source,original);assert.equal(copies[0].text,'Frame at click');assert.deepEqual([saved.width,saved.height],[original.width,original.height]);
  tools.values.banner='Later frame';panel.draw();await panel.release();assert.equal(panel.output,null);mark.complete=true;mark.naturalWidth=1660;decoded();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(copies.length,2);assert.equal(copies[1].source,mark);assert.equal(copies[1].alpha,.5);assert.equal(copies[0].text,'Frame at click');assert.equal(button.disabled,true);assert.equal(link.clicks,0);assert.equal(typeof encode,'function');
- encode(new Blob(['PNG frame'],{type:'image/png'}));await creating;assert.equal(button.disabled,false);assert.equal(link.clicks,1);assert.match(link.download,/^GoStreams-frame-.*\.png$/);assert.equal(timers.length,1);assert.equal(timers[0].delay,10000);timers[0].callback();assert.deepEqual(revoked,[link.href]);
+ encode(new Blob(['PNG frame'],{type:'image/png'}));await creating;assert.equal(button.disabled,false);assert.equal(link.clicks,1);assert.match(link.download,/^Streamland-frame-.*\.png$/);assert.equal(timers.length,1);assert.equal(timers[0].delay,10000);timers[0].callback();assert.deepEqual(revoked,[link.href]);
 });
 
 test('a null PNG encoder result rejects the real snapshot and reaches the production error message',async t=>{

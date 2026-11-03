@@ -57,7 +57,7 @@ function encodedSubject(subject){
 export function mailData(config,message){
   if(!isMailbox(config.from)||!isMailbox(config.to)||typeof message.body!=='string'||Buffer.byteLength(message.body)>65536)throw failure();
   const body=Buffer.from(message.body).toString('base64').match(/.{1,76}/g)?.join('\r\n')||'';
-  return [`From: <${config.from}>`,`To: <${config.to}>`,`Subject: ${encodedSubject(message.subject)}`,`Date: ${new Date().toUTCString()}`,`Message-ID: <${crypto.randomUUID()}@go-streams.local>`,'MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64','',body,''].join('\r\n')+'.\r\n';
+  return [`From: <${config.from}>`,`To: <${config.to}>`,`Subject: ${encodedSubject(message.subject)}`,`Date: ${new Date().toUTCString()}`,`Message-ID: <${crypto.randomUUID()}@streamland.local>`,'MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64','',body,''].join('\r\n')+'.\r\n';
 }
 export async function sendSmtp(config,message,signal,{connect=net.connect,secureConnect=tls.connect,timeoutMs=25000}={}){
   const security=config.security||(Number(config.port)===465?'tls':'starttls');
@@ -78,11 +78,11 @@ export async function sendSmtp(config,message,signal,{connect=net.connect,secure
     if(signal?.aborted)controller.abort();if(controller.signal.aborted)throw failure();
     if(security==='tls')await secure();
     else {socket=track(connect({host:config.host,port:Number(config.port)}));replies=new Replies(socket,controller.signal);await connected(socket,'connect',controller.signal);}
-    await replies.take([220]);let hello=await command('EHLO go-streams.local',[250]);
+    await replies.take([220]);let hello=await command('EHLO streamland.local',[250]);
     if(security==='starttls'){
       if(!/^STARTTLS\s*$/im.test(hello.text))throw failure();
       await command('STARTTLS',[220]);if(!replies.empty())throw failure();
-      replies.detach();await secure(socket);hello=await command('EHLO go-streams.local',[250]);
+      replies.detach();await secure(socket);hello=await command('EHLO streamland.local',[250]);
     }
     if(config.username){
       const auth=/^AUTH[ =]([^\n]*)/im.exec(hello.text)?.[1].toUpperCase().split(/\s+/)||[];

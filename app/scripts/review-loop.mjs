@@ -12,7 +12,7 @@ if(!Number.isInteger(requested)||requested<1||requested>10)throw Error('Use 1..1
 const output=path.join(root,'.tmp','review-loop');fs.mkdirSync(output,{recursive:true});
 const release=path.join(root,'release');fs.mkdirSync(release,{recursive:true});
 const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
-const reportFile=path.join(release,`GoStreams-${version}-review-${process.platform}-verification.json`);
+const reportFile=path.join(release,`Streamland-${version}-review-${process.platform}-verification.json`);
 function fingerprint(){
  const hash=crypto.createHash('sha256');
  function visit(relative){for(const entry of fs.readdirSync(path.join(root,relative),{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name,'en'))){const name=path.join(relative,entry.name);if(entry.isDirectory())visit(name);else if(/\.(?:[cm]?js|json|py|go|cs|html|css|md|nsi|txt)$/i.test(entry.name))hash.update(name.replaceAll('\\','/')+'\0').update(fs.readFileSync(path.join(root,name)));}}

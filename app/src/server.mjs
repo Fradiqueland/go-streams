@@ -63,13 +63,13 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(pathname.startsWith('/source/'))return await remoteSources.handle(req,res);
       if(pathname==='/oauth/youtube'&&req.method==='GET'){
         await chat.auth.callback(url.searchParams);
-        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end('<!doctype html><html lang="en"><title>Go Streams — Account connected</title><h1>YouTube account connected</h1><p>You can close this tab and return to Go Streams.</p></html>');
+        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end('<!doctype html><html lang="en"><title>Streamland — Account connected</title><h1>YouTube account connected</h1><p>You can close this tab and return to Streamland.</p></html>');
       }
       if (req.method === 'GET' && pathname === '/' && url.searchParams.get('launch') === token) {
         res.setHeader('Set-Cookie', `go_streams=${token}; HttpOnly; SameSite=Strict; Path=/`); res.writeHead(303, { Location: '/' }); return res.end();
       }
       const cookie = req.headers.cookie?.split(';').map(c => c.trim()).find(c => c.startsWith('go_streams='))?.slice(11);
-      if (cookie !== token) { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Abra o Go Streams pelo seu iniciador para entrar nesta sessão local.'); }
+      if (cookie !== token) { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Abra o Streamland pelo seu iniciador para entrar nesta sessão local.'); }
       if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-go-streams'] !== '1') throw new AppError('Pedido recusado.', 403);
       if (shuttingDown) throw new AppError('A aplicação está a encerrar.', 503);
       if(restoring&&!['GET','HEAD'].includes(req.method)&&pathname!=='/api/shutdown')throw new AppError('Aguarde o restauro da cópia de segurança.',409);
@@ -99,7 +99,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(pathname==='/api/recordings/start'&&req.method==='POST')return json(res,recordings.start(body),201);
       const recordingFile=/^\/api\/recordings\/([\w-]+)\/(finish|file)$/.exec(pathname);
       if(recordingFile&&recordingFile[2]==='finish'&&req.method==='POST')return json(res,await recordings.finish(recordingFile[1],{discardEmpty:body.discardEmpty===true}));
-      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file),audio=recordings.items.find(item=>item.id===recordingFile[1])?.kind==='audio';res.setHeader('Content-Disposition',`attachment; filename="GoStreams-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.m4a'?'audio/mp4':ext==='.mp4'?'video/mp4':audio?'audio/webm':'video/webm');}
+      if(recordingFile&&recordingFile[2]==='file'&&['GET','HEAD'].includes(req.method)){const file=recordings.media(recordingFile[1]),ext=path.extname(file),audio=recordings.items.find(item=>item.id===recordingFile[1])?.kind==='audio';res.setHeader('Content-Disposition',`attachment; filename="Streamland-${recordingFile[1]}${ext}"`);return serveFile(req,res,file,ext==='.m4a'?'audio/mp4':ext==='.mp4'?'video/mp4':audio?'audio/webm':'video/webm');}
       if(pathname==='/api/chat'&&req.method==='GET')return json(res,chat.state());
       if(pathname==='/api/chat/settings'&&req.method==='PUT')return json(res,chat.auth.configure(body.provider,body));
       if(pathname==='/api/chat/authorize'&&req.method==='POST')return json(res,await chat.auth.begin(body.provider));
@@ -155,7 +155,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if (pathname === '/api/history' && req.method === 'DELETE') { store.update(s => { s.history = []; }); return json(res, { ok: true }); }
       if (pathname === '/api/history.csv' && req.method === 'GET') {
         const columns = ['kind','platform','video','sequence','cycle','time', 'level', 'channel', 'playlist', 'started', 'ended', 'elapsed', 'result', 'retries', 'message', 'detail'];
-        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="go-streams-history.csv"' });
+        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="streamland-history.csv"' });
         return res.end('\uFEFF' + [columns, ...store.data.history.map(row => columns.map(key => row[key]))].map(row => row.map(csvCell).join(';')).join('\r\n'));
       }
       if (pathname === '/api/stop-all' && req.method === 'POST') { for (const job of studio.jobs.values()) studio.stop(job.id); return json(res, { ok: true }); }
@@ -220,7 +220,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
       if(overlayAsset&&['GET','HEAD'].includes(req.method))return serveFile(req,res,assetFile(directory,overlayAsset[1]));
       if (pathname === '/api/export' && req.method === 'GET') {
         const state = studio.state(); const backup = { version: 1, exported: new Date().toISOString(), channelPlans:state.channelPlans||{}, media: state.media, playlists: state.playlists, channels: state.channels.map(({ hasKey, ...c }) => c), schedules: state.schedules.filter(s => (s.mediaId ? state.media.some(m => m.id===s.mediaId) : state.playlists.some(p => p.id === s.playlistId)) && s.channelIds.every(cid => state.channels.some(c => c.id === cid))).map(s => ({ ...s, armed: false })) };
-        res.setHeader('Content-Disposition', 'attachment; filename="go-streams-project.json"'); return json(res, backup);
+        res.setHeader('Content-Disposition', 'attachment; filename="streamland-project.json"'); return json(res, backup);
       }
       const asset = /^\/api\/(media|thumb|preview)\/([\w-]+)$/.exec(pathname);
       if (asset && ['GET', 'HEAD'].includes(req.method)) {
@@ -281,7 +281,7 @@ export async function createApplication({ directory = process.env.GO_STREAMS_DAT
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   createApplication({ port: Number(process.env.GO_STREAMS_PORT || 4317) }).then(app => {
-    console.log(`Go Streams: ${app.url}`);
+    console.log(`Streamland: ${app.url}`);
     if (process.argv.includes('--open')) openBrowser(app.url,{directory:app.store.directory});
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => app.close().then(() => process.exit(0)).catch(()=>{console.error('O encerramento terminou com falhas.');process.exitCode=1;}));
   }).catch(async error => {
@@ -292,6 +292,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         if(!parsed.username&&!parsed.password&&!parsed.hash&&parsed.searchParams.size===1&&parsed.origin===`http://127.0.0.1:${expected}`&&parsed.pathname==='/'&&/^[a-f0-9]{64}$/.test(parsed.searchParams.get('launch'))){openBrowser(url,{directory});return;}
       }catch{}
     }
-    const message=error.code === 'EADDRINUSE' ? 'O Go Streams já está aberto ou a porta 4317 está ocupada.' : error.message;
+    const message=error.code === 'EADDRINUSE' ? 'O Streamland já está aberto ou a porta 4317 está ocupada.' : error.message;
     console.error(message);if(process.argv.includes('--open'))await showStartupError(message).catch(()=>{});process.exitCode = 1; });
 }

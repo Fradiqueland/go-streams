@@ -63,7 +63,7 @@ class SingleFileRegression {
         byte[] duplicate=Zip("src/a","a","src/a","a");var duplicateSpec=Spec(duplicate,"src/a","a");
         Reject(()=>{bool r;Prepare(duplicateSpec,duplicate,Path.Combine(root,"duplicate"),out r);},"duplicate ZIP entry accepted");
         string cancelled=Path.Combine(root,"cancelled");
-        Reject(()=>{bool r;SingleFileCache.Ensure(spec,()=>new MemoryStream(archive),cancelled,(phase,done,total)=>{if(phase=="Preparing Go Streams")throw new OperationCanceledException();},out r);},"cancelled extraction completed");
+        Reject(()=>{bool r;SingleFileCache.Ensure(spec,()=>new MemoryStream(archive),cancelled,(phase,done,total)=>{if(phase=="Preparing Streamland")throw new OperationCanceledException();},out r);},"cancelled extraction completed");
         Check(Directory.GetDirectories(cancelled,".stage-*").Length==0,"cancelled extraction was not cleaned up");
         Check(!Directory.Exists(SingleFileCache.CachePath(cancelled,spec)),"cancelled extraction was committed");
         string simultaneous=Path.Combine(root,"concurrent");Exception error=null;string a=null,b=null;

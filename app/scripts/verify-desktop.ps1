@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 $report = Join-Path $reportRoot ('desktop-verification-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '.txt')
 $failed = $false
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json).version
-$runtimePath = Join-Path $projectRoot ('release/GoStreams-' + $version + '/runtime/win32-x64')
+$runtimePath = Join-Path $projectRoot ('release/Streamland-' + $version + '/runtime/win32-x64')
 $bundledNode = Join-Path $runtimePath 'node.exe'
 if (Test-Path -LiteralPath $bundledNode) {
     $nodeCommand = $bundledNode
@@ -48,7 +48,7 @@ function Invoke-NodeCheck([string] $Arguments) {
         return $process.ExitCode
     } finally { $process.Dispose() }
 }
-Write-ReportLine 'Go Streams: verificacao local HTTP/RTMP e interface. Nao transmite para plataformas externas.'
+Write-ReportLine 'Streamland: verificacao local HTTP/RTMP e interface. Nao transmite para plataformas externas.'
 $wireExit = Invoke-NodeCheck '--test --test-reporter=tap --test-concurrency=1 test/optional/wire.test.mjs'
 if ($wireExit -ne 0) { $failed = $true }
 if (-not $env:GO_STREAMS_PLAYWRIGHT_PACKAGE) {

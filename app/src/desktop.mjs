@@ -5,6 +5,8 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {runProcess,AppError} from './core.mjs';
 
+// Storage identity stays stable across the Streamland rename, preserving projects,
+// vault keys and browser sessions when the installed application is upgraded.
 export function defaultDataDirectory(root,{platform=process.platform,home=os.homedir(),localData=process.env.LOCALAPPDATA||path.join(home,'AppData','Local'),installed=fs.existsSync(path.join(root,'.installed'))&&fs.readFileSync(path.join(root,'.installed'),'utf8').trim()==='go-streams-installed-v1'}={}){
   if(platform==='darwin')return path.join(home,'Library','Application Support','Go Streams');
   return platform==='win32'&&installed?path.join(localData,'Go Streams','data'):path.join(root,'data');
@@ -71,6 +73,6 @@ export function openBrowser(url,{platform=process.platform,spawnProcess=spawn,ex
 
 export async function showStartupError(message,{platform=process.platform,execute=runProcess}={}){
   if(platform!=='darwin')return;
-  const script='function run(argv){var app=Application.currentApplication();app.includeStandardAdditions=true;app.displayAlert("Go Streams",{message:argv[0]});}';
+  const script='function run(argv){var app=Application.currentApplication();app.includeStandardAdditions=true;app.displayAlert("Streamland",{message:argv[0]});}';
   await execute('/usr/bin/osascript',['-l','JavaScript','-e',script,'--',String(message).slice(0,2000)],{timeout:5*60000});
 }

@@ -23,9 +23,9 @@ test('English dashboard and schedule statuses do not retain Portuguese labels',(
 test('Sidebar, Settings and Help show the running application version instead of a stale release literal',()=>{
  const h=uiHarness({locale:'en'});h.run("health={version:'7.8.9-review',tools:{}};showHealth();page='settings';draw()");
  assert.equal(h.element('.version').textContent,'v7.8.9-review');
- assert.match(h.element('#content').innerHTML,/Go Streams 7\.8\.9-review/);
- assert.doesNotMatch(h.element('#content').innerHTML,/Go Streams 0\.17\.0/);
- h.run("page='help';draw()");assert.match(h.element('#content').innerHTML,/Go Streams 7\.8\.9-review/);
+ assert.match(h.element('#content').innerHTML,/Streamland 7\.8\.9-review/);
+ assert.doesNotMatch(h.element('#content').innerHTML,/Streamland 0\.17\.0/);
+ h.run("page='help';draw()");assert.match(h.element('#content').innerHTML,/Streamland 7\.8\.9-review/);
 });
 
 
@@ -73,7 +73,7 @@ for(const page of ['settings','help'])test('reconnect redraws '+page+' with newl
  const state={media:[],channels:[],playlists:[],schedules:[],jobs:[],history:[],settings:{}};
  const h=uiHarness({fetch:async url=>({ok:true,json:async()=>url==='/api/health'?{version:'9.1.2',tools:{ffmpeg:{available:true},ffprobe:{available:true}},secureStorage:'Private vault',dataDirectory:'D:/saved-data'}:state})});
  h.run("page='"+page+"';draw()");await h.click('reconnect');
- assert.match(h.element('#content').innerHTML,/Go Streams 9\.1\.2/);
+ assert.match(h.element('#content').innerHTML,/Streamland 9\.1\.2/);
  if(page==='settings')assert.match(h.element('#content').innerHTML,/Private vault/);
 });
 

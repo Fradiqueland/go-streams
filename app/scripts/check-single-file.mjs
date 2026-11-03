@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
-const file=path.join(root,'release','GoStreams-'+version+'-SingleFile.exe');
+const file=path.join(root,'release','Streamland-'+version+'-SingleFile.exe');
 const parent=path.join(root,'.tmp');fs.mkdirSync(parent,{recursive:true});
 const temp=fs.mkdtempSync(path.join(parent,'single-file-smoke-'));
 const cache=path.join(temp,'cache'),data=path.join(temp,'data');
@@ -28,7 +28,7 @@ try{
  const smoke=JSON.parse(check.stdout.trim().split(/\r?\n/).at(-1));
  assert.equal(smoke.PATH,'');assert.equal(smoke.backupRoundTrip,true);
  const report={version,file,bytes:fs.statSync(file).size,files:cold.files,coldVerificationMs:cold.milliseconds,warmVerificationMs:warm.milliseconds,warmCacheReused:true,iconMatchesChosenImage:true,portableSmoke:smoke,desktopWindowTested:false};
- fs.writeFileSync(path.join(root,'release','GoStreams-v'+version+'-SingleFile-verification.json'),JSON.stringify(report,null,2)+'\n');
+ fs.writeFileSync(path.join(root,'release','Streamland-v'+version+'-SingleFile-verification.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify(report));
 }finally{
  assert.ok(temp.startsWith(parent+path.sep));assert.ok(path.basename(temp).startsWith('single-file-smoke-'));

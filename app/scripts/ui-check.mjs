@@ -194,8 +194,8 @@ try {
   await goTo('Definições');
   const protectedChannel=app.store.data.channels[0].secret;
   const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click()]);
-  const exportFailure=await projectDownload.failure();assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'go-streams-project.json');
-  assert.equal(projectExportResponse.status,200);assert.match(projectExportResponse.type,/^application\/json(?:;|$)/);assert.match(projectExportResponse.disposition,/attachment;.*go-streams-project\.json/);
+  const exportFailure=await projectDownload.failure();assert.equal(exportFailure,null,JSON.stringify({exportFailure,response:projectExportResponse,filename:projectDownload.suggestedFilename()}));assert.equal(projectDownload.suggestedFilename(),'streamland-project.json');
+  assert.equal(projectExportResponse.status,200);assert.match(projectExportResponse.type,/^application\/json(?:;|$)/);assert.match(projectExportResponse.disposition,/attachment;.*streamland-project\.json/);
   const projectStream=await projectDownload.createReadStream();assert.ok(projectStream);const projectChunks=[];for await(const chunk of projectStream)projectChunks.push(chunk);
   const projectText=Buffer.concat(projectChunks).toString('utf8'),project=JSON.parse(projectText);assert.equal(project.version,1);assert.ok(Number.isFinite(Date.parse(project.exported)));
   assert.equal(project.channels.find(channel=>channel.id===app.store.data.channels[0].id)?.name,'Canal de ensaio');assert.equal(project.media.length,1);assert.equal(project.playlists[0].mediaIds.length,2);assert.equal(project.schedules.length,2);assert.ok(project.schedules.every(schedule=>schedule.armed===false));

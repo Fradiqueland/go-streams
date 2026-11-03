@@ -23,9 +23,9 @@ function wireNavigation(contents,{base,openExternal,httpUrls=()=>[]}){
 function activeWork(backend){return [...backend.studio.jobs.values()].some(job=>!job.ended)||Boolean(backend.studio.pendingImports.size||backend.studio.pendingPreparations.size||backend.studio.pendingOperations.size||backend.downloads.active.size||backend.recordings?.active.size||backend.recordings?.finalizing.size||backend.feeds?.active.size);}
 async function prepareRendererClose(contents,{base,required=false,unavailable=false}={}){
  const usable=contents&&!contents.isDestroyed()&&!unavailable&&appUrl(contents.getURL(),base);
- if(!usable){if(required)throw Error('The recording interface is unavailable. Keep Go Streams open and retry closing after the recording has finished.');return;}
+ if(!usable){if(required)throw Error('The recording interface is unavailable. Keep Streamland open and retry closing after the recording has finished.');return;}
  const prepared=await contents.executeJavaScript("(async()=>{if(typeof window.GoStreamsPrepareClose!=='function')return false;await window.GoStreamsPrepareClose();return true;})()");
- if(!prepared&&required)throw Error('The recording interface is still starting. Wait for it to become ready before closing Go Streams.');
+ if(!prepared&&required)throw Error('The recording interface is still starting. Wait for it to become ready before closing Streamland.');
 }
 async function cancelRendererClose(contents,{base,unavailable=false}={}){
  if(contents&&!contents.isDestroyed()&&!unavailable&&appUrl(contents.getURL(),base))await contents.executeJavaScript("if(typeof window.GoStreamsCancelClose==='function')window.GoStreamsCancelClose()");

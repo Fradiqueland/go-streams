@@ -1,7 +1,7 @@
 import {windowsTool} from './system-tools.mjs';
 import {spawn} from 'node:child_process';
 
-const ownedGroup=Symbol('GoStreamsOwnedProcessGroup');
+const ownedGroup=Symbol('StreamlandOwnedProcessGroup');
 export function spawnOwnedTool(command,args,options,{spawnProcess=spawn,platform=process.platform}={}){
   const child=spawnProcess(command,args,{...options,detached:platform!=='win32'});
   if(platform!=='win32')child[ownedGroup]=true;

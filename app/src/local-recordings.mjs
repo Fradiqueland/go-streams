@@ -27,7 +27,7 @@ export class LocalRecordings {
  prepareDirectory(value){
   if(!this.validDirectory(value))throw new AppError('Choose an absolute recording folder path.');
   let probe,fd,created=false;
-  try{fs.mkdirSync(value,{recursive:true});const directory=fs.realpathSync(value);if(!fs.statSync(directory).isDirectory())throw Error();probe=path.join(directory,'.gostreams-writecheck-'+crypto.randomUUID());fd=fs.openSync(probe,'wx',0o600);created=true;fs.closeSync(fd);fd=undefined;fs.unlinkSync(probe);created=false;return directory;}
+  try{fs.mkdirSync(value,{recursive:true});const directory=fs.realpathSync(value);if(!fs.statSync(directory).isDirectory())throw Error();probe=path.join(directory,'.streamland-writecheck-'+crypto.randomUUID());fd=fs.openSync(probe,'wx',0o600);created=true;fs.closeSync(fd);fd=undefined;fs.unlinkSync(probe);created=false;return directory;}
   catch{throw new AppError('The recording folder is unavailable or cannot be written. Choose another folder.',403);}
   finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}if(created)try{fs.unlinkSync(probe);}catch{}}
  }

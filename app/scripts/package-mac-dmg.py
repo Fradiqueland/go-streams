@@ -10,12 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--writer', type=Path, default=ROOT / '.tmp/mac-dmg-toolchain/gostreams-dmg.exe')
+    parser.add_argument('--writer', type=Path, default=ROOT / '.tmp/mac-dmg-toolchain/streamland-dmg.exe')
     args = parser.parse_args()
     version = json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['version']
-    source = ROOT / 'release' / f'GoStreams-v{version}-Mac.zip'
-    output = ROOT / 'release' / f'GoStreams-v{version}-Mac.dmg'
-    report = ROOT / 'release' / f'GoStreams-v{version}-Mac-dmg-verification.json'
+    source = ROOT / 'release' / f'Streamland-v{version}-Mac.zip'
+    output = ROOT / 'release' / f'Streamland-v{version}-Mac.dmg'
+    report = ROOT / 'release' / f'Streamland-v{version}-Mac-dmg-verification.json'
     if output.exists():
         raise FileExistsError(f'Preserve the existing image: {output}')
     if not args.writer.is_file() or not source.is_file():
@@ -28,12 +28,12 @@ def main():
     candidate = scratch / output.name
     try:
         payload = scratch / 'payload.zip'
-        prefix = 'GoStreams-Mac/'
-        app_prefix = prefix + 'GoStreams.app/'
+        prefix = 'Streamland-Mac/'
+        app_prefix = prefix + 'Streamland.app/'
         with zipfile.ZipFile(source) as incoming, zipfile.ZipFile(payload, 'w', zipfile.ZIP_DEFLATED) as outgoing:
             members = [item for item in incoming.infolist() if item.filename.startswith(app_prefix)]
             if not members:
-                raise ValueError('The source archive contains no GoStreams.app')
+                raise ValueError('The source archive contains no Streamland.app')
             for item in members:
                 name = item.filename[len(prefix):]
                 if any(part in ('.', '..') for part in Path(name).parts) or '\\' in name or ':' in name:

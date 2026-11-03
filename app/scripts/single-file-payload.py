@@ -4,7 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile,ZipInfo,ZIP_DEFLATED
 root=Path(__file__).resolve().parents[1]
 version=json.loads((root/'package.json').read_text('utf8'))['version']
-release=root/'release'/('GoStreams-'+version)
+release=root/'release'/('Streamland-'+version)
 target=Path(sys.argv[1]).resolve();target.mkdir(parents=True,exist_ok=True)
 files=[]
 for folder in ['src','public','runtime','vendor']:

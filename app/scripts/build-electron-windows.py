@@ -36,13 +36,13 @@ def main():
     args=parser.parse_args();toolchain=json.loads((ROOT/'electron/toolchain.json').read_text('utf-8'));version=json.loads((ROOT/'package.json').read_text('utf-8'))['version']
     if digest(args.electron_zip)!=toolchain['sha256']:raise ValueError('Electron archive differs from the official SHA-256 digest')
     work=ROOT/'.tmp'/('electron-build-'+version+'-'+uuid.uuid4().hex[:8]);work.mkdir(parents=True)
-    stage=work/'GoStreams';stage.mkdir()
+    stage=work/'Streamland';stage.mkdir()
     with ZipFile(args.electron_zip) as archive:
         for entry in archive.infolist():
             file=(stage/entry.filename).resolve()
             if not file.is_relative_to(stage.resolve()) or '\\' in entry.filename:raise ValueError('Unsafe Electron archive path')
         archive.extractall(stage)
-    (stage/'electron.exe').rename(stage/'GoStreams.exe')
+    (stage/'electron.exe').rename(stage/'Streamland.exe')
     default=stage/'resources/default_app.asar'
     if default.exists():default.unlink()
     spec=importlib.util.spec_from_file_location('windows_builder',ROOT/'scripts/build-windows-installer.py');builder=importlib.util.module_from_spec(spec);spec.loader.exec_module(builder)
@@ -60,7 +60,7 @@ def main():
     if (ROOT/'STREAMYARD-FEATURE-SCOPE.md').is_file():shutil.copy2(ROOT/'STREAMYARD-FEATURE-SCOPE.md',application/'STREAMYARD-FEATURE-SCOPE.md')
     (application/'.installed').write_text('go-streams-installed-v1\n','ascii')
     (stage/'.gostreams-electron-install').write_bytes(b'net.antoniofradique.gostreams\r\n')
-    run([args.rcedit,stage/'GoStreams.exe','--set-icon',ROOT/'public/icon.ico','--set-version-string','ProductName','Go Streams','--set-version-string','FileDescription','Go Streams','--set-version-string','CompanyName','Antonio Fradique','--set-file-version',version+'.0','--set-product-version',version+'.0'])
+    run([args.rcedit,stage/'Streamland.exe','--set-icon',ROOT/'public/icon.ico','--set-version-string','ProductName','Streamland','--set-version-string','FileDescription','Streamland','--set-version-string','CompanyName','Antonio Fradique','--set-file-version',version+'.0','--set-product-version',version+'.0'])
     # Runtime package integrity is retained in the build report; no state is shipped.
     files=[]
     for file in sorted(stage.rglob('*')):
@@ -68,7 +68,7 @@ def main():
         relative=file.relative_to(stage).as_posix()
         if any(p in ('data','electron-session','desktop-browser','.tmp','node_modules') for p in file.relative_to(stage).parts):raise ValueError('Private state in application package')
         files.append({'path':relative,'bytes':file.stat().st_size,'sha256':digest(file)})
-    output=ROOT/'release'/('GoStreams-'+version+'-Electron-Setup.exe')
+    output=ROOT/'release'/('Streamland-'+version+'-Electron-Setup.exe')
     if output.exists() and not args.replace:raise FileExistsError('Existing installer preserved; pass --replace to rebuild')
     candidate=work/output.name
     print(json.dumps({'phase':'compressing','electron':toolchain['electronVersion'],'files':len(files),'application':str(stage)}),flush=True)
@@ -76,7 +76,7 @@ def main():
     output.parent.mkdir(parents=True,exist_ok=True)
     os.replace(candidate,output)
     report={'version':version,'electronVersion':toolchain['electronVersion'],'electronArchiveSHA256':toolchain['sha256'],'installer':str(output),'installerSHA256':digest(output),'installerBytes':output.stat().st_size,'application':str(stage),'work':str(work),'files':files,'dataPath':'%LOCALAPPDATA%\\Go Streams\\data','electronSessionPath':'%LOCALAPPDATA%\\Go Streams\\data\\electron-session','appId':toolchain['appId'],'userDataIncluded':False,'codeSigned':False,'nativeInstallationTested':False,'nsisSHA256':digest(args.nsis),'rceditSHA256':digest(args.rcedit)}
-    (ROOT/'release'/('GoStreams-'+version+'-Electron-build.json')).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    (ROOT/'release'/('Streamland-'+version+'-Electron-build.json')).write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({k:report[k] for k in ['installer','installerBytes','installerSHA256','application']}),flush=True)
 
 if __name__=='__main__':main()

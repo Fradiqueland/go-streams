@@ -1,3 +1,4 @@
+import {APP_VERSION} from './version.mjs';
 import {ytdlpPath,mediaToolPath,downloaderEnvironment} from './tool-paths.mjs';
 import dns from 'node:dns/promises';
 import https from 'node:https';
@@ -106,7 +107,7 @@ export async function openRemote(value,{range,signal,headers,lookup=dns.lookup,r
       const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);};
       const finish=(error,stream)=>{if(settled){stream?.destroy();return;}settled=true;cleanup();if(error)reject(error);else resolve(stream);};
       const abort=()=>{const error=new AppError('Remote source cancelled.');finish(error);req.destroy(error);};
-      const req=request(url,{method:'GET',agent:false,signal,headers:{'user-agent':'GoStreams/0.12',...mediaHeaders(headers),'accept-encoding':'identity',...(range?{Range:range}:{})},lookup:(_host,options,cb)=>options.all?cb(null,[{address,family:4}]):cb(null,address,4)},stream=>finish(null,stream));
+      const req=request(url,{method:'GET',agent:false,signal,headers:{'user-agent':`Streamland/${APP_VERSION}`,...mediaHeaders(headers),'accept-encoding':'identity',...(range?{Range:range}:{})},lookup:(_host,options,cb)=>options.all?cb(null,[{address,family:4}]):cb(null,address,4)},stream=>finish(null,stream));
       req.setTimeout(timeout,()=>req.destroy(new Error('Remote source timed out.')));
       req.once('error',error=>finish(error));
       if(!settled){signal?.addEventListener('abort',abort,{once:true});timer=setTimeout(()=>{const error=new AppError('Remote source timed out.');finish(error);req.destroy(error);},timeout);}

@@ -140,7 +140,7 @@ export class ProductionTools {
   }
   this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
-  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="GoStreams-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
+  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="Streamland-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
   this.notifyRecordingState();
  }
  async startRecording(){

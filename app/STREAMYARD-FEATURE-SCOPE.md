@@ -1,10 +1,10 @@
-# Go Streams live studio scope - 1.1.6
+# Streamland live studio scope - 1.2.0
 
 The scope is functional inspiration from StreamYard, implemented independently. It is not a claim of complete product parity. Existing prerecorded video features remain supported. The agreed scope is features feasible in the current Windows/Mac desktop architecture. **Cloud recording and cloud storage are explicitly excluded.** No public guest/webinar server is deployed by this change.
 
 ## Included
 
-| Area | Go Streams implementation | Verification / limits |
+| Area | Streamland implementation | Verification / limits |
 | --- | --- | --- |
 | Dashboard and help | Separate live/prepared-video entry points, grouped menu, expandable optional controls and information icons beside relevant system controls | Click/touch/keyboard activation only; Escape dismisses help. Navigation, brand, website and social links have no adjacent information icon |
 | Multistream | One captured source to multiple configured RTMP/RTMPS destinations | Independent workers; shares channel reservations and concurrency limits with prerecorded streams |
@@ -39,7 +39,7 @@ The scope is functional inspiration from StreamYard, implemented independently. 
 
 ## Chat account setup
 
-Chat login does not require sharing a password with Go Streams. Credentials stay encrypted in the user data directory; messages are retained only in memory (up to 500). Chats start disconnected after application restart. Chat account credentials, local recordings and saved browser scenes are not embedded in project/backup exports; preserve the user data/profile folders and copy recording files separately.
+Chat login does not require sharing a password with Streamland. Credentials stay encrypted in the user data directory; messages are retained only in memory (up to 500). Chats start disconnected after application restart. Chat account credentials, local recordings and saved browser scenes are not embedded in project/backup exports; preserve the user data/profile folders and copy recording files separately.
 
 ### YouTube
 
@@ -47,7 +47,7 @@ Chat login does not require sharing a password with Go Streams. Credentials stay
 2. Configure the consent screen, allowed/test users and any required Google verification for the intended distribution.
 3. In **Unified chat → Accounts → OAuth application setup**, save the client ID and the desktop client secret supplied by Google, if required for that client.
 4. Choose **Sign in** and open the authorization link in your system browser. The app uses a loopback redirect, state validation and PKCE.
-5. Connect the corresponding Go Streams destination to the active YouTube video's URL or ID. The account needs permission to read/post to that chat.
+5. Connect the corresponding Streamland destination to the active YouTube video's URL or ID. The account needs permission to read/post to that chat.
 
 The implementation respects `pollingIntervalMillis`, uses the returned page token, and reports authorization, quota and rate-limit errors. Polling consumes YouTube API quota; a connected status is not a guarantee of unlimited usage.
 
@@ -58,7 +58,7 @@ The implementation respects `pollingIntervalMillis`, uses the returned page toke
 3. Grant `user:read:chat` and `user:write:chat` and connect the Twitch channel name/URL. The current adapter uses one EventSub WebSocket per destination; Twitch limits a client-ID/user pair to three enabled WebSocket connections. A fourth room reports a provider error; socket pooling is outside this patch.
 4. Messages arrive through EventSub WebSocket; replies use the official Send Chat Message API. Public-device refresh tokens are rotated and refresh requests are serialized. Twitch authorizations are validated on application startup and hourly, including receive-only sessions. Confirmed revocation closes that account's chats; temporary provider failures are retried without discarding a valid authorization.
 
-Twitch Shared Chat sessions may relay user-token replies to linked channels. This token type cannot use `for_source_only`; Go Streams sends one request to the selected broadcaster and Twitch determines its distribution.
+Twitch Shared Chat sessions may relay user-token replies to linked channels. This token type cannot use `for_source_only`; Streamland sends one request to the selected broadcaster and Twitch determines its distribution.
 
 ## Standalone runtime
 

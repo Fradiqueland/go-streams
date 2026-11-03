@@ -1,8 +1,14 @@
-# Go Streams 1.1.6
+# Streamland 1.2.0
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. Pacotes Windows e macOS verificados em CI; o launcher Mac foi executado em Apple Silicon. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Novo nome Streamland e compatibilidade (1.2.0)
+
+A aplicação passa a chamar-se **Streamland** na interface, nos instaladores, nos atalhos, nos pacotes e nos novos ficheiros exportados. Atualizar a instalação existente conserva projetos, definições, canais, playlists e sessões guardadas da aplicação. Encerre a aplicação antes de atualizar; as transmissões em curso não são retomadas automaticamente.
+
+As pastas de dados e dos perfis, bem como as identidades internas da instalação, mantêm-se para reutilizar os dados existentes: `%LOCALAPPDATA%\Go Streams\data` no Windows e `~/Library/Application Support/Go Streams` no Mac. As variáveis `GO_STREAMS_*`, os formatos das cópias de segurança e as pastas portáteis com o nome anterior continuam compatíveis. Estes nomes internos existem apenas para preservar a continuidade dos dados.
 
 ## Finalização das gravações e persistência das cenas (1.1.6)
 
@@ -78,7 +84,7 @@ Requer permissões de câmara/microfone/ecrã e MediaRecorder WebM: Electron inc
 
 Verificação: `npm run test:live` e `npm run test:live:browser` (este último utiliza câmara/microfone sintéticos). A validação de dispositivos reais e dos seletores nativos de ecrã é manual.
 
-## Edição Electron 0.17.0
+## Edição Electron Windows
 
 A edição Electron tem janela e navegador incorporados. O instalador `.exe` cria atalhos no ambiente de trabalho e no menu Iniciar. Os dados mantêm-se em `%LOCALAPPDATA%\Go Streams\data`, separados dos ficheiros instalados, e o perfil Electron fica em `data\electron-session`. Atualizações e desinstalação preservam essa pasta.
 
@@ -86,25 +92,25 @@ Projetos e credenciais existentes são reutilizados. As preferências locais do 
 
 Ao fechar a janela Electron, o motor é encerrado. Se houver transmissões ou operações ativas, a aplicação pede confirmação antes de as parar. Os links externos HTTPS abrem no navegador predefinido. A janela não expõe Node.js à interface e mantém o sandbox e o isolamento de contexto.
 
-## Instalador Windows 0.16.0
+## Instalador Windows (MSI)
 
-Abra `GoStreams-0.16.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Go Streams`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
+Abra `Streamland-1.2.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Streamland`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
 
-Para atualizar, encerre o Go Streams e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
+Para atualizar, encerre o Streamland e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
 
 Na primeira instalação, os dados já existentes na pasta normal são reutilizados. Se o portable guardava os dados junto do executável, o instalador permite indicar essa pasta (a que contém `project.json`). A migração copia os conteúdos sem apagar a origem e nunca substitui dados de uma instalação já utilizada. Feche a versão portable antes de copiar o perfil do navegador.
 
 O código de atualização usa uma identidade MSI fixa entre versões e recusa versões anteriores. Os pacotes assinados do canal de atualização podem agora ser `.msi`, mantendo essa extensão após descarregar. A instalação é iniciada pelo utilizador depois de fechar a aplicação.
 
-O MSI foi gerado e o conteúdo pode ser verificado com `python scripts/verify-windows-installer.py release/GoStreams-0.16.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
+Depois de gerar o MSI, verifique o conteúdo com `python scripts/verify-windows-installer.py release/Streamland-1.2.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
 
 ## Abrir e atualizar
 
-Abra `GoStreams/GoStreams.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/GoStreams-0.15.5/GoStreams.exe`. Encerre a versão anterior pelo botão **Encerrar Go Streams** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
+Abra `Streamland/Streamland.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/Streamland-1.2.0/Streamland.exe`. Encerre a versão anterior pelo botão **Encerrar Streamland** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
 
 O pacote completo inclui Node.js, FFmpeg, FFprobe e yt-dlp. O utilizador final não precisa de instalar estas ferramentas, npm ou Python. Extraia a pasta completa e mantenha `runtime` e `vendor` junto da aplicação. Deixe os caminhos das ferramentas vazios nas Definições para usar as cópias incluídas; os caminhos personalizados continuam a ter prioridade. Windows utiliza Edge/Chrome e pode abrir no navegador predefinido. O launcher Windows usa o .NET Framework do Windows. Não inclui um navegador próprio.
 
-Ao substituir uma instalação, preserve a pasta `data` e faça uma cópia antes da atualização. O iniciador de uma pasta `GoStreams-VERSÃO` sem dados reutiliza a pasta de dados de uma versão irmã existente, preferindo a mais recente. Não copia nem apaga os dados anteriores. Por predefinição, os agendamentos ficam desarmados ao reabrir. Em Definições pode autorizar a manutenção dos agendamentos já ativos entre sessões. Isto não ativa os pausados nem reinicia emissões interrompidas; o motor precisa de estar aberto.
+Ao substituir uma instalação, preserve a pasta `data` e faça uma cópia antes da atualização. O iniciador de uma pasta `Streamland-VERSÃO` sem dados reutiliza a pasta de dados de uma versão irmã existente, preferindo a mais recente. Não copia nem apaga os dados anteriores. Por predefinição, os agendamentos ficam desarmados ao reabrir. Em Definições pode autorizar a manutenção dos agendamentos já ativos entre sessões. Isto não ativa os pausados nem reinicia emissões interrompidas; o motor precisa de estar aberto.
 
 ## Funções
 
@@ -198,7 +204,7 @@ Validação local: 168 testes aprovados, sem falhas, e compilação Windows conc
 
 - Transporte SMTP comum a Windows e Mac: STARTTLS e TLS direto, AUTH PLAIN/LOGIN apenas na ligação cifrada, certificados e nome do servidor verificados, mensagens UTF-8, cancelamento e prazo máximo. Os testes incluem dois handshakes TLS reais sobre fluxos em memória, sem portas de rede nem envio externo, e regressões de certificado inválido, credenciais recusadas, respostas fragmentadas e injeção.
 - Menu lateral com botão para recolher/expandir, estado acessível e preferência local. Mantém todos os destinos e o comportamento compacto automático nos ecrãs pequenos. O controlo e a nova seleção de segurança SMTP estão incluídos no script de navegador.
-- Pacote `GoStreams-Mac/GoStreams.app`, gerado a partir do mesmo código. Deteta Node 24+, usa seletor nativo de ficheiros e guarda dados em `~/Library/Application Support/Go Streams`. Reabrir a aplicação reutiliza a sessão existente. Downloads usam grupos de processos próprios no Mac, para cancelar também os subprocessos.
+- Pacote `Streamland-Mac/Streamland.app`, gerado a partir do mesmo código. Deteta Node 24+, usa seletor nativo de ficheiros e guarda dados em `~/Library/Application Support/Go Streams`. Reabrir a aplicação reutiliza a sessão existente. Downloads usam grupos de processos próprios no Mac, para cancelar também os subprocessos.
 - Atualizações assinadas verificam a plataforma de destino; o editor pode gerar manifestos `win32` ou `darwin`. Não foi publicado um servidor de atualizações.
 
 O pacote Mac ainda não foi executado num Mac, nem assinado/notarizado pela Apple. É uma entrega experimental com verificações de estrutura e testes dos caminhos específicos através de dependências controladas; não equivale a uma certificação de compatibilidade. As dependências não estão incorporadas. As capturas novas foram lidas por extração de texto, mas a transferência dos píxeis falhou; não foi demonstrada igualdade visual com o Livecaster.
@@ -247,7 +253,7 @@ O REA confirmou os métodos `GetGoLiveDetailsByChannelId`, `UpdateAutoRestartOnE
 | Atualização de fila e repetição | Implementadas com reabertura de ligação; continuidade idêntica ao original não demonstrada |
 | Botões, formulários, pesquisas, paginação e ligações | Percursos principais testados com ações reais e API; 48 verificações de navegador aprovadas na 0.7.0; novo formulário da 0.8.0 testado por callbacks/API, navegador por repetir |
 | YouTube, SMTP e destinos RTMP externos | Implementados; integração externa real por validar |
-| Design e fluxo completo na janela original | Dashboard Go Streams inspecionado em três larguras; igualdade visual com o original não demonstrada |
+| Design e fluxo completo na janela original | Dashboard Streamland inspecionado em três larguras; igualdade visual com o original não demonstrada |
 | Atualizações | Verificação e download assinados, separados por plataforma; distribuição não configurada e instalação manual |
 | macOS | Pacote experimental gerado; arranque, seletor, SMTP e cancelamento adaptados; execução num Mac por validar |
 | Conta, licença, loja, suporte e serviços privados do fornecedor | Não replicados na aplicação independente |
@@ -410,25 +416,27 @@ Durante a validação do restauro, a interface pode consultar o estado, mas as a
 
 ### 0.15.3 - Arranque e janela Windows
 
-O iniciador Windows espera pela resposta autenticada do motor antes de abrir a interface, usa um perfil de navegador exclusivo e volta à mesma janela nas aberturas seguintes. Encerrar Go Streams fecha também a janela criada pelo iniciador, sem terminar o navegador pessoal. O ficheiro CloseGoStreams.cmd permite pedir o encerramento desta sessão, com confirmação, mesmo quando a interface não responde. O perfil desktop-browser e desktop-startup.log ficam na pasta de dados. Não são exportados nos pacotes. A página de arranque inclui uma mensagem visível e uma opção para tentar novamente se os módulos não carregarem.
+O iniciador Windows espera pela resposta autenticada do motor antes de abrir a interface, usa um perfil de navegador exclusivo e volta à mesma janela nas aberturas seguintes. Encerrar Streamland fecha também a janela criada pelo iniciador, sem terminar o navegador pessoal. O ficheiro CloseStreamland.cmd permite pedir o encerramento desta sessão, com confirmação, mesmo quando a interface não responde. O perfil desktop-browser e desktop-startup.log ficam na pasta de dados. Não são exportados nos pacotes. A página de arranque inclui uma mensagem visível e uma opção para tentar novamente se os módulos não carregarem.
 
 
 ### 0.15.4 - Janela adicional do Edge no arranque
 
-O arranque Windows seleciona explicitamente o perfil Default do navegador exclusivo do Go Streams, inicializa o marcador First Run sem reescrever preferências e suprime a recuperação de separadores e o início de sessão implícito nesse processo. As opções são iguais no iniciador nativo e no arranque por Node. Não são alteradas políticas ou preferências do Edge pessoal. A abertura visual num Windows normal continua a exigir validação fora do ambiente de execução restrito.
+O arranque Windows seleciona explicitamente o perfil Default do navegador exclusivo do Streamland, inicializa o marcador First Run sem reescrever preferências e suprime a recuperação de separadores e o início de sessão implícito nesse processo. As opções são iguais no iniciador nativo e no arranque por Node. Não são alteradas políticas ou preferências do Edge pessoal. A abertura visual num Windows normal continua a exigir validação fora do ambiente de execução restrito.
 
 
 ### 0.15.5 - Windows num ficheiro único
 
-O ficheiro GoStreams-0.15.5-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
+O ficheiro Streamland-1.2.0-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
 
-As definições ficam em %LOCALAPPDATA%/Go Streams/data. Se o EXE estiver junto a um portable anterior com data/project.json ou GoStreams/data/project.json, reutiliza esses dados. Uma pasta GoStreams-data ao lado do EXE permite escolher dados portáteis; GO_STREAMS_DATA tem prioridade. Os vídeos locais continuam referenciados no local original. A cópia do EXE para outro computador não transporta os dados locais nem as chaves DPAPI; use exportação/importação encriptada e leve os vídeos necessários.
+As definições ficam em %LOCALAPPDATA%/Go Streams/data. Se o EXE estiver junto a um portable anterior com data/project.json ou Streamland/data/project.json, reutiliza esses dados (também reconhece a pasta anterior GoStreams/data/project.json). Uma pasta Streamland-data ao lado do EXE permite escolher dados portáteis (GoStreams-data continua compatível); GO_STREAMS_DATA tem prioridade. Os vídeos locais continuam referenciados no local original. A cópia do EXE para outro computador não transporta os dados locais nem as chaves DPAPI; use exportação/importação encriptada e leve os vídeos necessários.
 
 Para reconstruir: node scripts/build.mjs --platform=win32, seguido de node scripts/build-single-file.mjs. O modo --verify verifica/extrai sem abrir a interface nem iniciar o motor; GO_STREAMS_CACHE pode apontar para uma pasta de teste. --close pede o encerramento com confirmação. O arranque visual fora do ambiente restrito continua pendente.
 
 
-## Mac 0.15.5: uma aplicacao clicavel
+## Mac: uma aplicação clicável
 
-Mac-Portable/GoStreams.app inclui o iniciador universal Intel/Apple Silicon, Node.js, FFmpeg, FFprobe, yt-dlp e o icone escolhido. Usa o browser disponivel no Mac (incluindo o browser predefinido do sistema); nao necessita de instalar runtimes. Requer macOS 13.5 ou posterior. As definicoes permanecem em ~/Library/Application Support/Go Streams, fora do pacote da aplicacao.
+Mac-Portable/Streamland.app inclui o iniciador universal Intel/Apple Silicon, Node.js, FFmpeg, FFprobe, yt-dlp e o icone escolhido. Usa o browser disponivel no Mac (incluindo o browser predefinido do sistema); nao necessita de instalar runtimes. Requer macOS 13.5 ou posterior. As definicoes permanecem em ~/Library/Application Support/Go Streams, fora do pacote da aplicacao.
 
-Para preparar: node scripts/build.mjs --platform=darwin; depois python scripts/package-mac-portable.py --destination release/GoStreams-0.15.5-Mac-Portable/Mac-Portable. O ZIP contem a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportacao tem de preservar/restaurar os modos do manifesto. O pacote completo e uma unica app no Finder; nao e um binario isolado que permita remover os recursos internos. A execucao real num Mac continua por testar, sem assinatura Developer ID ou notarizacao.
+Na máquina de desenvolvimento, prepare primeiro o iniciador universal com `node scripts/build-mac-launcher.mjs`; exige Go (1.27.3 em CI). `STREAMLAND_GO` permite indicar o executável Go; a variável anterior `GO_STREAMS_GO` continua aceite. Depois execute `node scripts/prepare-portable.mjs --platform=darwin` e `python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable`. O utilizador final não precisa de Go nem de ferramentas de desenvolvimento.
+
+O ZIP contém a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportação tem de preservar/restaurar os modos do manifesto. O pacote completo é uma única aplicação no Finder; os recursos internos fazem parte da aplicação. A execução nativa é verificada em Apple Silicon no CI; a execução em hardware Intel, a assinatura Developer ID e a notarização não estão certificadas.

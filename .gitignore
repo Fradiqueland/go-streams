@@ -20,6 +20,9 @@
 **/vault.dpapi
 **/*.backup
 /app/release/
+# Compile the universal branded launcher from its reviewed source during Mac builds.
+/app/vendor/mac-launcher/Streamland
+/app/vendor/mac-launcher/manifest.json
 # Downloadable runtime binaries and archives; keep pinned manifests and notices.
 /app/vendor/runtime/*
 !/app/vendor/runtime/downloads.json

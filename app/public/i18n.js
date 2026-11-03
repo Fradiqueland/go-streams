@@ -17,7 +17,7 @@ export function tr(source){
 }
 export function applyLocale(doc=globalThis.document){
  if(!doc)return;
- doc.title=tr('Go Streams — Estúdio local');const root=doc.documentElement;if(root){root.lang=localeTag();root.dir=current==='ar'?'rtl':'ltr';}
+ doc.title=tr('Streamland — Estúdio local');const root=doc.documentElement;if(root){root.lang=localeTag();root.dir=current==='ar'?'rtl':'ltr';}
  for(const el of doc.querySelectorAll('[data-i18n]'))el.textContent=tr(el.dataset.i18n);
  for(const el of doc.querySelectorAll('[data-i18n-label]'))el.setAttribute('aria-label',tr(el.dataset.i18nLabel));
  const select=doc.getElementById('language-select');if(select){select.innerHTML=languages.map(([code,label])=>`<option value="${code}">${label}</option>`).join('');select.value=current;select.setAttribute('aria-label',tr('Idioma'));}

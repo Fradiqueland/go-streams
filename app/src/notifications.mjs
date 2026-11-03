@@ -37,13 +37,13 @@ export class Notifications {
   enqueue(job,status) {
     if(this.closing||job.preview||!this.store.data.notifications?.enabled||this.pending.length>=50)return;
     const labels={running:'Em direto',paused:'Pausada',stopped:'Parada',completed:'Concluída',error:'Erro',retrying:'A recuperar a ligação'};
-    this.pending.push({subject:`Go Streams: ${labels[status]||status} — ${job.channelName}`.slice(0,200),body:`Canal: ${job.channelName}\nColeção: ${job.playlistName}\nEstado: ${labels[status]||status}\nInstante UTC: ${new Date().toISOString()}\nTempo reproduzido: ${Math.floor(job.elapsed)} segundos\n${job.error||''}`});
+    this.pending.push({subject:`Streamland: ${labels[status]||status} — ${job.channelName}`.slice(0,200),body:`Canal: ${job.channelName}\nColeção: ${job.playlistName}\nEstado: ${labels[status]||status}\nInstante UTC: ${new Date().toISOString()}\nTempo reproduzido: ${Math.floor(job.elapsed)} segundos\n${job.error||''}`});
     this.drain();
   }
   enqueueSchedule(details) {
     if(this.closing || !this.store.data.notifications?.enabled || this.pending.length >= 50) return;
     const label=details.result==='missed'?'Horário perdido':'Falha de agendamento';
-    this.pending.push({subject:`Go Streams: ${label} - ${details.playlist}`.slice(0,200),body:`${label}\nConteúdo: ${details.playlist}\nCanais: ${details.channel}\nHorário UTC: ${details.at}\nFuso: ${details.timeZone}\n${details.detail || ''}`});
+    this.pending.push({subject:`Streamland: ${label} - ${details.playlist}`.slice(0,200),body:`${label}\nConteúdo: ${details.playlist}\nCanais: ${details.channel}\nHorário UTC: ${details.at}\nFuso: ${details.timeZone}\n${details.detail || ''}`});
     this.drain();
   }
   drain() {
@@ -71,7 +71,7 @@ export class Notifications {
   async test(confirmed) {
     if(confirmed!==true)throw new AppError('Confirme o envio do email de teste.');
     if(this.closing||this.testing)throw new AppError('Aguarde o envio em curso.',409);
-    this.testing=this.deliver({subject:'Go Streams — teste de notificações',body:'As notificações do Go Streams estão configuradas.'});
+    this.testing=this.deliver({subject:'Streamland — teste de notificações',body:'As notificações do Streamland estão configuradas.'});
     try{return await this.testing;}finally{this.testing=null;}
   }
   async shutdown(){this.closing=true;this.pending=[];this.controller.abort();await Promise.allSettled([this.processing,this.testing]);}

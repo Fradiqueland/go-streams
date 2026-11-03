@@ -15,7 +15,7 @@ const version=JSON.parse(fs.readFileSync(path.join(bundle,'Contents/Resources/ap
 const server=net.createServer();
 await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
 const port=server.address().port;await new Promise(resolve=>server.close(resolve));
-const child=spawn(path.join(bundle,'Contents/MacOS/GoStreams'),[],{env:{...process.env,GO_STREAMS_DATA:data,GO_STREAMS_PORT:String(port)},stdio:'ignore'});
+const child=spawn(path.join(bundle,'Contents/MacOS/Streamland'),[],{env:{...process.env,GO_STREAMS_DATA:data,GO_STREAMS_PORT:String(port)},stdio:'ignore'});
 let launchError;child.once('error',error=>{launchError=error;});
 let base,cookie;
 const report={version,platform:process.platform,architecture:process.arch,passed:false,visualTranslationPromptVerified:false,windowForegroundVerified:false};
@@ -49,6 +49,6 @@ try{
 finally{
  if(child.exitCode===null&&!launchError)child.kill('SIGTERM');
  fs.mkdirSync('release',{recursive:true});
- fs.writeFileSync(`release/GoStreams-${version}-Mac-runtime-verification.json`,JSON.stringify(report,null,2)+'\n');
+ fs.writeFileSync(`release/Streamland-${version}-Mac-runtime-verification.json`,JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify(report));
 }

@@ -12,6 +12,7 @@ const stat=fs.statSync(archive);if(stat.size>500*1024*1024)throw Error('Package 
 const hash=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(archive))hash.update(chunk);
 const extension=path.extname(archive).slice(1).toLowerCase();
 const format=releaseFormat({url,format:extension==='exe'?'nsis':extension},platform);
+// Keep the signed product identity so installed Go Streams versions accept this upgrade.
 const payload=Buffer.from(JSON.stringify({product:'go-streams',platform,version,url:httpsUrl(url),format,sha256:hash.digest('hex'),bytes:stat.size}));
 fs.writeFileSync(output,JSON.stringify({payload:payload.toString('base64'),signature:crypto.sign(null,payload,key).toString('base64')},null,2),{flag:'wx'});
 console.log('Signed release manifest created. The private key was not copied.');

@@ -3,6 +3,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 
 function userPaths(localData,override){
+ // Keep the established private data/profile path across product renames.
  const state=path.join(path.resolve(localData),'Go Streams');
  return {state,data:override?path.resolve(override):path.join(state,'data'),host:path.join(state,'electron-host')};
 }
@@ -76,7 +77,7 @@ function migratePreferences(data,options){
 }
 function discoverLegacy(source){
  if(!source||!fs.existsSync(source))return null;
- const folders=['GoStreams-data','data',path.join('GoStreams','data'),...fs.readdirSync(source,{withFileTypes:true}).filter(e=>e.isDirectory()&&e.name.startsWith('GoStreams')).map(e=>path.join(e.name,'data'))];
+ const folders=['Streamland-data','GoStreams-data','data',path.join('Streamland','data'),path.join('GoStreams','data'),...fs.readdirSync(source,{withFileTypes:true}).filter(e=>e.isDirectory()&&/^(Streamland|GoStreams)/.test(e.name)).map(e=>path.join(e.name,'data'))];
  const candidates=[...new Set(folders.map(p=>path.resolve(source,p)).filter(p=>fs.existsSync(path.join(p,'project.json'))))];
  if(candidates.length>1)throw Error('More than one portable data folder was found. Select the intended folder in setup.');
  return candidates[0]||null;
