@@ -58,8 +58,18 @@ try {
   }
   async function infoFor(control){
     const info=control.locator('xpath=..').locator(':scope > .control-info');
-    await info.waitFor({state:'attached'});
-    assert.ok(await control.evaluate(el=>{const icon=el.parentElement?.querySelector(':scope > .control-info');return Boolean(el.dataset.helpId&&icon?.dataset.helpFor===el.dataset.helpId);}), 'control has a contextual information association');
+    let associated=null;
+    for(let attempt=0;attempt<3;attempt++){
+      await info.waitFor({state:'attached'});
+      associated=await control.evaluate(el=>{
+        if(!el.isConnected)return null;
+        const icon=el.parentElement?.querySelector(':scope > .control-info');
+        return Boolean(el.dataset.helpId&&icon?.dataset.helpFor===el.dataset.helpId);
+      });
+      if(associated!==null)break;
+      progress('context-help-detached',{attempt:attempt+1});
+    }
+    assert.ok(associated, 'control has a contextual information association');
     assert.equal(await info.count(),1);assert.equal(await info.getAttribute('role'),'button');assert.equal(await info.getAttribute('tabindex'),'0');
     assert.equal(await info.getAttribute('aria-controls'),'control-help');assert.ok(await info.getAttribute('aria-label'));
     return info;
