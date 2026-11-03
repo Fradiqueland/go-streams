@@ -214,7 +214,8 @@ try {
   await goTo('Definições');
   const protectedChannel=app.store.data.channels[0].secret;
   progress('project-export',{event:'start'});
-  const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click()]);
+  // The export produces a download, not a document navigation; await its event and completed file below.
+  const [projectDownload]=await Promise.all([page.waitForEvent('download'),page.locator('a[href="/api/export"]').click({noWaitAfter:true})]);
   progress('project-export-download',{filename:projectDownload.suggestedFilename()});
   let projectStream;const projectChunks=[];
   try {
