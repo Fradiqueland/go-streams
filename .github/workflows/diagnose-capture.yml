@@ -50,13 +50,13 @@ jobs:
               const win=new BrowserWindow({show:true,width:640,height:480,webPreferences:{session:ses,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}});
               const wrapped={
                 setPermissionCheckHandler:fn=>ses.setPermissionCheckHandler((...args)=>{const allowed=fn(...args);record.events.push({kind:'check',permission:args[1],origin:args[2],allowed});return allowed;}),
-                setPermissionRequestHandler:fn=>ses.setPermissionRequestHandler(fn),
+                setPermissionRequestHandler:fn=>ses.setPermissionRequestHandler((wc,permission,callback,details)=>{record.events.push({kind:'permission-request',permission,wcMatches:wc===win.webContents,details});fn(wc,permission,allowed=>{record.events.push({kind:'permission-answer',allowed});callback(allowed);},details);}),
                 setDisplayMediaRequestHandler:fn=>ses.setDisplayMediaRequestHandler((request,callback)=>{
                   record.events.push({kind:'request',securityOrigin:request.securityOrigin,base,frameMatches:request.frame===win.webContents.mainFrame,userGesture:request.userGesture,videoRequested:request.videoRequested});
                   fn(request,value=>{record.events.push({kind:'answer',granted:!!value});callback(value);});
                 })
               };
-              policy.wireCapturePermissions(wrapped,{contents:win.webContents,base,confirmMedia:async()=>false,getSources:async()=>[win.webContents.mainFrame],chooseSource:async sources=>sources[0]});
+              policy.wireCapturePermissions(wrapped,{contents:win.webContents,base,confirmMedia:async()=>true,getSources:async()=>[win.webContents.mainFrame],chooseSource:async sources=>sources[0]});
               await win.loadURL(base+'/');
               win.show();win.focus();win.webContents.focus();
               await new Promise(resolve=>setTimeout(resolve,500));
