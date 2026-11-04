@@ -124,7 +124,13 @@ export class WebmEncoder extends EventEmitter{
     worker.once('close',(code,signal)=>this.complete(code,signal));
     // spawn() can return a child before its asynchronous ENOENT/EPIPE. Keep
     // acknowledged header fragments until its first input write succeeds.
-    return worker.stdin.write(payload,error=>{if(error||this.killed||this.closed)this.preservePrefix();else{this.prefix=null;this.prefixLength=0;}written(error);});
+    return worker.stdin.write(payload,error=>{
+     // A failed Node spawn can acknowledge a pipe write before emitting ENOENT.
+     // Such a ChildProcess has no PID: do not discard acknowledged header bytes.
+     const launchFailed=typeof worker.spawnfile==='string'&&!worker.pid;
+     if(error||launchFailed||this.killed||this.closed)this.preservePrefix();else{this.prefix=null;this.prefixLength=0;}
+     written(error||(launchFailed?Error('The video encoder could not be started.'):undefined));
+    });
    }
    this.worker.stdin.write(data,written);
   }catch(error){done(error);}
