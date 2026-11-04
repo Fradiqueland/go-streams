@@ -128,14 +128,14 @@ test('closing a composed recorder releases all capture and clip resources while 
  assert.equal(panel.output,null);assert.equal(panel.audio,null);assert.equal(panel.audioMix,null);assert.deepEqual(panel.audioInputs,[]);assert.equal(node('meter').value,0);assert.equal(node('.production-meter').value,0);
 });
 
-test('snapshot preserves the clicked frame while its watermark loads and the preview is released',async t=>{
+test('snapshot preserves the clicked clean frame while PNG encoding finishes and the preview is released',async t=>{
  const {panel,tools,node,ctx,revoked}=preparedFixture(t,{sound:'none'});await panel.prepare();tools.values.banner='Frame at click';
- let decoded,encode;const copies=[],timers=[],mark=node('.recorder-watermark'),original=panel.canvas;Object.assign(mark,{complete:false,naturalWidth:0,decode:()=>new Promise(resolve=>{decoded=resolve;})});
+ let encode;const copies=[],timers=[],original=panel.canvas;
  const imageContext={globalAlpha:1,drawImage(source,...rect){copies.push({source,rect,alpha:this.globalAlpha,text:source===original?ctx.events.filter(event=>event[0]==='text').at(-1)?.[1]:null});}},saved={getContext:()=>imageContext,toBlob(callback,type){assert.equal(type,'image/png');encode=callback;}},link={clicks:0,click(){this.clicks++;}};
  t.mock.method(document,'createElement',tag=>{assert.ok(['canvas','a'].includes(tag));return tag==='canvas'?saved:link;});replaceGlobal(t,'setTimeout',(callback,delay)=>{timers.push({callback,delay});return 1;});
- const button={dataset:{production:'snapshot'}},creating=tools.action(button);assert.equal(button.disabled,true);assert.equal(typeof decoded,'function');assert.equal(encode,undefined);assert.equal(copies.length,1);assert.equal(copies[0].source,original);assert.equal(copies[0].text,'Frame at click');assert.deepEqual([saved.width,saved.height],[original.width,original.height]);
- tools.values.banner='Later frame';panel.draw();await panel.release();assert.equal(panel.output,null);mark.complete=true;mark.naturalWidth=1660;decoded();await new Promise(resolve=>setImmediate(resolve));
- assert.equal(copies.length,2);assert.equal(copies[1].source,mark);assert.equal(copies[1].alpha,.5);assert.equal(copies[0].text,'Frame at click');assert.equal(button.disabled,true);assert.equal(link.clicks,0);assert.equal(typeof encode,'function');
+ const button={dataset:{production:'snapshot'}},creating=tools.action(button);assert.equal(button.disabled,true);assert.equal(typeof encode,'function');assert.equal(copies.length,1);assert.equal(copies[0].source,original);assert.equal(copies[0].text,'Frame at click');assert.deepEqual([saved.width,saved.height],[original.width,original.height]);
+ tools.values.banner='Later frame';panel.draw();await panel.release();assert.equal(panel.output,null);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(copies.length,1);assert.equal(copies[0].text,'Frame at click');assert.equal(button.disabled,true);assert.equal(link.clicks,0);assert.equal(typeof encode,'function');
  encode(new Blob(['PNG frame'],{type:'image/png'}));await creating;assert.equal(button.disabled,false);assert.equal(link.clicks,1);assert.match(link.download,/^Streamland-frame-.*\.png$/);assert.equal(timers.length,1);assert.equal(timers[0].delay,10000);timers[0].callback();assert.deepEqual(revoked,[link.href]);
 });
 

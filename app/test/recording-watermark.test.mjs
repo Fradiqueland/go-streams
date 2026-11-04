@@ -10,7 +10,6 @@ import {LocalRecordings} from '../src/local-recordings.mjs';
 import {CaptureFeeds} from '../src/capture-feeds.mjs';
 import {LiveCapture} from '../src/live-capture.mjs';
 import {webmHeader} from './webm-fixture.mjs';
-import {appendProgramOutput} from '../src/program-output.mjs';
 import {createApplication} from '../src/server.mjs';
 import {dispatch} from './transport.mjs';
 
@@ -22,7 +21,7 @@ function fixture(t){
  return {root,studio,recordings};
 }
 async function verifyBrand(file,width,height,root){
- const raw=path.join(root,'frame.rgb'),scaled=path.join(root,'brand.rgba'),size=Math.max(2,Math.round(width*.15/2)*2),margin=Math.max(8,Math.round(Math.min(width,height)*.02)),imageHeight=Math.max(1,Math.round(size*948/1660));
+ const raw=path.join(root,'frame.rgb'),scaled=path.join(root,'brand.rgba'),size=Math.max(2,Math.round(width*.08/2)*2),margin=Math.max(8,Math.round(Math.min(width,height)*.02)),imageHeight=Math.max(1,Math.round(size*948/1660));
  await runProcess('ffmpeg',['-v','error','-ss','0.2','-i',file,'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-y',raw]);
  await runProcess('ffmpeg',['-v','error','-i',brand,'-vf',`scale=${size}:${imageHeight}`,'-frames:v','1','-pix_fmt','rgba','-f','rawvideo','-y',scaled]);
  const frame=fs.readFileSync(raw),image=fs.readFileSync(scaled),base=[...frame.subarray(0,3)],left=width-size-margin;
@@ -51,22 +50,31 @@ async function verifyBrand(file,width,height,root){
  }
 }
 
-for(const [width,height]of [[640,360],[720,1280],[720,720],[640,480],[840,360]])test(`standalone MP4 embeds one foreground watermark at 50% opacity (${width}x${height})`,async t=>{
+async function verifyClean(file,width,height,root){
+ const raw=path.join(root,'clean-frame.rgb');
+ await runProcess('ffmpeg',['-v','error','-ss','0.2','-i',file,'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-y',raw]);
+ const frame=fs.readFileSync(raw),base=[...frame.subarray(0,3)];assert.equal(frame.length,width*height*3);assert.ok(base[0]>240&&base[1]<20&&base[2]<20);
+ for(let offset=0;offset<frame.length;offset++)assert.ok(Math.abs(frame[offset]-base[offset%3])<=5,'Local recording preserves every pixel without the permanent watermark');
+}
+
+for(const format of ['mp4','webm'])for(const [width,height]of [[640,360],[720,1280],[720,720],[640,480],[840,360]])test(`standalone ${format} has no permanent watermark (${width}x${height})`,async t=>{
  const {root,recordings}=fixture(t),source=path.join(root,'input.webm');
  await runProcess('ffmpeg',['-v','error','-f','lavfi','-i',`color=c=red:s=${width}x${height}:r=20`,'-t','0.6','-c:v','libvpx','-deadline','realtime','-y',source]);
- const {id}=recordings.start({confirmed:true,kind:'video',format:'mp4'}),request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};
- await recordings.ingest(id,'0',request);await recordings.finish(id);await verifyBrand(recordings.media(id),width,height,root);
+ const {id}=recordings.start({confirmed:true,kind:'video',format}),request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};
+ await recordings.ingest(id,'0',request);await recordings.finish(id);await verifyClean(recordings.media(id),width,height,root);
 });
 
-test('shared live MP4 retains its existing watermark without applying it twice',async t=>{
- const {root,studio,recordings}=fixture(t),source=path.join(root,'shared.ts'),width=640,height=360;
- const args=['-v','error','-f','lavfi','-i',`color=c=red:s=${width}x${height}:r=20`];
- appendProgramOutput(args,['-map','0:v:0','-c:v','libx264','-pix_fmt','yuv420p']);
- await runProcess('ffmpeg',[...args,'-t','0.6','-f','mpegts','-y',source]);
- let sink,onData;studio.feeds={get:()=>({}),attach:(_id,stream,_end,data)=>{sink=stream;onData=data;return ()=>{};},shutdown:async()=>{}};
- const {id}=recordings.start({confirmed:true,feedId:'shared'}),bytes=fs.readFileSync(source);
- await new Promise((resolve,reject)=>sink.write(bytes,error=>error?reject(error):resolve()));onData(bytes.length);
- await recordings.finish(id);await verifyBrand(recordings.media(id),width,height,root);
+test('simultaneous shared capture records clean MP4 while the live destination has one smaller watermark',async t=>{
+ const {root,studio,recordings}=fixture(t),source=path.join(root,'input.webm'),liveFile=path.join(root,'broadcast.flv'),width=1280,height=720;
+ await runProcess('ffmpeg',['-v','error','-f','lavfi','-i','color=c=red:s=640x360:r=20','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','0.8','-c:v','libvpx','-deadline','realtime','-c:a','libopus','-y',source]);
+ const feeds=new CaptureFeeds(studio,{clock:false}),live=new LiveCapture(studio,{clock:false}),config={confirmed:true,source:'screen',quality:'720p',aspect:'16:9'},feed=feeds.create(config);
+ const {id}=recordings.start({confirmed:true,feedId:feed.id}),spawn=studio.spawnProcess;
+ studio.spawnProcess=(command,args,options)=>spawn(command,args.includes('-rw_timeout')?[...args.slice(0,args.indexOf('-rw_timeout')),'-f','flv','-y',liveFile]:args,options);
+ const channelId=studio.saveChannel({name:'Local branding check',url:'rtmp://127.0.0.1:9/live',key:'test'}),session=live.start({...config,feedId:feed.id,mimeType:'video/webm;codecs=vp8,opus',channelIds:[channelId]});
+ const request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};await feeds.ingest(feed.id,'0',request);await feeds.stop(feed.id);
+ await Promise.all(session.jobs.map(job=>studio.jobs.get(job.id).completion));await recordings.finish(id);
+ assert.equal(studio.jobs.get(session.jobs[0].id).status,'stopped');
+ await verifyClean(recordings.media(id),width,height,root);await verifyBrand(liveFile,width,height,root);
 });
 
 for(const codec of ['vp8','vp9'])for(const range of ['pc','tv'])for(const mode of ['standalone','shared','direct'])test(codec+' '+range+' colour survives '+mode+' encoding with fragmented headers',async t=>{
@@ -116,7 +124,7 @@ test('a shared capture stopped before its first chunk closes without starting an
  feeds.stop(feed.id);await completion;assert.equal(launched,0);assert.equal(feeds.active.size,0);
 });
 
-test('recorder preview exposes only the authenticated fixed branding asset for GET and HEAD',async t=>{
+test('live branding exposes only the authenticated fixed branding asset for GET and HEAD',async t=>{
  const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const root=fs.mkdtempSync(path.join(parent,'recording-brand-api-'));
  const app=await createApplication({directory:root,listen:false,clock:false,portableVault:true});
  t.after(async()=>{await app.close();assert.ok(root.startsWith(parent+path.sep));fs.rmSync(root,{recursive:true,force:true});});

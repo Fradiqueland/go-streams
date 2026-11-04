@@ -1,4 +1,4 @@
-# Streamland 1.3.0
+# Streamland 1.3.1
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. A verificação automática inclui Windows e macOS 15 em Intel e Apple Silicon; os relatórios de cada compilação identificam os testes efetivamente concluídos. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 

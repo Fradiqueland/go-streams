@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {AppError,atomicWrite,runProcess,toolsFor} from './core.mjs';
-import {appendProgramOutput} from './program-output.mjs';
 import {WebmEncoder} from './webm-encoder.mjs';
 
 export class LocalRecordings {
@@ -56,9 +55,8 @@ export class LocalRecordings {
    const args=['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0'];
    const encoding=[...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k'])];
    if(colorFilter)encoding.push('-vf',colorFilter);
-   // Shared capture is already branded by its encoder. Standalone video must
-   // apply the same foreground image after the browser's complete composition.
-   if(!feedId&&kind==='video')appendProgramOutput(args,encoding);else args.push(...encoding);
+   // Record the clean programme; permanent branding belongs to live outputs.
+   args.push(...encoding);
    args.push('-f','matroska','-n',path.join(destination,id+'.part'));
    return this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});
    };
