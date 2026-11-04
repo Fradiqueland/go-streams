@@ -147,6 +147,8 @@ export class LocalRecordings {
   const item=this.items.find(item=>item.id===id);if(!item)throw new AppError('Recording not found.',404);
   if(this.closed||this.studio.closing||this.active.has(id)||this.finalizing.has(id)||!['completed','interrupted'].includes(item.status))throw new AppError('Stop and finish the recording before deleting it.',409);
   const files=[path.join(this.location(item),id+'.'+item.format),path.join(this.location(item),id+'.part')];
+  const comparable=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
+  if(this.studio.store.data?.media?.some(media=>!media.source&&typeof media.path==='string'&&files.some(file=>comparable(file)===comparable(media.path))))throw new AppError('Esta gravação está na biblioteca de vídeos. Retire-a da biblioteca antes de apagar o ficheiro.',409);
   // Only this indexed recording's exact filenames are eligible. Never recurse
   // through a folder, follow a file symlink, or touch imported library originals.
   for(const file of files){const info=fs.lstatSync(file,{throwIfNoEntry:false});if(info&&!info.isFile())throw new AppError('The recording path is not a regular file. Files were preserved.',409);}

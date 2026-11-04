@@ -36,6 +36,7 @@ export class ProductionBumpers {
   for(const el of this.element.querySelectorAll('[data-bumper-target]'))el.checked=this.config[el.dataset.bumperTarget];
   for(const el of this.element.querySelectorAll('input,select,button'))el.disabled=this.locked;
   const skip=this.element.querySelector('[data-bumper-skip]');skip.hidden=!this.active;skip.disabled=false;
+  this.tools.update?.();this.tools.onChange?.();
  }
  async libraryAction(button){
   if(this.locked)return;this.libraryBusy=true;this.update();

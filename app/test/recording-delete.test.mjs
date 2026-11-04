@@ -8,6 +8,10 @@ import {createApplication} from '../src/server.mjs';
 import {dispatch} from './transport.mjs';
 function fixture(t){const root=fs.mkdtempSync(path.resolve('.tmp/delete-recording-')),studio={store:{directory:root}},recordings=new LocalRecordings(studio,{clock:false});t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return {root,recordings};}
 function item(recordings,status='completed',format='mp4'){const entry={id:crypto.randomUUID(),format,kind:format==='m4a'?'audio':'video',created:new Date().toISOString(),status,bytes:4};recordings.items.push(entry);return entry;}
+test('a recording imported into the video library is preserved until its library entry is removed',t=>{
+ const {recordings}=fixture(t),entry=item(recordings),file=path.join(recordings.root,entry.id+'.mp4');fs.writeFileSync(file,'library video');recordings.studio.store.data={media:[{id:'library',path:file}]};
+ assert.throws(()=>recordings.remove(entry.id,{confirmed:true}),/biblioteca/);assert.equal(fs.readFileSync(file,'utf8'),'library video');assert.equal(recordings.items.length,1);recordings.studio.store.data.media=[];recordings.remove(entry.id,{confirmed:true});assert.equal(fs.existsSync(file),false);
+});
 test('deleting a completed video or audio removes only its own files and persists the updated list',t=>{
  const {root,recordings}=fixture(t),original=path.join(root,'original.mp4');fs.writeFileSync(original,'keep');
  for(const format of ['mp4','m4a','webm']){const entry=item(recordings,'completed',format),file=path.join(recordings.root,entry.id+'.'+format),part=path.join(recordings.root,entry.id+'.part');fs.writeFileSync(file,'data');fs.writeFileSync(part,'recovery');assert.deepEqual(recordings.remove(entry.id,{confirmed:true}),{ok:true,id:entry.id});assert.equal(fs.existsSync(file),false);assert.equal(fs.existsSync(part),false);}

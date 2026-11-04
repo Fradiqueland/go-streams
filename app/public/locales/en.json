@@ -694,5 +694,7 @@
   "Apagar definitivamente esta gravação e os respetivos dados de recuperação deste computador? Esta ação não pode ser anulada.": "Permanently delete this recording and its recovery data from this computer? This cannot be undone.",
   "Criado por Antonio Fradique": "Created by Antonio Fradique",
   "Mais Produtos: AntonioFradique.net": "More products: AntonioFradique.net",
-  "Criado por Antonio Fradique · Mais Produtos: AntonioFradique.net": "Created by Antonio Fradique · More products: AntonioFradique.net"
+  "Criado por Antonio Fradique · Mais Produtos: AntonioFradique.net": "Created by Antonio Fradique · More products: AntonioFradique.net",
+  "Escolher pasta": "Choose folder",
+  "Esta gravação está na biblioteca de vídeos. Retire-a da biblioteca antes de apagar o ficheiro.": "This recording is in the video library. Remove its library entry before deleting the file."
 }

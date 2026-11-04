@@ -87,7 +87,7 @@ export class LiveCapturePanel {
   this.element.querySelector('[data-capture="mute"]').disabled=!this.mic;
   this.element.querySelector('[data-capture="stop"]').disabled=!this.session||this.stopping;
   const hasDestinations=Boolean(this.element.querySelector('.capture-destinations input:checked:not(:disabled)'));
-  this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
+  this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||Boolean(this.production?.bumpers?.libraryBusy)||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
   this.production?.update(this.recordings||[],this.recordingPreferences);
  }
  syncFormatControls(){
@@ -233,7 +233,7 @@ export class LiveCapturePanel {
   })();return this.feedClosing;
  }
  async start(){
-  if(!this.output||this.session||this.preparing||this.stopping||this.releasing)return;this.preparing=true;this.controls();
+  if(!this.output||this.session||this.preparing||this.stopping||this.releasing||this.production?.bumpers?.libraryBusy)return;this.preparing=true;this.controls();
   const epoch=this.captureEpoch,source=this.output,attempt=this.liveStart={},current=()=>epoch===this.captureEpoch&&this.output===source&&this.liveStart===attempt;
   try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);

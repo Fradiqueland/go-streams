@@ -95,7 +95,7 @@ export class RecorderPanel {
   this.$('[name="aspect"]').disabled=locked||mode==='audio';
   this.$('.recorder-aspect-hint').hidden=mode==='audio';
   this.$('[data-recorder="prepare"]').disabled=locked||prepared;
-  this.$('[data-recorder="start"]').disabled=!prepared||locked||this.folderBusy;
+  this.$('[data-recorder="start"]').disabled=!prepared||locked||this.folderBusy||Boolean(this.production?.bumpers?.libraryBusy);
   this.$('[data-recorder="stop"]').disabled=!this.id||this.finishing;
   this.$('[data-recorder="release"]').disabled=(!prepared&&!this.preparing)||this.finishing;
   this.$('[data-recorder="cancel"]').hidden=!this.starting;
@@ -246,7 +246,7 @@ export class RecorderPanel {
   this.pointerSession(event,e=>{if(!this.output)return;const dx=e.clientX-event.clientX,dy=e.clientY-event.clientY;if(resize)this.cameraPosition=resizedCameraPosition(start,b.width,b.height,dx,dy);else{this.cameraPosition.x=Math.max(0,Math.min(1,start.x+dx/Math.max(1,b.width-r.width)));this.cameraPosition.y=Math.max(0,Math.min(1,start.y+dy/Math.max(1,b.height-r.height)));}this.syncCamera();});
  }
  async start(){
-  if(!this.output||this.id||this.starting||this.finishing||this.folderBusy)return;
+  if(!this.output||this.id||this.starting||this.finishing||this.folderBusy||this.production?.bumpers?.libraryBusy)return;
   this.starting=true;this.recordingError=null;const generation=this.generation;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.controls();this.countdownAbort=new AbortController();
   try{
    let directory=this.$('[name="directory"]').value;if(this.$('[name="askFolder"]').checked||!directory){directory=await this.chooseFolder();if(directory===null)return;}

@@ -140,13 +140,13 @@ export class ProductionTools {
   if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
    const recorder=this.localRecorder,upload=this.localUpload;this.recordingId=null;this.clearRecordingWriter();this.recordingFailure=null;upload?.fail(Error(current.error||'Recording ended.'));if(recorder&&recorder.state!=='inactive')recorder.stop();this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
   }
-  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
+  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy||this.bumpers?.libraryBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
   const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="Streamland-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}${['completed','interrupted'].includes(item.status)?` <button type="button" class="secondary small delete-recording" data-production="delete-recording" data-id="${e(item.id)}">${t('Delete recording','Apagar gravação')}</button>`:''}</p>`).join('');}
   this.notifyRecordingState();
  }
  async startRecording(){
-  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy)return;
+  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy||this.bumpers?.libraryBusy)return;
   const attempt={stream,cancelled:false};let cleanupAttempted=false;this.recordingAttempt=attempt;this.recordingFailure=null;
   const current=()=>this.recordingAttempt===attempt&&!attempt.cancelled&&this.getStream()===stream;
   const changed=()=>Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));
