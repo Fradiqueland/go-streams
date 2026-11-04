@@ -1,8 +1,16 @@
-# Streamland 1.2.1
+# Streamland 1.3.0
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. A verificação automática inclui Windows e macOS 15 em Intel e Apple Silicon; os relatórios de cada compilação identificam os testes efetivamente concluídos. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Intro, encerramento e remoção de gravações (1.3.0)
+
+No gravador de vídeo ou no estúdio ao vivo, abra **Introdução, encerramento e clips**. Escolha um vídeo para a intro, outro para o encerramento, ou apenas um deles. Pode selecionar vídeos da biblioteca, acrescentar um ficheiro local ou adicionar uma ligação MP4 HTTPS pública / vídeo individual do YouTube suportado pela biblioteca. As ligações online usam o acesso protegido já existente e precisam de Internet. Use MP4 ou WebM reproduzível no navegador; converta outros formatos locais na biblioteca primeiro. Não são necessárias instalações adicionais no Windows ou no Mac.
+
+A intro começa automaticamente ao iniciar. **Parar** reproduz o encerramento antes de guardar a gravação ou terminar a transmissão. O som do vídeo substitui temporariamente o microfone e o áudio partilhado, mesmo com o áudio principal do gravador desativado. **Saltar vídeo** regressa ao programa. Fechar a pré-visualização, erros de captação ou encerrar a aplicação cancelam os vídeos e finalizam a gravação. Estes vídeos automáticos aplicam-se ao modo de vídeo. No estúdio ao vivo, a composição é partilhada por todas as gravações e transmissões ativas; os vídeos aparecem em todas essas saídas. As cenas guardadas chamadas Intro/Outro continuam a guardar o aspeto visual e os clips manuais continuam disponíveis.
+
+As gravações concluídas e interrompidas têm **Apagar gravação**, com confirmação antes de eliminar definitivamente o ficheiro e os dados de recuperação na pasta original. Não é possível apagar uma gravação em curso ou em finalização. Os vídeos originais da biblioteca são preservados.
 
 ## Correção da captura de ecrã no Electron (1.2.1)
 

@@ -120,3 +120,9 @@ html[data-compact-nav="true"] .nav-section-title{height:12px;margin:8px 7px;padd
 @media(max-width:500px){.recorder-record-actions>.control-info-pair,.start-card>.control-info-pair{width:100%}.recorder-record-actions>.control-info-pair>button,.start-card>.control-info-pair>.button{flex:1;width:auto}.recorder-studio .actions>.control-info-pair{width:100%}.recorder-studio .actions>.control-info-pair>button{flex:1;width:auto}}
 .production-emoji-tools .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(40px,1fr));gap:8px}
 .production-emoji-tools .actions>button{width:100%;min-width:0;min-height:40px;padding:6px}
+.automatic-bumpers{padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid var(--border,#dce3ed)}
+.bumper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:16px}
+.bumper-grid fieldset{min-width:0;border:1px solid var(--border,#dce3ed);border-radius:10px;padding:16px}
+.bumper-grid legend{font-weight:600;padding:0 8px}.bumper-grid label{display:block;margin-bottom:12px}.bumper-grid input,.bumper-grid select{width:100%;min-width:0}.bumper-grid .actions{margin-bottom:12px}
+.bumper-status:empty{display:none}.bumper-status{overflow-wrap:anywhere}.delete-recording{margin-top:8px}
+@media(max-width:760px){.bumper-grid{grid-template-columns:1fr}}

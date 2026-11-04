@@ -109,6 +109,7 @@ export class LiveCapturePanel {
  }
  update(state){
   if(!this.element)return;
+  this.production?.bumpers?.update(state.media);
   this.recordings=state.recordings||[];
   this.recordingPreferences=state.recordingPreferences;
   const selected=new Set([...this.element.querySelectorAll('.capture-destinations input:checked')].map(el=>el.value));
@@ -237,22 +238,24 @@ export class LiveCapturePanel {
   try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);
    if(!channelIds.length||!this.element.querySelector('[data-capture="consent"]').checked)throw Error('Confirm at least one live destination.');
+   if(this.production?.bumpers?.enabled('live')){await this.production.bumpers.prepare('live');if(!current())throw Error('Live capture was released before broadcasting.');this.production.bumpers.arm('live');}
    const feedId=await this.acquireFeed('live');if(!current())throw Error('Live capture was released before broadcasting.');
    const session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
    if(!current()){await this.api(`/api/live/${session.id}/stop`,{}).catch(()=>{});throw Error('Live capture was released before broadcasting.');}this.session=session;
-   this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
+   this.production?.bumpers?.start('live');this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
   }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
-  finally{if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
+  finally{if(!this.session)this.production?.bumpers?.finish('live');if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
  }
  async stop(reason){
+  if(reason||!this.session||this.releasing)this.production?.bumpers?.finish('live');
   this.liveStart=null;
   if(this.stopping){if(reason)this.stopFailure ||= reason;return this.stopDone;}
   this.stopFailure=reason||null;this.stopping=true;this.controls();
   this.stopDone=(async()=>{
    let stopped=!this.session;
-   try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});stopped=true;}
+   try{if(this.session){if(!reason&&!this.releasing&&this.production?.bumpers?.sessions.has('live')){await this.production.bumpers.end('live');try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}}await this.api(`/api/live/${this.session.id}/stop`,{});}stopped=true;}
    catch(error){this.stopFailure ||= error;}
-   finally{try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}if(stopped)this.session=null;this.stopping=false;this.status(this.stopFailure?.message||text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'),Boolean(this.stopFailure));this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();this.stopDone=null;}
+   finally{this.production?.bumpers?.finish('live');try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}if(stopped)this.session=null;this.stopping=false;this.status(this.stopFailure?.message||text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'),Boolean(this.stopFailure));this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();this.stopDone=null;}
   })();return this.stopDone;
  }
  releaseDevices(){
@@ -271,6 +274,7 @@ export class LiveCapturePanel {
  }
  async release({throwOnError=false}={}){
   if(!this.releasing){
+   this.production?.bumpers?.cancel();
    this.captureEpoch++;
    if(!this.session&&!this.feedSession&&!this.feedStarting&&!this.production?.recordingId&&!this.production?.finishing)this.releaseDevices();
    this.releasing=(async()=>{
