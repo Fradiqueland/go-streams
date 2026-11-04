@@ -64,7 +64,14 @@ for(const format of ['mp4','webm'])for(const [width,height]of [[640,360],[720,12
  await recordings.ingest(id,'0',request);await recordings.finish(id);await verifyClean(recordings.media(id),width,height,root);
 });
 
-test('simultaneous shared capture records clean MP4 while the live destination has one smaller watermark',async t=>{
+for(const [width,height]of [[640,360],[720,1280],[720,720]])test(`independent live studio recording retains one smaller watermark (${width}x${height})`,async t=>{
+ const {root,recordings}=fixture(t),source=path.join(root,'input.webm');
+ await runProcess('ffmpeg',['-v','error','-f','lavfi','-i',`color=c=red:s=${width}x${height}:r=20`,'-t','0.6','-c:v','libvpx','-deadline','realtime','-y',source]);
+ const {id}=recordings.start({confirmed:true,kind:'video',format:'mp4',context:'live'}),request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};
+ await recordings.ingest(id,'0',request);await recordings.finish(id);await verifyBrand(recordings.media(id),width,height,root);
+});
+
+test('live studio recording and live destination both retain the smaller watermark',async t=>{
  const {root,studio,recordings}=fixture(t),source=path.join(root,'input.webm'),liveFile=path.join(root,'broadcast.flv'),width=1280,height=720;
  await runProcess('ffmpeg',['-v','error','-f','lavfi','-i','color=c=red:s=640x360:r=20','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','0.8','-c:v','libvpx','-deadline','realtime','-c:a','libopus','-y',source]);
  const feeds=new CaptureFeeds(studio,{clock:false}),live=new LiveCapture(studio,{clock:false}),config={confirmed:true,source:'screen',quality:'720p',aspect:'16:9'},feed=feeds.create(config);
@@ -74,7 +81,7 @@ test('simultaneous shared capture records clean MP4 while the live destination h
  const request=Readable.from([fs.readFileSync(source)]);request.headers={'content-type':'video/webm'};await feeds.ingest(feed.id,'0',request);await feeds.stop(feed.id);
  await Promise.all(session.jobs.map(job=>studio.jobs.get(job.id).completion));await recordings.finish(id);
  assert.equal(studio.jobs.get(session.jobs[0].id).status,'stopped');
- await verifyClean(recordings.media(id),width,height,root);await verifyBrand(liveFile,width,height,root);
+ await verifyBrand(recordings.media(id),width,height,root);await verifyBrand(liveFile,width,height,root);
 });
 
 for(const codec of ['vp8','vp9'])for(const range of ['pc','tv'])for(const mode of ['standalone','shared','direct'])test(codec+' '+range+' colour survives '+mode+' encoding with fragmented headers',async t=>{

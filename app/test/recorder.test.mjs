@@ -232,7 +232,7 @@ for(const [mode,supported,expected]of [
  let selected,starts=0,finishes=0;
  class FakeRecorder extends EventTarget{static isTypeSupported(type){return supported.includes(type);}constructor(_stream,options){super();selected=options.mimeType;this.state='inactive';}start(){starts++;this.state='recording';}stop(){this.state='inactive';this.dispatchEvent(new Event('stop'));}}
  replaceGlobal(t,'MediaRecorder',FakeRecorder);
- const panel=new RecorderPanel({api:async(route)=>{if(route==='/api/recordings/start')return {id:'codec-recording'};if(route.endsWith('/finish'))finishes++;return {};},toast(){}}),fields=new Map();
+ const panel=new RecorderPanel({api:async(route,body)=>{if(route==='/api/recordings/start'){assert.equal(body.context,'recorder');return {id:'codec-recording'};}if(route.endsWith('/finish'))finishes++;return {};},toast(){}}),fields=new Map();
  panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{});return fields.get(selector);};panel.$('[name="directory"]').value='chosen-directory';panel.$('[name="askFolder"]').checked=false;
  panel.output={};panel.config={mode,countdown:0};panel.controls=()=>{};panel.status=()=>{};panel.error=assert.fail;
  t.after(()=>panel.stopWriter());await panel.start();assert.equal(selected,expected);assert.equal(starts,1);await panel.stopWriter();assert.equal(finishes,1);assert.equal(panel.id,null);
@@ -258,6 +258,6 @@ for(const kind of ['video','audio'])test('streamed '+kind+' recording is encoded
 
 test('invalid audio/video format pairs are rejected before any files or processes are created',t=>{
  const {recordings}=fixture(t);
- for(const input of [{kind:'audio',format:'mp4'},{kind:'video',format:'m4a'},{kind:'other'},{format:'../../file'},{kind:'audio',feedId:'x'}])assert.throws(()=>recordings.start({confirmed:true,...input}),/valid recording/);
+ for(const input of [{context:'unknown'},{context:'live',kind:'audio',format:'m4a'},{context:'live',format:'webm'},{context:'recorder',feedId:'x'}, {kind:'audio',format:'mp4'},{kind:'video',format:'m4a'},{kind:'other'},{format:'../../file'},{kind:'audio',feedId:'x'}])assert.throws(()=>recordings.start({confirmed:true,...input}),/valid recording/);
  assert.equal(recordings.items.length,0);assert.equal(recordings.active.size,0);
 });

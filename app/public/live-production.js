@@ -156,7 +156,7 @@ export class ProductionTools {
    const config=this.getRecordingConfig?.()||{},mimeType=typeof MediaRecorder==='function'?[config.mimeType,'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>type&&MediaRecorder.isTypeSupported(type)):null;
    if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
    if(this.bumpers?.enabled('recording')){await this.bumpers.prepare('recording');if(!current()){this.bumpers.finish('recording');return;}this.bumpers.arm('recording');}
-   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:'video',format:'mp4'});this.recordingId=id;this.discardRecordingEmpty=true;
+   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:'video',format:'mp4',context:'live'});this.recordingId=id;this.discardRecordingEmpty=true;
    if(!current()){cleanupAttempted=true;await this.finishRecordingWriter();if(!attempt.cancelled)throw changed();return;}
    const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:config.videoBitsPerSecond||4500000,audioBitsPerSecond:config.audioBitsPerSecond||192000});this.localRecorder=recorder;
    const fail=error=>{if(this.recordingAttempt!==attempt||this.recordingId!==id)return;this.recordingFailure ||= error;void this.stopRecording();};

@@ -73,7 +73,7 @@ test('automatic intro stays on its first frame until the browser recording actua
   stop(){this.state='inactive';queueMicrotask(()=>this.dispatchEvent(new Event('stop')));}
  }
  Object.defineProperty(globalThis,'MediaRecorder',{configurable:true,writable:true,value:Recorder});t.after(()=>{if(previous)Object.defineProperty(globalThis,'MediaRecorder',previous);else delete globalThis.MediaRecorder;});
- const tools=new ProductionTools({getStream:()=>stream,api:async route=>route.endsWith('/start')?{id:'intro-take'}:{},toast:assert.fail});
+ const tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{if(route.endsWith('/start')){assert.equal(body.context,'live');return {id:'intro-take'};}return {};},toast:assert.fail});
  tools.element={querySelector:()=>status};tools.update=()=>{};tools.recordingOptions=()=>({directory:'/recordings',askEveryTime:false});
  tools.bumpers={enabled:()=>true,prepare:async()=>{},arm:()=>events.push('hold-first-frame'),start:()=>events.push('play-intro'),finish(){},sessions:new Map()};
  await tools.startRecording();assert.deepEqual(events,['hold-first-frame','encoder-start-request']);encoder.dispatchEvent(new Event('start'));assert.deepEqual(events,['hold-first-frame','encoder-start-request','play-intro']);await tools.stopRecording({skipOutro:true});
