@@ -1,0 +1,30 @@
+name: Read failed review evidence
+on:
+  pull_request:
+    paths: ['.github/workflows/read-review-evidence.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41756283526
+          name: Streamland-Mac-Portable-ARM64
+          path: evidence
+      - name: Show exact failed TAP assertions
+        shell: python
+        run: |
+          from pathlib import Path
+          for file in Path('evidence').rglob('cycle-*.log'):
+              lines=file.read_text(errors='replace').splitlines()
+              bad=[i for i,line in enumerate(lines) if line.startswith('not ok ')]
+              if not bad: continue
+              print('FILE:',file)
+              for index in bad:
+                  print('\n'.join(lines[max(0,index-2):index+55]))
+              print('\n'.join(lines[-20:]))
