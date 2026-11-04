@@ -171,6 +171,7 @@ export class LiveCapturePanel {
      ctx.fillStyle='rgba(10,10,20,0.88)';ctx.fillRect(w*.04,h*.74,w*.92,h*.22);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(this.featuredComment.author,w*.06,h*.79,w*.88);ctx.font=`${Math.round(h*.029)}px sans-serif`;
      const words=this.featuredComment.text.split(/\s+/);let line='',row=0;for(const word of words){if(ctx.measureText(line+' '+word).width>w*.86){ctx.fillText(line,w*.06,h*(.84+row*.045));line=word;if(++row>=2)break;}else line+=(line?' ':'')+word;}if(row<2)ctx.fillText(line,w*.06,h*(.84+row*.045),w*.86);
     }
+    if(this.canvasTrack?.readyState==='live')this.canvasTrack.requestFrame?.();
    };
    this.drawFrame=draw;draw();this.drawTimer=setInterval(draw,1000/30);
    this.audio=new AudioContext();await this.audio.resume();check();const destination=this.audio.createMediaStreamDestination();
@@ -181,7 +182,7 @@ export class LiveCapturePanel {
    this.silence=this.audio.createOscillator();const silentGain=this.audio.createGain();silentGain.gain.value=0;this.silence.connect(silentGain).connect(this.master);this.silence.start();
    for(const stream of this.streams)if(stream.getAudioTracks().length){const gain=this.audio.createGain(),name=stream===this.screen?'screenVolume':'micVolume';gain.gain.value=Number(this.production.element.querySelector(`[name="${name}"]`).value);this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(gain).connect(this.master);this.audioInputs.push({name,gain});}
    const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length);this.production.element.querySelector('meter').value=Math.min(1,rms*3);},100);
-   this.output=new MediaStream([...this.canvas.captureStream(30).getVideoTracks(),...destination.stream.getAudioTracks()]);
+   const videoTracks=this.canvas.captureStream(30).getVideoTracks();this.canvasTrack=videoTracks[0];this.output=new MediaStream([...videoTracks,...destination.stream.getAudioTracks()]);
    this.element.querySelector('.capture-preview').srcObject=this.output;
    this.muted=false;this.element.querySelector('[data-capture="mute"]').textContent=text('Mute microphone','Silenciar microfone');
    await this.listDevices(epoch);check();this.status(text('Local preview only - nothing is being broadcast.','Apenas pré-visualização local - nada está a ser transmitido.'));
@@ -267,7 +268,7 @@ export class LiveCapturePanel {
   clearInterval(this.meterTimer);this.audioInputs=[];
   this.clipAudio?.disconnect();this.clipAudio=null;
   for(const stream of [...this.streams,this.output].filter(Boolean))for(const track of stream.getTracks())track.stop();
-  this.streams=[];this.output=null;this.mic=null;this.camera=null;this.screen=null;
+  this.streams=[];this.output=null;this.canvasTrack=null;this.mic=null;this.camera=null;this.screen=null;
   for(const v of [this.cameraVideo,this.screenVideo])if(v){v.pause();v.srcObject=null;}
   this.cameraVideo=null;this.screenVideo=null;
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}

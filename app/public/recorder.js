@@ -163,7 +163,7 @@ export class RecorderPanel {
     const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const level=Math.min(1,Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length)*3);for(const meter of this.element.querySelectorAll('meter'))meter.value=level;},100);
    }
    if(!current())throw Error('Preview cancelled');
-   this.output=new MediaStream([...(mode==='audio'?[]:this.canvas.captureStream(30).getVideoTracks()),...audioTracks]);
+   const videoTracks=mode==='audio'?[]:this.canvas.captureStream(30).getVideoTracks();this.canvasTrack=videoTracks[0];this.output=new MediaStream([...videoTracks,...audioTracks]);
    this.$('.recorder-preview').srcObject=this.output;this.$('.recorder-preview').hidden=mode==='audio';
    this.status(t('Preview ready. Choose the area, camera position and folder, then start recording.','Pré-visualização pronta. Escolha a área, a posição da câmara e a pasta e inicie a gravação.'));
    this.syncCamera();void this.listDevices(generation);
@@ -189,6 +189,8 @@ export class RecorderPanel {
   const fit=(video,x,y,width,height)=>{if(!video?.videoWidth)return;const box=containedRect({left:x,top:y,width,height},video.videoWidth,video.videoHeight);ctx.drawImage(video,box.left,box.top,box.width,box.height);};
   if(this.production)this.production.draw(ctx,w,h,this.cameraVideo,this.screenVideo,fit,(context,width,height,values)=>this.drawSources(context,width,height,values));
   else{ctx.fillStyle='#111827';ctx.fillRect(0,0,w,h);this.drawSources(ctx,w,h);}
+  // Static canvases may otherwise emit only one frame on some Chromium GPUs.
+  if(this.canvasTrack?.readyState==='live')this.canvasTrack.requestFrame?.();
  }
  drawSources(ctx,w,h,values={layout:'pip',mirror:false}){
   const screen=['screen','screen-camera'].includes(this.config.mode)&&Boolean(this.screenVideo?.videoWidth),camera=['camera','screen-camera'].includes(this.config.mode)&&Boolean(this.cameraVideo?.videoWidth);
@@ -298,7 +300,7 @@ export class RecorderPanel {
   clearInterval(this.drawTimer);clearInterval(this.meterTimer);clearInterval(this.elapsedTimer);
   this.production?.stopVisuals();this.clipAudio?.disconnect();this.clipAudio=null;this.audioInputs=[];this.audioMix=null;
   for(const stream of [...this.streams,...(this.output?[this.output]:[])])for(const track of stream.getTracks())track.stop();
-  for(const video of this.videoElements||[]){video.pause();video.srcObject=null;}this.videoElements=[];this.streams=[];void this.audio?.close().catch(()=>{});this.audio=null;this.output=null;this.screen=null;this.device=null;this.screenVideo=null;this.cameraVideo=null;
+  for(const video of this.videoElements||[]){video.pause();video.srcObject=null;}this.videoElements=[];this.streams=[];void this.audio?.close().catch(()=>{});this.audio=null;this.output=null;this.canvasTrack=null;this.screen=null;this.device=null;this.screenVideo=null;this.cameraVideo=null;
   if(this.element){this.$('.recorder-preview').srcObject=null;this.$('.recorder-source').srcObject=null;for(const meter of this.element.querySelectorAll?.('meter')||[this.$('meter')])if(meter)meter.value=0;}
  }
  async release(){
