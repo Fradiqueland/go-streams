@@ -1,3 +1,4 @@
+import {ProductionTools} from '../public/live-production.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ProductionBumpers} from '../public/production-bumpers.js';
@@ -57,4 +58,23 @@ test('forced recorder stop omits the outro and cancels any active clip',async()=
 test('live stop keeps the broadcast open for the outro and drains its final capture before stopping the destination',async()=>{
  const events=[],panel=new LiveCapturePanel({api:async()=>events.push('remote-stop'),toast(){}});panel.session={id:'live'};panel.controls=()=>{};panel.status=()=>{};panel.element={querySelector:()=>({})};panel.releaseFeed=async()=>events.push('drain');panel.production={bumpers:{sessions:new Map([['live',{}]]),end:async()=>events.push('outro'),finish:()=>events.push('cleanup')}};
  await panel.stop();assert.deepEqual(events.slice(0,3),['outro','drain','remote-stop']);assert.equal(panel.session,null);
+});
+
+test('an intro skipped while the encoder is starting cannot restart when the encoder becomes ready',async t=>{
+ const {bumpers,tools,videos}=fixture(t);await bumpers.prepare('recording');bumpers.arm('recording');bumpers.skip();bumpers.start('recording');await Promise.resolve();assert.equal(tools.clip,null);assert.equal(videos[0].paused,true);
+ const ending=bumpers.end('recording');assert.equal(tools.clip,videos[1]);videos[1].end();await ending;
+});
+test('automatic intro stays on its first frame until the browser recording actually starts',async t=>{
+ const previous=Object.getOwnPropertyDescriptor(globalThis,'MediaRecorder'),events=[],stream={},status={};let encoder;
+ class Recorder extends EventTarget{
+  static isTypeSupported(){return true;}
+  constructor(){super();encoder=this;this.state='inactive';}
+  start(){this.state='recording';events.push('encoder-start-request');}
+  stop(){this.state='inactive';queueMicrotask(()=>this.dispatchEvent(new Event('stop')));}
+ }
+ Object.defineProperty(globalThis,'MediaRecorder',{configurable:true,writable:true,value:Recorder});t.after(()=>{if(previous)Object.defineProperty(globalThis,'MediaRecorder',previous);else delete globalThis.MediaRecorder;});
+ const tools=new ProductionTools({getStream:()=>stream,api:async route=>route.endsWith('/start')?{id:'intro-take'}:{},toast:assert.fail});
+ tools.element={querySelector:()=>status};tools.update=()=>{};tools.recordingOptions=()=>({directory:'/recordings',askEveryTime:false});
+ tools.bumpers={enabled:()=>true,prepare:async()=>{},arm:()=>events.push('hold-first-frame'),start:()=>events.push('play-intro'),finish(){},sessions:new Map()};
+ await tools.startRecording();assert.deepEqual(events,['hold-first-frame','encoder-start-request']);encoder.dispatchEvent(new Event('start'));assert.deepEqual(events,['hold-first-frame','encoder-start-request','play-intro']);await tools.stopRecording({skipOutro:true});
 });

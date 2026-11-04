@@ -75,7 +75,7 @@ export class ProductionBumpers {
  async prepare(owner){
   if(!this.enabled(owner))return;
   if(this.active||[...this.sessions.values()].some(session=>session.loading))throw Error(t('Wait for the current intro or outro to finish.','Aguarde o fim da intro ou do encerramento em curso.'));
-  this.finish(owner);const session={controller:new AbortController(),clips:{},loading:true};this.sessions.set(owner,session);this.update();this.status(t('Preparing intro / outro…','A preparar intro / encerramento…'));
+  this.finish(owner);const session={controller:new AbortController(),clips:{},skipped:new Set(),loading:true};this.sessions.set(owner,session);this.update();this.status(t('Preparing intro / outro…','A preparar intro / encerramento…'));
   try{
    for(const phase of ['intro','outro'])if(this.config[phase])session.clips[phase]=await this.load(this.config[phase],session.controller.signal);
    if(session.controller.signal.aborted)throw cancelled();session.loading=false;this.status();this.update();
@@ -89,6 +89,7 @@ export class ProductionBumpers {
   this.status(phase==='intro'?t('Playing intro…','A reproduzir intro…'):t('Playing outro before finishing…','A reproduzir encerramento antes de terminar…'));this.update();return active;
  }
  async play(owner,phase){
+  if(this.sessions.get(owner)?.skipped.has(phase))return;
   const active=this.active?.owner===owner&&this.active.phase===phase?this.active:this.arm(owner,phase);if(!active)return;
   const video=active.video;
   await new Promise(resolve=>{
@@ -103,7 +104,7 @@ export class ProductionBumpers {
  start(owner){void this.play(owner,'intro').catch(error=>{this.skip();this.tools.toast?.(error.message,true);});}
  async end(owner){await this.play(owner,'outro');}
  skip(){
-  const active=this.active;if(!active)return;if(active.complete){active.complete();return;}
+  const active=this.active;if(!active)return;this.sessions.get(active.owner)?.skipped.add(active.phase);if(active.complete){active.complete();return;}
   this.active=null;active.video.pause();this.tools.clip=null;this.tools.automaticClip=false;this.tools.setClipAudio?.(null);this.tools.onChange?.();this.status();this.update();
  }
  finish(owner){

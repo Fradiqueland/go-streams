@@ -217,6 +217,7 @@ export class LiveCapturePanel {
    this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop(error);},fetchChunk:async(blob,sequence)=>{
     const response=await fetch(`/api/capture/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
    }});
+   this.feedStarted=new Promise(resolve=>{for(const [name,ready]of [['start',true],['stop',false],['error',false]])recorder.addEventListener(name,()=>resolve(ready),{once:true});});
    this.feedRecorder=recorder;recorder.ondataavailable=event=>this.feedUploader?.push(event.data);recorder.onerror=()=>this.feedUploader?.fail(Error('Live capture failed. Start a new capture.'));recorder.start(1000);return id;
    }catch(error){if(this.feedSession)await this.api(`/api/capture/${this.feedSession.id}/stop`,{}).catch(()=>{});this.feedSession=null;this.feedRecorder=null;this.feedUploader=null;throw error;}
   })();
@@ -242,7 +243,7 @@ export class LiveCapturePanel {
    const feedId=await this.acquireFeed('live');if(!current())throw Error('Live capture was released before broadcasting.');
    const session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
    if(!current()){await this.api(`/api/live/${session.id}/stop`,{}).catch(()=>{});throw Error('Live capture was released before broadcasting.');}this.session=session;
-   this.production?.bumpers?.start('live');this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
+   if(this.production?.bumpers?.sessions.has('live')){if(!await this.feedStarted||!current())throw Error('Live encoder stopped before the intro could start.');this.production.bumpers.start('live');}this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
   }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
   finally{if(!this.session)this.production?.bumpers?.finish('live');if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
  }
