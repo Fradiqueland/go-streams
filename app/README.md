@@ -1,8 +1,12 @@
-# Streamland 1.2.0
+# Streamland 1.2.1
 
 Estúdio para vídeos, playlists e transmissão RTMP/RTMPS. A verificação automática inclui Windows e macOS 15 em Intel e Apple Silicon; os relatórios de cada compilação identificam os testes efetivamente concluídos. Dispositivos reais, seletores de ecrã e contas externas exigem validação manual. Implementação independente orientada pelos recursos e modelos do Livecaster 4.12 inspecionados com REA. Não inclui binários, licenças, credenciais ou serviços privados do fornecedor.
 
 Consulte também [as funções do estúdio e a configuração do chat](STREAMYARD-FEATURE-SCOPE.md).
+
+## Correção da captura de ecrã no Electron (1.2.1)
+
+A preparação da pré-visualização do gravador e do estúdio ao vivo aceita o endereço local normalizado devolvido pelo Electron. A comparação anterior rejeitava a barra final do endereço, causando `Invalid capture constraints`. Mantêm-se a seleção da origem e as proteções de autorização. O teste nativo captura e grava a própria janela de ensaio, sem selecionar dispositivos físicos.
 
 ## Novo nome Streamland e compatibilidade (1.2.0)
 
@@ -96,7 +100,7 @@ Ao fechar a janela Electron, o motor é encerrado. Se houver transmissões ou op
 
 ## Instalador Windows (MSI)
 
-Abra `Streamland-1.2.0-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Streamland`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
+Abra `Streamland-1.2.1-Windows-Setup.msi`. Inclui todos os componentes e cria atalhos no ambiente de trabalho e no menu Iniciar, para o utilizador atual. A aplicação fica em `%LOCALAPPDATA%\Programs\Streamland`; os dados ficam em `%LOCALAPPDATA%\Go Streams\data`.
 
 Para atualizar, encerre o Streamland e execute o MSI novo sobre a instalação existente. Não precisa de desinstalar primeiro. Projetos, definições, credenciais protegidas, perfis do navegador e sessões guardadas ficam fora dos ficheiros substituídos. A desinstalação também conserva essa pasta de dados. As transmissões em curso devem ser terminadas antes da atualização; os tokens temporários do motor são recriados ao abrir.
 
@@ -104,11 +108,11 @@ Na primeira instalação, os dados já existentes na pasta normal são reutiliza
 
 O código de atualização usa uma identidade MSI fixa entre versões e recusa versões anteriores. Os pacotes assinados do canal de atualização podem agora ser `.msi`, mantendo essa extensão após descarregar. A instalação é iniciada pelo utilizador depois de fechar a aplicação.
 
-Depois de gerar o MSI, verifique o conteúdo com `python scripts/verify-windows-installer.py release/Streamland-1.2.0-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
+Depois de gerar o MSI, verifique o conteúdo com `python scripts/verify-windows-installer.py release/Streamland-1.2.1-Windows-Setup.msi --payload`. Os testes nativos adicionais usam `--native`; o serviço Windows Installer tem de estar disponível. O pacote não tem assinatura Authenticode.
 
 ## Abrir e atualizar
 
-Abra `Streamland/Streamland.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/Streamland-1.2.0/Streamland.exe`. Encerre a versão anterior pelo botão **Encerrar Streamland** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
+Abra `Streamland/Streamland.exe` no ZIP, mantendo a pasta completa. Na árvore de desenvolvimento: `release/Streamland-1.2.1/Streamland.exe`. Encerre a versão anterior pelo botão **Encerrar Streamland** antes de abrir esta versão. Fechar só a janela deixa o motor ativo.
 
 O pacote completo inclui Node.js, FFmpeg, FFprobe e yt-dlp. O utilizador final não precisa de instalar estas ferramentas, npm ou Python. Extraia a pasta completa e mantenha `runtime` e `vendor` junto da aplicação. Deixe os caminhos das ferramentas vazios nas Definições para usar as cópias incluídas; os caminhos personalizados continuam a ter prioridade. Windows utiliza Edge/Chrome e pode abrir no navegador predefinido. O launcher Windows usa o .NET Framework do Windows. Não inclui um navegador próprio.
 
@@ -428,7 +432,7 @@ O arranque Windows seleciona explicitamente o perfil Default do navegador exclus
 
 ### 0.15.5 - Windows num ficheiro único
 
-O ficheiro Streamland-1.2.0-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
+O ficheiro Streamland-1.2.1-SingleFile.exe inclui a aplicação e todos os componentes do portable Windows. Na primeira abertura extrai e verifica os recursos em %LOCALAPPDATA%/Go Streams/Cache; nas seguintes reutiliza a cópia verificada. Não faz downloads nem instala serviços. O Edge/Chrome do sistema continua a apresentar a interface.
 
 As definições ficam em %LOCALAPPDATA%/Go Streams/data. Se o EXE estiver junto a um portable anterior com data/project.json ou Streamland/data/project.json, reutiliza esses dados (também reconhece a pasta anterior GoStreams/data/project.json). Uma pasta Streamland-data ao lado do EXE permite escolher dados portáteis (GoStreams-data continua compatível); GO_STREAMS_DATA tem prioridade. Os vídeos locais continuam referenciados no local original. A cópia do EXE para outro computador não transporta os dados locais nem as chaves DPAPI; use exportação/importação encriptada e leve os vídeos necessários.
 
@@ -439,6 +443,7 @@ Para reconstruir: node scripts/build.mjs --platform=win32, seguido de node scrip
 
 Mac-Portable/Streamland.app inclui o iniciador universal Intel/Apple Silicon, Node.js, FFmpeg, FFprobe, yt-dlp e o icone escolhido. Usa o browser disponivel no Mac (incluindo o browser predefinido do sistema); nao necessita de instalar runtimes. Requer macOS 13.5 ou posterior. As definicoes permanecem em ~/Library/Application Support/Go Streams, fora do pacote da aplicacao.
 
-Na máquina de desenvolvimento, prepare primeiro o iniciador universal com `node scripts/build-mac-launcher.mjs`; exige Go (1.27.3 em CI). `STREAMLAND_GO` permite indicar o executável Go; a variável anterior `GO_STREAMS_GO` continua aceite. Depois execute `node scripts/prepare-portable.mjs --platform=darwin` e `python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable`. O utilizador final não precisa de Go nem de ferramentas de desenvolvimento.
+Na máquina de desenvolvimento, prepare primeiro o iniciador universal com `node scripts/build-mac-launcher.mjs`; exige Go (1.27.3 em CI). `STREAMLAND_GO` permite indicar o executável Go; a variável anterior `GO_STREAMS_GO` continua aceite. Depois execute `node scripts/prepare-portable.mjs --platform=darwin` e `python scripts/package-mac-portable.py --destination release/Streamland-1.2.1-Mac-Portable/Mac-Portable`. O utilizador final não precisa de Go nem de ferramentas de desenvolvimento.
 
 O ZIP contém a pasta Mac-Portable com os modos Unix e ficheiros verificados, sem projetos pessoais. Extraia no Mac com Finder ou ditto; num construtor Windows, a exportação tem de preservar/restaurar os modos do manifesto. O pacote completo é uma única aplicação no Finder; os recursos internos fazem parte da aplicação. Os testes nativos em CI abrangem Intel e Apple Silicon em macOS 15; consulte os relatórios da compilação para os resultados concluídos. A assinatura Developer ID e a notarização não estão certificadas.
+

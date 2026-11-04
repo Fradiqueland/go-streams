@@ -2,7 +2,11 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.2.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.2.1**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Electron screen capture correction (1.2.1)
+
+Preparing screen preview now accepts the canonical local origin URL returned by Electron, including its trailing slash. The previous literal comparison rejected valid recorder and live screen requests with `Invalid capture constraints`. Cross-origin, embedded-frame and missing-gesture requests remain blocked; each capture still requires source selection. Native CI verifies actual Electron capture and recorded bytes from its own test window without selecting desktop, camera, microphone or system audio.
 
 ## Streamland name and upgrade compatibility (1.2.0)
 
@@ -112,8 +116,8 @@ Build on Windows with Python **3.11 or 3.12** (the MSI authoring module is bundl
 
 ```powershell
 cd app
-python scripts/build-windows-installer.py --portable "release/Streamland-1.2.0-SingleFile.exe"
-python scripts/verify-windows-installer.py release/Streamland-1.2.0-Windows-Setup.msi --native
+python scripts/build-windows-installer.py --portable "release/Streamland-1.2.1-SingleFile.exe"
+python scripts/verify-windows-installer.py release/Streamland-1.2.1-Windows-Setup.msi --native
 ```
 
 An existing prepared Windows folder can be supplied with `--application-root` instead. Runtime bytes extracted from a single-file executable are checked against its embedded SHA-256 manifest before packaging. Python and the compiler are build requirements only. The generated application still uses an available system browser for its interface.
@@ -138,7 +142,7 @@ To build the Mac application and the portable delivery:
 ```powershell
 node scripts/build-mac-launcher.mjs
 node scripts/prepare-portable.mjs --platform=darwin
-python scripts/package-mac-portable.py --destination release/Streamland-1.2.0-Mac-Portable/Mac-Portable
+python scripts/package-mac-portable.py --destination release/Streamland-1.2.1-Mac-Portable/Mac-Portable
 ```
 
 The first command builds the universal native Mac launcher from `app/scripts/mac-launcher/` and writes it with its integrity manifest under `app/vendor/mac-launcher/`. It requires Go on the build machine; CI uses Go 1.27.3. Set `STREAMLAND_GO` to select a Go executable, or use the compatible `GO_STREAMS_GO` variable. End users do not need Go or development tools. The generated `Streamland.app` contains both processor runtimes and requires macOS 13.5 or later. The Mac CI matrix runs native startup, runtime, interface and recording checks on macOS 15 for Intel and Apple Silicon. Each build publishes its verification reports; consult those reports for completed checks. No Developer ID signing or notarization is claimed.
@@ -160,3 +164,4 @@ This repository stores the application source and reproducible build inputs. Run
 The REA analysis workspace and original Livecaster program are not part of this application repository. REA, if needed for further development, is available separately at https://github.com/morluto/rea.
 
 Created by Antonio Fradique. More products: https://AntonioFradique.net
+

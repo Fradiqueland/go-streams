@@ -4,6 +4,13 @@ const {appUrl}=require('./window-policy.cjs');
 // most once: retrying that callback would only throw again in the main process.
 function answerOnce(callback){let answered=false;return value=>{if(answered)return;answered=true;try{callback(value);}catch{}};}
 
+// Electron serializes a display request origin as a root URL, including '/'.
+// Canonicalize that form without accepting credentials, paths, queries or fragments.
+function captureOrigin(value,base){
+ if(typeof value!=='string')return false;
+ try{return new URL(value).href===base+'/';}catch{return false;}
+}
+
 async function chooseCaptureSource(sources,{showMessageBox,systemAudio=false}){
  if(!sources.length)return null;
  const pageSize=8,pages=Math.ceil(sources.length/pageSize);let page=0;
@@ -45,7 +52,7 @@ function wireCapturePermissions(browserSession,{contents,base,confirmMedia,choos
  browserSession.setDisplayMediaRequestHandler((request,callback)=>{
   const answer=answerOnce(callback);
   const current=()=>!contents.isDestroyed()&&request.frame&&request.frame===contents.mainFrame&&appUrl(contents.getURL(),base);
-  if(!current()||request.securityOrigin!==base||!request.userGesture||!request.videoRequested)return answer(null);
+  if(!current()||!captureOrigin(request.securityOrigin,base)||!request.userGesture||!request.videoRequested)return answer(null);
   Promise.resolve().then(async()=>{
    const sources=await getSources();
    if(!current())return answer(null);
