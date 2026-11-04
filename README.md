@@ -2,7 +2,7 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.3.1**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.3.2**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
 
 ## Automatic intro, outro and local recording deletion (1.3.0)
 

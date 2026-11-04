@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {AppError,atomicWrite,runProcess,toolsFor} from './core.mjs';
+import {appendProgramOutput} from './program-output.mjs';
 import {WebmEncoder} from './webm-encoder.mjs';
 
 export class LocalRecordings {
@@ -37,9 +38,10 @@ export class LocalRecordings {
   this.checkSpace(next.directory);atomicWrite(this.preferencesFile,JSON.stringify(next));this.preferences=next;return {...next};
  }
  location(item){return item.directory||this.root;}
- start({confirmed=false,feedId,directory,kind='video',format=feedId?'mp4':kind==='audio'?'m4a':'webm'}={}){
+ start({confirmed=false,feedId,directory,kind='video',format=feedId?'mp4':kind==='audio'?'m4a':'webm',context=feedId?'live':'recorder'}={}){
   if(!confirmed)throw new AppError('Confirm recording to this computer.');
   if(!['video','audio'].includes(kind)||!(kind==='audio'?['m4a','webm']:['mp4','webm']).includes(format)||(feedId&&(kind!=='video'||format!=='mp4')))throw new AppError('Choose a valid recording type and format.');
+  if(!['recorder','live'].includes(context)||(feedId&&context!=='live')||(context==='live'&&(kind!=='video'||format!=='mp4')))throw new AppError('Choose a valid recording type and format.');
   if(this.closed||this.studio.closing||this.studio.importingProject||this.active.size>=2)throw new AppError('Close or finish the current recording first.',409);
   if(feedId)this.studio.feeds.get(feedId);
   const destination=this.prepareDirectory(directory===undefined?this.preferences.directory:directory);this.checkSpace(destination);const id=crypto.randomUUID(),item={id,created:new Date().toISOString(),status:'recording',format,kind,bytes:0,error:'',...(destination!==fs.realpathSync(this.root)?{directory:destination}:{})};
@@ -55,8 +57,9 @@ export class LocalRecordings {
    const args=['-hide_banner','-loglevel','error','-nostdin','-probesize','1048576','-analyzeduration','1000000','-f',feedId?'mpegts':'webm','-i','pipe:0'];
    const encoding=[...(kind==='audio'?['-map','0:a:0','-vn']:['-map','0:v:0','-map','0:a:0?']),...(feedId?['-c','copy']:kind==='audio'?['-c:a','aac','-b:a','192k']:['-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k'])];
    if(colorFilter)encoding.push('-vf',colorFilter);
-   // Record the clean programme; permanent branding belongs to live outputs.
-   args.push(...encoding);
+   // Only the dedicated recorder is clean. Shared live capture is already
+   // branded; the studio's independent recording gets the same image once.
+   if(!feedId&&context==='live')appendProgramOutput(args,encoding);else args.push(...encoding);
    args.push('-f','matroska','-n',path.join(destination,id+'.part'));
    return this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});
    };

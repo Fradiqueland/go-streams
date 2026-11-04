@@ -259,7 +259,7 @@ export class RecorderPanel {
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output)return;
    this.production?.bumpers?.arm('recording');
    const recorder=new MediaRecorder(this.output,{mimeType,...(audio?{}:{videoBitsPerSecond:4500000}),audioBitsPerSecond:192000});
-   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4'});
+   const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4',context:'recorder'});
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{discardEmpty:true}).catch(()=>{});return;}
    this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>this.recordingFailed(error));
    const upload=this.upload;this.recorderStarted=false;this.writerStopping=false;

@@ -164,7 +164,7 @@ test('cancelling the recording folder question starts neither a browser encoder 
 test('a predefined recording folder bypasses the picker and is sent to the independent recording worker',async t=>{
  installRecorder(t);const requests=[],stream={},tools=new ProductionTools({getStream:()=>stream,api:async(route,body)=>{requests.push({route,body});return {id:'recording'};},toast(){}});
  tools.update=()=>{};const status={};tools.element={querySelector:selector=>selector==='.recording-status'?status:null};tools.recordingPreferences={directory:'/chosen/recordings',askEveryTime:false};
- await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/chosen/recordings',kind:'video',format:'mp4'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);await tools.stopRecording();
+ await tools.startRecording();assert.deepEqual(requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/chosen/recordings',kind:'video',format:'mp4',context:'live'}}]);assert.equal(tools.recordingId,'recording');assert.match(status.textContent,/chosen/);await tools.stopRecording();
 });
 
 test('a stale state poll cannot replace freshly saved recording preferences',()=>{

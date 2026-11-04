@@ -1,3 +1,4 @@
+import {appendProgramOutput} from './program-output.mjs';
 import crypto from 'node:crypto';
 import {AppError,toolsFor} from './core.mjs';
 import {encodingArgs,encodingAspects} from './encoding.mjs';
@@ -43,8 +44,7 @@ export class CaptureFeeds {
   const child=new WebmEncoder(colorFilter=>{
    const args=['-hide_banner','-loglevel','error','-nostdin','-fflags','+genpts','-probesize','1048576','-analyzeduration','1000000','-f','webm','-i','pipe:0'],encoding=encoded.args.filter(arg=>arg!=='-shortest');
    if(colorFilter){const vf=encoding.indexOf('-vf');if(vf>=0)encoding[vf+1]=colorFilter+','+encoding[vf+1];else encoding.push('-vf',colorFilter);}
-   // Shared capture stays clean for recordings; each live output adds branding.
-   args.push(...encoding,'-tune','zerolatency','-bf','0','-x264-params','repeat-headers=1','-f','mpegts','-mpegts_start_pid',String(VIDEO_PID),'-mpegts_pmt_start_pid',String(PMT_PID),'-mpegts_flags','resend_headers+pat_pmt_at_frames','-flush_packets','1','-muxdelay','0','-muxpreload','0','pipe:1');
+   appendProgramOutput(args,encoding,input.quality,input.aspect);args.push('-tune','zerolatency','-bf','0','-x264-params','repeat-headers=1','-f','mpegts','-mpegts_start_pid',String(VIDEO_PID),'-mpegts_pmt_start_pid',String(PMT_PID),'-mpegts_flags','resend_headers+pat_pmt_at_frames','-flush_packets','1','-muxdelay','0','-muxpreload','0','pipe:1');
    return this.studio.spawnProcess(toolsFor(this.studio.store.data.settings).ffmpeg,args,{shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});
   });feed.child=child;feed.completion=new Promise(resolve=>{feed.resolve=resolve;});this.active.set(feed.id,feed);
   child.stdin.on('error',()=>{});child.stderr.on('data',()=>{});
