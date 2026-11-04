@@ -1,6 +1,7 @@
-import {language} from './i18n.js';
+import {language,localized} from './i18n.js';
 import {RecordingUpload} from './recording-upload.js';
-const t=(en,pt)=>language()==='pt-PT'?pt:en;
+import {ProductionBumpers} from './production-bumpers.js';
+const t=localized;
 const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const defaults={layout:'pip',background:'#111827',accent:'#e70952',name:'',title:'',banner:'',ticker:'',mirror:false,logo:'',backgroundImage:'',notes:'',micVolume:1,screenVolume:1};
 const volume=value=>Number.isFinite(value)?Math.max(0,Math.min(1.5,value)):1;
@@ -70,6 +71,7 @@ export class ProductionTools {
   parent.appendChild(this.element);
   const clips=document.createElement('details');clips.className='production-clips';clips.innerHTML=`<summary>${t('Intro, outro & video clips','Introdução, encerramento e clips')}<span class="optional-label">${t('Optional','Opcional')}</span></summary><div class="studio-details-body"><label>${t('Local video file','Vídeo local')}<input type="file" name="clipFile" accept="video/mp4,video/webm"></label><p class="form-hint">${this.recordingControls?t('The clip replaces the live picture and temporarily mutes the live microphone/shared audio. At the end, the live picture and audio return.','O clip substitui a imagem ao vivo e silencia temporariamente o microfone/áudio partilhado. No final regressam a imagem e o áudio ao vivo.'):t('The clip temporarily replaces the camera/screen and selected audio. With no audio selected, clips are silent. At the end, the camera/screen and selected audio return.','O clip substitui temporariamente a câmara/o ecrã e o áudio selecionado. Sem áudio selecionado, os clips ficam sem som. No final regressam a câmara/o ecrã e o áudio selecionado.')}</p><div class="actions"><button type="button" class="secondary" data-production="play-clip">${t('Play selected clip','Reproduzir clip selecionado')}</button><button type="button" class="secondary" data-production="stop-clip">${this.recordingControls?t('Return to live','Regressar ao direto'):t('Return to camera / screen','Regressar à câmara / ao ecrã')}</button><button type="button" class="secondary" data-production="snapshot">${t('Save frame as PNG','Guardar imagem PNG')}</button></div><p class="form-hint">${t('Shortcuts: Ctrl+Alt+1–4 changes layouts. Ctrl+Alt+R starts/stops local recording.','Atalhos: Ctrl+Alt+1–4 muda o layout. Ctrl+Alt+R inicia/para a gravação local.')}</p></div>`;
   this.element.appendChild(clips);
+  this.bumpers=new ProductionBumpers(this);this.bumpers.mount(clips.querySelector('.studio-details-body'));
   const emojiTools=document.createElement('div');emojiTools.className='production-emoji-tools';
   emojiTools.innerHTML=`<label>${t('Insert emojis into','Inserir emojis em')}<select name="emojiTarget"><option value="name">${t('Presenter name','Nome do apresentador')}</option><option value="title">${t('Presenter title','Título do apresentador')}</option><option value="banner" selected>${t('On-screen banner','Faixa no vídeo')}</option><option value="ticker">${t('Scrolling ticker','Texto em movimento')}</option></select></label><div class="actions" data-no-help>${['😀','❤️','🎵','🔥','✨','📢','🎉','👍'].map(emoji=>`<button type="button" class="secondary small" data-production="emoji" data-emoji="${emoji}" aria-label="${t('Insert emoji ','Inserir emoji ')+emoji}">${emoji}</button>`).join('')}</div>`;
   this.element.querySelector('[name=ticker]').closest('label').after(emojiTools);
@@ -103,7 +105,7 @@ export class ProductionTools {
   if(drawBase)drawBase(ctx,w,h,v);else for(const rect of layoutRects(v.layout,w,h,Boolean(camera),Boolean(screen))){
    ctx.save();if(rect.source==='camera'&&v.mirror){ctx.translate(rect.x+rect.w,rect.y);ctx.scale(-1,1);fit(camera,0,0,rect.w,rect.h);}else fit(rect.source==='camera'?camera:screen,rect.x,rect.y,rect.w,rect.h);ctx.restore();
   }
-  if(this.clip&&!this.clip.paused&&!this.clip.ended){ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);fit(this.clip,0,0,w,h);}
+  if(this.clip&&(this.automaticClip||!this.clip.paused&&!this.clip.ended)){ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);fit(this.clip,0,0,w,h);if(this.automaticClip)return;}
   if(this.images.logo){const image=this.images.logo,scale=Math.min(w*.13/image.width,h*.2/image.height),iw=image.width*scale,ih=image.height*scale;ctx.drawImage(image,w-iw-w*.03,h*.03,iw,ih);}
   const band=(value,y,height)=>{ctx.fillStyle=v.accent;ctx.fillRect(w*.03,y,w*.94,height);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(value,w*.05,y+height*.65,w*.9);};
   if(v.name){band(v.name+(v.title?' — '+v.title:''),h*.82,h*.08);}
@@ -138,13 +140,13 @@ export class ProductionTools {
   if(current&&!this.finishing&&!this.starting&&!['recording','finalizing'].includes(current.status)){
    const recorder=this.localRecorder,upload=this.localUpload;this.recordingId=null;this.clearRecordingWriter();this.recordingFailure=null;upload?.fail(Error(current.error||'Recording ended.'));if(recorder&&recorder.state!=='inactive')recorder.stop();this.element.querySelector('.recording-status').textContent=current.status==='completed'?t('Recording saved locally.','Gravação guardada localmente.'):current.error||t('Recording interrupted. Original local data is available for recovery.','Gravação interrompida. Os dados locais originais estão disponíveis para recuperação.');
   }
-  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy);
+  this.element.querySelector('[data-production="record"]').disabled=!this.getStream()||this.recording||Boolean(this.preferencesBusy||this.bumpers?.libraryBusy);
   this.element.querySelector('[data-production="stop-record"]').disabled=!this.recordingId||Boolean(this.finishing);
-  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="Streamland-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}</p>`).join('');}
+  const signature=JSON.stringify(recordings);if(signature!==this.fileSignature){this.fileSignature=signature;this.element.querySelector('.recording-files').innerHTML=recordings.slice(0,10).map(item=>`<p>${item.created.replace(/[^0-9TZ:.+-]/g,'')} — ${item.status==='completed'?`<a href="/api/recordings/${e(item.id)}/file" download="Streamland-${e(item.id)}.${e(item.format||'webm')}">${t('Download local recording','Transferir gravação local')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-production="recover" data-id="${item.id}">${t('Recover local recording','Recuperar gravação local')}</button>`:item.status}${['completed','interrupted'].includes(item.status)?` <button type="button" class="secondary small delete-recording" data-production="delete-recording" data-id="${e(item.id)}">${t('Delete recording','Apagar gravação')}</button>`:''}</p>`).join('');}
   this.notifyRecordingState();
  }
  async startRecording(){
-  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy)return;
+  const stream=this.getStream();if(!stream||this.recording||this.preferencesBusy||this.bumpers?.libraryBusy)return;
   const attempt={stream,cancelled:false};let cleanupAttempted=false;this.recordingAttempt=attempt;this.recordingFailure=null;
   const current=()=>this.recordingAttempt===attempt&&!attempt.cancelled&&this.getStream()===stream;
   const changed=()=>Error(t('The preview changed before recording started. Prepare it again.','A pré-visualização mudou antes de iniciar a gravação. Prepare-a novamente.'));
@@ -153,15 +155,16 @@ export class ProductionTools {
    if(!current()){if(attempt.cancelled)return;throw changed();}
    const config=this.getRecordingConfig?.()||{},mimeType=typeof MediaRecorder==='function'?[config.mimeType,'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(type=>type&&MediaRecorder.isTypeSupported(type)):null;
    if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
+   if(this.bumpers?.enabled('recording')){await this.bumpers.prepare('recording');if(!current()){this.bumpers.finish('recording');return;}this.bumpers.arm('recording');}
    const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:'video',format:'mp4'});this.recordingId=id;this.discardRecordingEmpty=true;
    if(!current()){cleanupAttempted=true;await this.finishRecordingWriter();if(!attempt.cancelled)throw changed();return;}
    const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:config.videoBitsPerSecond||4500000,audioBitsPerSecond:config.audioBitsPerSecond||192000});this.localRecorder=recorder;
    const fail=error=>{if(this.recordingAttempt!==attempt||this.recordingId!==id)return;this.recordingFailure ||= error;void this.stopRecording();};
    const upload=this.localUpload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},fail);
-   this.localRecorderDone=new Promise(resolve=>recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.recordingAttempt===attempt&&this.recordingId===id&&!this.finishing&&!this.localWriterStopping)void this.stopRecording();});},{once:true}));recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>fail(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
-   recorder.start(500);this.localRecorderStarted=true;this.discardRecordingEmpty=false;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;
+   this.localRecorderDone=new Promise(resolve=>recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.recordingAttempt===attempt&&this.recordingId===id&&!this.finishing&&!this.localWriterStopping)void this.stopRecording({skipOutro:true});});},{once:true}));recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>fail(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
+   recorder.addEventListener('start',()=>this.bumpers?.start('recording'),{once:true});recorder.start(500);this.localRecorderStarted=true;this.discardRecordingEmpty=false;this.element.querySelector('.recording-status').textContent=t('Recording locally to this computer.','A gravar localmente neste computador.')+' '+directory;
   }catch(error){if(this.recordingId&&!cleanupAttempted)try{await this.finishRecordingWriter();}catch(cleanup){error=this.recordingFailure||cleanup;}this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);}
-  finally{this.starting=false;if(!this.recordingId)this.clearRecordingWriter();this.resolveStart();this.startDone=null;this.update();}
+  finally{this.starting=false;if(!this.recordingId){this.bumpers?.finish('recording');this.clearRecordingWriter();}this.resolveStart();this.startDone=null;this.update();}
  }
  clearRecordingWriter(){this.localRecorder=null;this.localRecorderStarted=false;this.localRecorderDone=null;this.localUpload=null;this.recordingAttempt=null;this.localWriterStopping=false;if(!this.recordingId)this.discardRecordingEmpty=false;}
  async finishRecordingWriter(){
@@ -174,15 +177,16 @@ export class ProductionTools {
   catch(error){throw failure||error;}
   finally{this.clearRecordingWriter();if(!this.recordingId)this.recordingFailure=null;}
  }
- async stopRecording({throwOnError=false}={}){
-  if(this.startDone){if(this.recordingAttempt)this.recordingAttempt.cancelled=true;await this.startDone;}
+ async stopRecording({throwOnError=false,skipOutro=false}={}){
+  if(skipOutro||this.recordingFailure)this.bumpers?.finish('recording');
+  if(this.startDone){this.bumpers?.finish('recording');if(this.recordingAttempt)this.recordingAttempt.cancelled=true;await this.startDone;}
   let finishing=this.finishing;
   if(!finishing&&this.recordingId){
    finishing=this.finishing=(async()=>{
     this.element.querySelector('.recording-status').textContent=t('Finalizing local recording...','A finalizar gravação local...');
-    try{await this.finishRecordingWriter();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');return {};}
+    try{if(!skipOutro&&!this.recordingFailure&&this.bumpers?.sessions.has('recording'))await this.bumpers.end('recording');await this.finishRecordingWriter();this.element.querySelector('.recording-status').textContent=t('Recording saved locally.','Gravação guardada localmente.');return {};}
     catch(error){this.element.querySelector('.recording-status').textContent=error.message;this.toast(error.message,true);return {error};}
-    finally{this.finishing=null;this.update();}
+    finally{this.bumpers?.finish('recording');this.finishing=null;this.update();}
    })();this.update();
   }
   const result=await finishing;if(throwOnError&&result?.error)throw result.error;return result;
@@ -194,11 +198,16 @@ export class ProductionTools {
    if(action==='choose-recording-folder')await this.chooseRecordingDirectory();if(action==='save-recording-preferences')await this.saveRecordingPreferences();
    if(action==='record')await this.startRecording();if(action==='stop-record')await this.stopRecording();
    if(action==='recover'){button.disabled=true;await this.api(`/api/recordings/${button.dataset.id}/finish`,{});this.toast(t('Recording recovered.','Gravação recuperada.'));}
+   if(action==='delete-recording'){
+    const id=button.dataset.id;if(!window.confirm(t('Permanently delete this recording and its recovery data from this computer? This cannot be undone.','Apagar definitivamente esta gravação e os respetivos dados de recuperação deste computador? Esta ação não pode ser anulada.')+'\n'+id))return;
+    await this.api('/api/recordings/'+encodeURIComponent(id),{confirmed:true},'DELETE');const state=await this.api('/api/state');this.update(state.recordings,state.recordingPreferences);this.toast(t('Local recording deleted.','Gravação local apagada.'));
+   }
    if(action==='clear-images'){this.imageLoads={};this.values.logo='';this.values.backgroundImage='';this.images={};for(const name of ['logo','backgroundImage'])this.element.querySelector(`[name="${name}"]`).value='';}
    if(action==='emoji')this.insertEmoji(button.dataset.emoji);
    if(action==='snapshot')await this.snapshot?.();
    if(action==='stop-clip')this.stopClip();
    if(action==='play-clip'){
+    if(this.bumpers?.active)throw Error(t('Skip the automatic video before playing another clip.','Salte o vídeo automático antes de reproduzir outro clip.'));
     if(!this.getStream())throw Error(t('Open a local preview first.','Abra primeiro a pré-visualização local.'));
     const file=this.element.querySelector('[name=clipFile]').files[0];if(!file||!['video/mp4','video/webm'].includes(file.type))throw Error(t('Choose a local MP4 or WebM video.','Escolha um vídeo local MP4 ou WebM.'));
     this.stopClip();this.clipUrl=URL.createObjectURL(file);const clip=this.clip=document.createElement('video');clip.playsInline=true;clip.muted=!this.setClipAudio;clip.src=this.clipUrl;clip.onended=()=>{if(this.clip===clip)this.stopClip();};clip.onerror=()=>{if(this.clip!==clip)return;this.stopClip();this.toast(t('This clip could not be played. Normalize it in Tools first.','Este clip não pôde ser reproduzido. Normalize-o em Ferramentas.'),true);};try{this.setClipAudio?.(clip);await clip.play();if(this.clip===clip)this.onChange?.();}catch(error){if(this.clip!==clip)return;this.stopClip();throw error;}
@@ -216,6 +225,6 @@ export class ProductionTools {
    if(action==='teleprompter'){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}else this.scrollTimer=setInterval(()=>{const el=this.element.querySelector('.teleprompter');el.scrollTop+=1;},50);}
   }catch(error){this.toast?.(error.message,true);}finally{button.disabled=false;this.update();this.onChange?.();}
  }
- stopClip(){if(this.clip){this.clip.onended=null;this.clip.onerror=null;this.clip.pause();this.clip.src='';this.clip=null;}if(this.clipUrl){URL.revokeObjectURL(this.clipUrl);this.clipUrl=null;}this.setClipAudio?.(null);this.onChange?.();}
- stopVisuals(){if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}this.stopClip();}
+ stopClip(){this.bumpers?.skip();if(this.clip){this.clip.onended=null;this.clip.onerror=null;this.clip.pause();this.clip.src='';this.clip=null;}if(this.clipUrl){URL.revokeObjectURL(this.clipUrl);this.clipUrl=null;}this.setClipAudio?.(null);this.onChange?.();}
+ stopVisuals(){this.bumpers?.cancel();if(this.scrollTimer){clearInterval(this.scrollTimer);this.scrollTimer=null;}this.stopClip();}
 }

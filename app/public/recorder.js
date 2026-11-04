@@ -1,9 +1,9 @@
-import {language,localeTag} from './i18n.js';
+import {language,localeTag,localized} from './i18n.js';
 import {ProductionTools,layoutRects} from './live-production.js';
 import {RecordingUpload} from './recording-upload.js';
 export {RecordingUpload} from './recording-upload.js';
 import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
-const t=(en,pt)=>language()==='pt-PT'?pt:en;
+const t=localized;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
 
@@ -41,7 +41,7 @@ export class RecorderPanel {
    <section class="panel"><h2>${t('Local recordings','Gravações locais')}</h2><div class="recorder-files"></div></section>`;
    this.element.querySelector('form').addEventListener('submit',event=>{event.preventDefault();void this.prepare();});
    this.element.addEventListener('click',event=>{const button=event.target.closest('[data-recorder]');if(!button||button.disabled)return;const action=button.dataset.recorder;
-    const task=action==='start'?this.start():action==='stop'?this.stop():action==='release'?this.release():action==='folder'?this.chooseFolder():action==='save-folder'?this.saveFolder():action==='recover'?this.recover(button.dataset.id):null;
+    const task=action==='start'?this.start():action==='stop'?this.stop():action==='release'?this.release():action==='folder'?this.chooseFolder():action==='save-folder'?this.saveFolder():action==='recover'?this.recover(button.dataset.id):action==='delete'?this.deleteRecording(button.dataset.id):null;
     if(task)void task.catch(error=>this.error(error));
     if(action==='cancel')this.countdownAbort?.abort();
     if(action==='default-folder'){this.folderDirty=false;this.applyPreferences(this.preferences);}
@@ -72,13 +72,14 @@ export class RecorderPanel {
  }
  status(message){this.$('.recorder-status').textContent=message;}
  error(error){this.status(error.message);this.toast(error.message,true);}
- recordingFailed(error){this.recordingError ||= error;this.error(error);void this.stop().catch(()=>{});}
+ recordingFailed(error){this.recordingError ||= error;this.error(error);void this.stop({skipOutro:true}).catch(()=>{});}
  applyPreferences(preferences){this.$('[name="directory"]').value=preferences.directory;this.$('[name="askFolder"]').checked=preferences.askEveryTime;}
  update(state={}){
   if(!this.element)return;
+  this.production?.bumpers?.update(state.media);
   if(state.recordingPreferences&&(state.recordingPreferences.revision||0)>=(this.preferences.revision||0)){this.preferences={...state.recordingPreferences};if(!this.folderDirty&&!this.folderBusy&&!this.starting&&!this.id)this.applyPreferences(this.preferences);}
   if(state.recordings){
-   const signature=JSON.stringify(state.recordings);if(signature!==this.filesSignature){this.filesSignature=signature;this.$('.recorder-files').innerHTML=state.recordings.slice(0,20).map(item=>`<div class="recorder-file"><strong>${item.kind==='audio'?t('Audio','Áudio'):t('Video','Vídeo')} · ${esc(new Date(item.created).toLocaleString(localeTag()))} · ${esc(item.format||'webm')}</strong><p>${item.status==='completed'?`<a href="/api/recordings/${esc(item.id)}/file" download="Streamland-${esc(item.id)}.${esc(item.format||'webm')}">${t('Download','Transferir')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-recorder="recover" data-id="${esc(item.id)}">${t('Recover recording','Recuperar gravação')}</button>`:esc(item.status)}</p><small>${esc(item.directory||this.preferences.directory)} / ${esc(item.id)}.${esc(item.format||'webm')}</small></div>`).join('')||`<p>${t('No recordings yet.','Ainda não existem gravações.')}</p>`;}
+   const signature=JSON.stringify(state.recordings);if(signature!==this.filesSignature){this.filesSignature=signature;this.$('.recorder-files').innerHTML=state.recordings.slice(0,20).map(item=>`<div class="recorder-file"><strong>${item.kind==='audio'?t('Audio','Áudio'):t('Video','Vídeo')} · ${esc(new Date(item.created).toLocaleString(localeTag()))} · ${esc(item.format||'webm')}</strong><p>${item.status==='completed'?`<a href="/api/recordings/${esc(item.id)}/file" download="Streamland-${esc(item.id)}.${esc(item.format||'webm')}">${t('Download','Transferir')} (${(item.bytes/1048576).toFixed(1)} MB)</a>`:item.status==='interrupted'?`<button class="secondary small" data-recorder="recover" data-id="${esc(item.id)}">${t('Recover recording','Recuperar gravação')}</button>`:esc(item.status)}${['completed','interrupted'].includes(item.status)?` <button type="button" class="secondary small delete-recording" data-recorder="delete" data-id="${esc(item.id)}">${t('Delete recording','Apagar gravação')}</button>`:''}</p><small>${esc(item.directory||this.preferences.directory)} / ${esc(item.id)}.${esc(item.format||'webm')}</small></div>`).join('')||`<p>${t('No recordings yet.','Ainda não existem gravações.')}</p>`;}
    const own=state.recordings.find(item=>item.id===this.id);if(own&&!this.finishing&&!this.starting&&['completed','interrupted'].includes(own.status))this.recordingFailed(Error(own.error||t('Recording ended.','A gravação terminou.')));
   }
   this.controls();
@@ -94,7 +95,7 @@ export class RecorderPanel {
   this.$('[name="aspect"]').disabled=locked||mode==='audio';
   this.$('.recorder-aspect-hint').hidden=mode==='audio';
   this.$('[data-recorder="prepare"]').disabled=locked||prepared;
-  this.$('[data-recorder="start"]').disabled=!prepared||locked||this.folderBusy;
+  this.$('[data-recorder="start"]').disabled=!prepared||locked||this.folderBusy||Boolean(this.production?.bumpers?.libraryBusy);
   this.$('[data-recorder="stop"]').disabled=!this.id||this.finishing;
   this.$('[data-recorder="release"]').disabled=(!prepared&&!this.preparing)||this.finishing;
   this.$('[data-recorder="cancel"]').hidden=!this.starting;
@@ -162,7 +163,7 @@ export class RecorderPanel {
     const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const level=Math.min(1,Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length)*3);for(const meter of this.element.querySelectorAll('meter'))meter.value=level;},100);
    }
    if(!current())throw Error('Preview cancelled');
-   this.output=new MediaStream([...(mode==='audio'?[]:this.canvas.captureStream(30).getVideoTracks()),...audioTracks]);
+   const videoTracks=mode==='audio'?[]:this.canvas.captureStream(30).getVideoTracks();this.canvasTrack=videoTracks[0];this.output=new MediaStream([...videoTracks,...audioTracks]);
    this.$('.recorder-preview').srcObject=this.output;this.$('.recorder-preview').hidden=mode==='audio';
    this.status(t('Preview ready. Choose the area, camera position and folder, then start recording.','Pré-visualização pronta. Escolha a área, a posição da câmara e a pasta e inicie a gravação.'));
    this.syncCamera();void this.listDevices(generation);
@@ -188,6 +189,8 @@ export class RecorderPanel {
   const fit=(video,x,y,width,height)=>{if(!video?.videoWidth)return;const box=containedRect({left:x,top:y,width,height},video.videoWidth,video.videoHeight);ctx.drawImage(video,box.left,box.top,box.width,box.height);};
   if(this.production)this.production.draw(ctx,w,h,this.cameraVideo,this.screenVideo,fit,(context,width,height,values)=>this.drawSources(context,width,height,values));
   else{ctx.fillStyle='#111827';ctx.fillRect(0,0,w,h);this.drawSources(ctx,w,h);}
+  // Static canvases may otherwise emit only one frame on some Chromium GPUs.
+  if(this.canvasTrack?.readyState==='live')this.canvasTrack.requestFrame?.();
  }
  drawSources(ctx,w,h,values={layout:'pip',mirror:false}){
   const screen=['screen','screen-camera'].includes(this.config.mode)&&Boolean(this.screenVideo?.videoWidth),camera=['camera','screen-camera'].includes(this.config.mode)&&Boolean(this.cameraVideo?.videoWidth);
@@ -205,6 +208,13 @@ export class RecorderPanel {
   this.clipAudio?.disconnect();this.clipAudio=null;
   if(video){video.muted=!this.audio||!this.audioMix;if(!video.muted){this.clipAudio=this.audio.createMediaElementSource(video);this.clipAudio.connect(this.audioMix);}}
   for(const input of this.audioInputs||[])input.gain.gain.value=this.clipAudio?0:this.inputVolume(input.name)*(this.audioInputScale||1);
+ }
+ async ensureBumperAudio(){
+  if(this.audio||this.config?.mode==='audio'||!this.production?.bumpers?.enabled('recording'))return;
+  const output=this.output,audio=this.audio=new AudioContext();await audio.resume();
+  if(this.output!==output||this.audio!==audio)throw Error(t('Preview cancelled.','Pré-visualização cancelada.'));
+  const destination=audio.createMediaStreamDestination(),mix=this.audioMix=audio.createGain(),sink=audio.createGain();sink.gain.value=0;mix.connect(destination);mix.connect(sink).connect(audio.destination);this.audioInputs=[];
+  for(const track of destination.stream.getAudioTracks())output.addTrack(track);
  }
  async snapshot(){
   if(!this.canvas||!this.output||this.config?.mode==='audio'){this.toast(t('Open a video preview first.','Abra primeiro uma pré-visualização de vídeo.'),true);return;}
@@ -238,7 +248,7 @@ export class RecorderPanel {
   this.pointerSession(event,e=>{if(!this.output)return;const dx=e.clientX-event.clientX,dy=e.clientY-event.clientY;if(resize)this.cameraPosition=resizedCameraPosition(start,b.width,b.height,dx,dy);else{this.cameraPosition.x=Math.max(0,Math.min(1,start.x+dx/Math.max(1,b.width-r.width)));this.cameraPosition.y=Math.max(0,Math.min(1,start.y+dy/Math.max(1,b.height-r.height)));}this.syncCamera();});
  }
  async start(){
-  if(!this.output||this.id||this.starting||this.finishing||this.folderBusy)return;
+  if(!this.output||this.id||this.starting||this.finishing||this.folderBusy||this.production?.bumpers?.libraryBusy)return;
   this.starting=true;this.recordingError=null;const generation=this.generation;this.startDone=new Promise(resolve=>{this.resolveStart=resolve;});this.controls();this.countdownAbort=new AbortController();
   try{
    let directory=this.$('[name="directory"]').value;if(this.$('[name="askFolder"]').checked||!directory){directory=await this.chooseFolder();if(directory===null)return;}
@@ -247,18 +257,21 @@ export class RecorderPanel {
    // decoders can replace full-range WebM metadata with limited-range defaults.
    const audio=this.config.mode==='audio',mimeType=this.captureMimeType||(audio?['audio/webm;codecs=opus','audio/webm']:['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']).find(type=>MediaRecorder.isTypeSupported(type));
    if(!mimeType)throw Error(t('This browser cannot record WebM. Use the Windows Electron edition or a compatible browser.','Este navegador não consegue gravar WebM. Use a edição Electron do Windows ou um navegador compatível.'));
-   const recorder=new MediaRecorder(this.output,{mimeType,...(audio?{}:{videoBitsPerSecond:4500000}),audioBitsPerSecond:192000});
    const ready=await countdown(this.config.countdown,value=>{this.$('.recorder-countdown').hidden=value===null;this.$('.recorder-countdown').textContent=value??'';this.$('.recorder-countdown-inline').hidden=value===null;this.$('.recorder-countdown-inline').textContent=value===null?'':t('Recording starts in ','A gravação começa em ')+value+' s';},this.countdownAbort.signal);
    if(!ready||generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){this.status(t('Countdown cancelled. No recording was started.','Contagem cancelada. Não foi iniciada nenhuma gravação.'));return;}
+   if(!audio){await this.production?.bumpers?.prepare('recording');await this.ensureBumperAudio();}
+   if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output)return;
+   this.production?.bumpers?.arm('recording');
+   const recorder=new MediaRecorder(this.output,{mimeType,...(audio?{}:{videoBitsPerSecond:4500000}),audioBitsPerSecond:192000});
    const {id}=await this.api('/api/recordings/start',{confirmed:true,directory,kind:audio?'audio':'video',format:audio?'m4a':'mp4'});
    if(generation!==this.generation||this.countdownAbort.signal.aborted||!this.output){await this.api(`/api/recordings/${id}/finish`,{discardEmpty:true}).catch(()=>{});return;}
    this.id=id;this.recorder=recorder;this.upload=new RecordingUpload(async(blob,sequence)=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(`/api/recordings/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'X-Go-Streams':'1','Content-Type':audio?'audio/webm':'video/webm'},body:blob,signal:controller.signal});if(!response.ok)throw Error((await response.json().catch(()=>({}))).error||'Recording upload failed');}finally{clearTimeout(timer);}},error=>this.recordingFailed(error));
    const upload=this.upload;this.recorderStarted=false;this.writerStopping=false;
-   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.id===id&&this.recorder===recorder&&!this.finishing&&!this.writerStopping)void this.stop().catch(error=>this.error(error));});},{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>this.recordingFailed(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
-   recorder.start(500);this.recorderStarted=true;this.startedAt=Date.now();this.$('.recorder-elapsed').textContent=elapsed(0);this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
+   this.recorderDone=new Promise(resolve=>{recorder.addEventListener('stop',()=>{resolve();queueMicrotask(()=>{if(this.id===id&&this.recorder===recorder&&!this.finishing&&!this.writerStopping)void this.stop({skipOutro:true}).catch(error=>this.error(error));});},{once:true});});recorder.addEventListener('dataavailable',event=>upload.push(event.data));recorder.addEventListener('error',()=>this.recordingFailed(Error(t('The browser recording stopped unexpectedly.','A gravação do navegador parou inesperadamente.'))));
+   recorder.addEventListener('start',()=>this.production?.bumpers?.start('recording'),{once:true});recorder.start(500);this.recorderStarted=true;this.startedAt=Date.now();this.$('.recorder-elapsed').textContent=elapsed(0);this.elapsedTimer=setInterval(()=>{this.$('.recorder-elapsed').textContent=elapsed(Date.now()-this.startedAt);},250);
    this.status(t('Recording to: ','A gravar para: ')+directory+' / '+id+(audio?'.m4a':'.mp4'));
   }catch(error){if(this.id)await this.stopWriter().catch(()=>{});this.error(error);}
-  finally{this.starting=false;this.resolveStart();this.startDone=null;this.controls();}
+  finally{if(!this.id)this.production?.bumpers?.finish('recording');this.starting=false;this.resolveStart();this.startDone=null;this.controls();}
  }
  async stopWriter(){
   const id=this.id;if(!id)return;this.writerStopping=true;clearInterval(this.elapsedTimer);
@@ -269,26 +282,31 @@ export class RecorderPanel {
   try{await this.api(`/api/recordings/${id}/finish`,{});if(uploadError||this.recordingError)throw uploadError||this.recordingError;this.status(t('Recording saved locally.','Gravação guardada localmente.'));}
   finally{this.id=null;this.recorder=null;this.recorderStarted=false;this.recorderDone=null;this.upload=null;this.recordingError=null;this.writerStopping=false;}
  }
- async stop(){
+ async stop({skipOutro=false}={}){
+  if(skipOutro||this.starting)this.production?.bumpers?.finish('recording');
   if(this.stopDone)return this.stopDone;
   if(this.starting){this.countdownAbort?.abort();await this.startDone;}
   if(this.stopDone)return this.stopDone;
   if(!this.id)return;this.finishing=true;this.controls();this.status(t('Saving recording…','A guardar a gravação…'));
-  this.stopDone=(async()=>{try{await this.stopWriter();try{await this.reloadFiles();}catch{this.toast(t('Recording saved, but the file list could not be refreshed. Open this page again to refresh it.','Gravação guardada, mas não foi possível atualizar a lista de ficheiros. Volte a abrir esta página para a atualizar.'),true);}}catch(error){this.status(error.message);throw error;}finally{this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
+  this.stopDone=(async()=>{try{if(!skipOutro&&!this.recordingError)await this.production?.bumpers?.end('recording');await this.stopWriter();try{await this.reloadFiles();}catch{this.toast(t('Recording saved, but the file list could not be refreshed. Open this page again to refresh it.','Gravação guardada, mas não foi possível atualizar a lista de ficheiros. Volte a abrir esta página para a atualizar.'),true);}}catch(error){this.status(error.message);throw error;}finally{this.production?.bumpers?.finish('recording');this.finishing=false;this.stopDone=null;this.controls();}})();return this.stopDone;
  }
  async reloadFiles(){const state=await this.api('/api/state');this.update(state);}
+ async deleteRecording(id){
+  if(!window.confirm(t('Permanently delete this recording and its recovery data from this computer? This cannot be undone.','Apagar definitivamente esta gravação e os respetivos dados de recuperação deste computador? Esta ação não pode ser anulada.')+'\n'+id))return;
+  await this.api('/api/recordings/'+encodeURIComponent(id),{confirmed:true},'DELETE');await this.reloadFiles();this.toast(t('Local recording deleted.','Gravação local apagada.'));
+ }
  async recover(id){await this.api(`/api/recordings/${id}/finish`,{});const message=t('Recording recovered.','Gravação recuperada.');if(!this.id&&!this.starting&&!this.finishing)this.status(message);try{await this.reloadFiles();this.toast(message);}catch{this.toast(t('Recording recovered, but the file list could not be refreshed. Open this page again to refresh it.','Gravação recuperada, mas não foi possível atualizar a lista de ficheiros. Volte a abrir esta página para a atualizar.'),true);}}
  releaseDevices(){
   clearInterval(this.drawTimer);clearInterval(this.meterTimer);clearInterval(this.elapsedTimer);
   this.production?.stopVisuals();this.clipAudio?.disconnect();this.clipAudio=null;this.audioInputs=[];this.audioMix=null;
   for(const stream of [...this.streams,...(this.output?[this.output]:[])])for(const track of stream.getTracks())track.stop();
-  for(const video of this.videoElements||[]){video.pause();video.srcObject=null;}this.videoElements=[];this.streams=[];void this.audio?.close().catch(()=>{});this.audio=null;this.output=null;this.screen=null;this.device=null;this.screenVideo=null;this.cameraVideo=null;
+  for(const video of this.videoElements||[]){video.pause();video.srcObject=null;}this.videoElements=[];this.streams=[];void this.audio?.close().catch(()=>{});this.audio=null;this.output=null;this.canvasTrack=null;this.screen=null;this.device=null;this.screenVideo=null;this.cameraVideo=null;
   if(this.element){this.$('.recorder-preview').srcObject=null;this.$('.recorder-source').srcObject=null;for(const meter of this.element.querySelectorAll?.('meter')||[this.$('meter')])if(meter)meter.value=0;}
  }
  async release(){
   if(this.releaseDone)return this.releaseDone;
-  this.generation++;this.countdownAbort?.abort();
+  this.generation++;this.countdownAbort?.abort();this.production?.bumpers?.cancel();
   if(!this.id){this.releaseDevices();this.controls();}
-  this.releaseDone=(async()=>{let failure;try{await this.stop();}catch(error){failure=error;throw error;}finally{this.releaseDevices();this.preparing=false;this.releaseDone=null;this.controls();this.status(failure?failure.message:t('Devices are off.','Os dispositivos estão desligados.'));}})();return this.releaseDone;
+  this.releaseDone=(async()=>{let failure;try{await this.stop({skipOutro:true});}catch(error){failure=error;throw error;}finally{this.releaseDevices();this.preparing=false;this.releaseDone=null;this.controls();this.status(failure?failure.message:t('Devices are off.','Os dispositivos estão desligados.'));}})();return this.releaseDone;
  }
 }

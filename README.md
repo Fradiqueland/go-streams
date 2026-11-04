@@ -2,7 +2,17 @@
 
 Portable studio for prerecorded video playlists and RTMP/RTMPS live streaming, by Antonio Fradique.
 
-Current source version: **1.2.1**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+Current source version: **1.3.0**. Windows has an Electron desktop edition and setup EXE; Mac is delivered as a self-contained application bundle with a browser interface.
+
+## Automatic intro, outro and local recording deletion (1.3.0)
+
+In the recorder or live studio, open **Intro, outro & video clips** and select an intro, an outro, or both from the library. You can add a local video there or register a public HTTPS MP4 / supported individual YouTube link. Online sources use the existing authenticated library proxy and require Internet access. Use browser-playable MP4 or WebM; convert incompatible local formats in the library first. No additional Windows or Mac installation is required.
+
+The intro plays automatically after starting. Stop plays the outro before finalizing the recording or ending live output. Video sound replaces the microphone/shared audio during playback, including when the standalone recorder's main sound is disabled. Skip returns to the programme; device release, capture errors and application shutdown cancel clips and finalize promptly. Automatic videos are for video mode. In the live studio, the composed picture and sound are shared by every currently active recording and broadcast, so each sees the clips. Saved scenes named Intro/Outro remain appearance presets; manual clips remain available separately.
+
+Completed and interrupted local recordings offer **Delete recording**, with confirmation before permanent deletion. Active/finalizing recordings cannot be deleted. The operation removes only that recording's finished file and recovery data in its original folder, and its list entry. Imported library originals are preserved.
+
+The Windows Electron screen picker now shows a thumbnail grid, screen/window filters, search and an explicit Share button. Its controls, camera/microphone permissions, new intro/outro and deletion controls, and sidebar author credits follow the selected interface language across all ten available languages, including right-to-left Arabic. Window titles remain the names supplied by the operating system.
 
 ## Electron screen capture correction (1.2.1)
 

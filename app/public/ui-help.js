@@ -1,6 +1,6 @@
-import {language} from './i18n.js';
+import {language,localized} from './i18n.js';
 
-export const uiText=(en,pt)=>language()==='pt-PT'?pt:en;
+export const uiText=localized;
 const say=pair=>pair?uiText(...pair):'';
 const actions={
  'go-live':['Choose a prepared video or playlist and its destinations. Nothing is broadcast until you confirm.','Escolha um vídeo ou playlist e os destinos. Nada é transmitido antes da sua confirmação.'],
@@ -76,6 +76,7 @@ const production={
  'clear-images':['Remove your selected logo and background image from the studio composition.','Remova o logótipo e a imagem de fundo que selecionou para a composição do estúdio.'],
  'play-clip':['Replace the live picture with the selected local clip and its sound until it ends.','Substitua a imagem ao vivo pelo clip local e respetivo som até terminar.'],
  'stop-clip':['End the clip and return to the live picture and sound.','Termine o clip e regresse à imagem e ao som ao vivo.'],
+ 'delete-recording':['Permanently delete this stopped recording and its recovery data after confirmation. Library originals remain.','Apague definitivamente esta gravação parada e os dados de recuperação após confirmar. Os originais da biblioteca são preservados.'],
  snapshot:['Save the current composed preview as a PNG image.','Guarde a pré-visualização composta atual como imagem PNG.'],
  teleprompter:['Start or pause scrolling your private notes. Notes are not drawn into the broadcast.','Inicie ou pause o movimento das notas privadas. As notas não são desenhadas na transmissão.']
 };
@@ -119,7 +120,7 @@ const fields={
  micVolume:['Adjust microphone volume. Muting the microphone still takes priority.','Ajuste o volume do microfone. Silenciar o microfone continua a ter prioridade.'],
  screenVolume:['Adjust the volume of captured screen or tab sound.','Ajuste o volume do som captado do ecrã ou separador.'],
  notes:['Keep private presenter notes here. They are not included in the broadcast picture.','Guarde aqui notas privadas do apresentador. Não são incluídas na imagem transmitida.'],
- scene:['Choose the scene to save or load.','Escolha a cena que pretende guardar ou carregar.'],
+ scene:['Choose the appearance preset to save or load. Intro/Outro scenes do not automatically play videos.','Escolha a composição visual que pretende guardar ou carregar. As cenas Intro/Outro não reproduzem vídeos automaticamente.'],
  emojiTarget:['Choose which text field receives the emoji you select below. The text appears in the saved video or live output.','Escolha o campo de texto que recebe o emoji selecionado abaixo. O texto aparece no vídeo gravado ou na emissão ao vivo.'],
  clipFile:['Choose a local MP4 or WebM clip. It plays only when you press the clip playback button.','Escolha um clip local MP4 ou WebM. Só é reproduzido quando carrega no botão de reprodução do clip.'],
  videoBitrate:['Set the video data rate. More bitrate uses more upload capacity and recording space.','Defina a taxa de dados do vídeo. Mais bitrate usa mais upload e espaço nas gravações.'],

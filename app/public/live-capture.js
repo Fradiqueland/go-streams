@@ -87,7 +87,7 @@ export class LiveCapturePanel {
   this.element.querySelector('[data-capture="mute"]').disabled=!this.mic;
   this.element.querySelector('[data-capture="stop"]').disabled=!this.session||this.stopping;
   const hasDestinations=Boolean(this.element.querySelector('.capture-destinations input:checked:not(:disabled)'));
-  this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
+  this.element.querySelector('[data-capture="start"]').disabled=!this.output||active||Boolean(this.production?.bumpers?.libraryBusy)||!hasDestinations||!this.element.querySelector('[data-capture="consent"]').checked;
   this.production?.update(this.recordings||[],this.recordingPreferences);
  }
  syncFormatControls(){
@@ -109,6 +109,7 @@ export class LiveCapturePanel {
  }
  update(state){
   if(!this.element)return;
+  this.production?.bumpers?.update(state.media);
   this.recordings=state.recordings||[];
   this.recordingPreferences=state.recordingPreferences;
   const selected=new Set([...this.element.querySelectorAll('.capture-destinations input:checked')].map(el=>el.value));
@@ -170,6 +171,7 @@ export class LiveCapturePanel {
      ctx.fillStyle='rgba(10,10,20,0.88)';ctx.fillRect(w*.04,h*.74,w*.92,h*.22);ctx.fillStyle='#fff';ctx.font=`bold ${Math.round(h*.032)}px sans-serif`;ctx.fillText(this.featuredComment.author,w*.06,h*.79,w*.88);ctx.font=`${Math.round(h*.029)}px sans-serif`;
      const words=this.featuredComment.text.split(/\s+/);let line='',row=0;for(const word of words){if(ctx.measureText(line+' '+word).width>w*.86){ctx.fillText(line,w*.06,h*(.84+row*.045));line=word;if(++row>=2)break;}else line+=(line?' ':'')+word;}if(row<2)ctx.fillText(line,w*.06,h*(.84+row*.045),w*.86);
     }
+    if(this.canvasTrack?.readyState==='live')this.canvasTrack.requestFrame?.();
    };
    this.drawFrame=draw;draw();this.drawTimer=setInterval(draw,1000/30);
    this.audio=new AudioContext();await this.audio.resume();check();const destination=this.audio.createMediaStreamDestination();
@@ -180,7 +182,7 @@ export class LiveCapturePanel {
    this.silence=this.audio.createOscillator();const silentGain=this.audio.createGain();silentGain.gain.value=0;this.silence.connect(silentGain).connect(this.master);this.silence.start();
    for(const stream of this.streams)if(stream.getAudioTracks().length){const gain=this.audio.createGain(),name=stream===this.screen?'screenVolume':'micVolume';gain.gain.value=Number(this.production.element.querySelector(`[name="${name}"]`).value);this.audio.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(gain).connect(this.master);this.audioInputs.push({name,gain});}
    const samples=new Uint8Array(this.analyser.fftSize);this.meterTimer=setInterval(()=>{this.analyser.getByteTimeDomainData(samples);const rms=Math.sqrt(samples.reduce((sum,v)=>sum+((v-128)/128)**2,0)/samples.length);this.production.element.querySelector('meter').value=Math.min(1,rms*3);},100);
-   this.output=new MediaStream([...this.canvas.captureStream(30).getVideoTracks(),...destination.stream.getAudioTracks()]);
+   const videoTracks=this.canvas.captureStream(30).getVideoTracks();this.canvasTrack=videoTracks[0];this.output=new MediaStream([...videoTracks,...destination.stream.getAudioTracks()]);
    this.element.querySelector('.capture-preview').srcObject=this.output;
    this.muted=false;this.element.querySelector('[data-capture="mute"]').textContent=text('Mute microphone','Silenciar microfone');
    await this.listDevices(epoch);check();this.status(text('Local preview only - nothing is being broadcast.','Apenas pré-visualização local - nada está a ser transmitido.'));
@@ -216,6 +218,7 @@ export class LiveCapturePanel {
    this.feedUploader=new LiveUploader({stopRemote:()=>this.api(`/api/capture/${id}/stop`,{}),onError:error=>{this.status(error.message,true);this.toast(error.message,true);void this.stop(error);},fetchChunk:async(blob,sequence)=>{
     const response=await fetch(`/api/capture/${id}/chunks?sequence=${sequence}`,{method:'POST',headers:{'Content-Type':'video/webm','X-Go-Streams':'1'},body:blob,signal:AbortSignal.timeout(15000)});if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.error||'Live capture disconnected.');}
    }});
+   this.feedStarted=new Promise(resolve=>{for(const [name,ready]of [['start',true],['stop',false],['error',false]])recorder.addEventListener(name,()=>resolve(ready),{once:true});});
    this.feedRecorder=recorder;recorder.ondataavailable=event=>this.feedUploader?.push(event.data);recorder.onerror=()=>this.feedUploader?.fail(Error('Live capture failed. Start a new capture.'));recorder.start(1000);return id;
    }catch(error){if(this.feedSession)await this.api(`/api/capture/${this.feedSession.id}/stop`,{}).catch(()=>{});this.feedSession=null;this.feedRecorder=null;this.feedUploader=null;throw error;}
   })();
@@ -232,27 +235,29 @@ export class LiveCapturePanel {
   })();return this.feedClosing;
  }
  async start(){
-  if(!this.output||this.session||this.preparing||this.stopping||this.releasing)return;this.preparing=true;this.controls();
+  if(!this.output||this.session||this.preparing||this.stopping||this.releasing||this.production?.bumpers?.libraryBusy)return;this.preparing=true;this.controls();
   const epoch=this.captureEpoch,source=this.output,attempt=this.liveStart={},current=()=>epoch===this.captureEpoch&&this.output===source&&this.liveStart===attempt;
   try{
    const channelIds=[...this.element.querySelectorAll('.capture-destinations input:checked:not(:disabled)')].map(el=>el.value);
    if(!channelIds.length||!this.element.querySelector('[data-capture="consent"]').checked)throw Error('Confirm at least one live destination.');
+   if(this.production?.bumpers?.enabled('live')){await this.production.bumpers.prepare('live');if(!current())throw Error('Live capture was released before broadcasting.');this.production.bumpers.arm('live');}
    const feedId=await this.acquireFeed('live');if(!current())throw Error('Live capture was released before broadcasting.');
    const session=await this.api('/api/live/start',{...this.config,mimeType:this.feedMime,feedId,channelIds,confirmed:true});
    if(!current()){await this.api(`/api/live/${session.id}/stop`,{}).catch(()=>{});throw Error('Live capture was released before broadcasting.');}this.session=session;
-   this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
+   if(this.production?.bumpers?.sessions.has('live')){if(!await this.feedStarted||!current())throw Error('Live encoder stopped before the intro could start.');this.production.bumpers.start('live');}this.status(text('Live feed is being sent. Confirm reception in each platform dashboard.','O sinal está a ser enviado. Confirme a receção no painel de cada plataforma.'));
   }catch(error){if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{}).catch(()=>{});this.session=null;await this.releaseFeed('live').catch(()=>{});if(current()){this.status(error.message,true);this.toast(error.message,true);}}
-  finally{if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
+  finally{if(!this.session)this.production?.bumpers?.finish('live');if(this.liveStart===attempt)this.liveStart=null;this.preparing=false;this.controls();}
  }
  async stop(reason){
+  if(reason||!this.session||this.releasing)this.production?.bumpers?.finish('live');
   this.liveStart=null;
   if(this.stopping){if(reason)this.stopFailure ||= reason;return this.stopDone;}
   this.stopFailure=reason||null;this.stopping=true;this.controls();
   this.stopDone=(async()=>{
    let stopped=!this.session;
-   try{if(this.session)await this.api(`/api/live/${this.session.id}/stop`,{});stopped=true;}
+   try{if(this.session){if(!reason&&!this.releasing&&this.production?.bumpers?.sessions.has('live')){await this.production.bumpers.end('live');try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}}await this.api(`/api/live/${this.session.id}/stop`,{});}stopped=true;}
    catch(error){this.stopFailure ||= error;}
-   finally{try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}if(stopped)this.session=null;this.stopping=false;this.status(this.stopFailure?.message||text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'),Boolean(this.stopFailure));this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();this.stopDone=null;}
+   finally{this.production?.bumpers?.finish('live');try{await this.releaseFeed('live');}catch(error){this.stopFailure ||= error;}if(stopped)this.session=null;this.stopping=false;this.status(this.stopFailure?.message||text('Broadcast stopped. Local preview is still active.','Transmissão parada. A pré-visualização local continua ativa.'),Boolean(this.stopFailure));this.element.querySelector('[data-capture="consent"]').checked=false;this.controls();this.stopDone=null;}
   })();return this.stopDone;
  }
  releaseDevices(){
@@ -263,7 +268,7 @@ export class LiveCapturePanel {
   clearInterval(this.meterTimer);this.audioInputs=[];
   this.clipAudio?.disconnect();this.clipAudio=null;
   for(const stream of [...this.streams,this.output].filter(Boolean))for(const track of stream.getTracks())track.stop();
-  this.streams=[];this.output=null;this.mic=null;this.camera=null;this.screen=null;
+  this.streams=[];this.output=null;this.canvasTrack=null;this.mic=null;this.camera=null;this.screen=null;
   for(const v of [this.cameraVideo,this.screenVideo])if(v){v.pause();v.srcObject=null;}
   this.cameraVideo=null;this.screenVideo=null;
   if(this.audio){void this.audio.close().catch(()=>{});this.audio=null;}
@@ -271,6 +276,7 @@ export class LiveCapturePanel {
  }
  async release({throwOnError=false}={}){
   if(!this.releasing){
+   this.production?.bumpers?.cancel();
    this.captureEpoch++;
    if(!this.session&&!this.feedSession&&!this.feedStarting&&!this.production?.recordingId&&!this.production?.finishing)this.releaseDevices();
    this.releasing=(async()=>{

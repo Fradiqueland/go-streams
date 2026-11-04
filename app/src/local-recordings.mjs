@@ -142,6 +142,22 @@ export class LocalRecordings {
    finally{this.active.delete(id);this.finalizing.delete(id);}
   })();this.finalizing.set(id,task);return task;
  }
+ remove(id,{confirmed=false}={}){
+  if(confirmed!==true)throw new AppError('Confirm permanent deletion of the local recording.');
+  const item=this.items.find(item=>item.id===id);if(!item)throw new AppError('Recording not found.',404);
+  if(this.closed||this.studio.closing||this.active.has(id)||this.finalizing.has(id)||!['completed','interrupted'].includes(item.status))throw new AppError('Stop and finish the recording before deleting it.',409);
+  const files=[path.join(this.location(item),id+'.'+item.format),path.join(this.location(item),id+'.part')];
+  const comparable=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
+  if(this.studio.store.data?.media?.some(media=>!media.source&&typeof media.path==='string'&&files.some(file=>comparable(file)===comparable(media.path))))throw new AppError('Esta gravação está na biblioteca de vídeos. Retire-a da biblioteca antes de apagar o ficheiro.',409);
+  // Only this indexed recording's exact filenames are eligible. Never recurse
+  // through a folder, follow a file symlink, or touch imported library originals.
+  for(const file of files){const info=fs.lstatSync(file,{throwIfNoEntry:false});if(info&&!info.isFile())throw new AppError('The recording path is not a regular file. Files were preserved.',409);}
+  try{for(const file of files){try{fs.unlinkSync(file);}catch(error){if(error.code!=='ENOENT')throw error;}}}
+  catch{throw new AppError('The recording could not be fully deleted. Close any player using it and try again.',409);}
+  const previous=this.items;this.items=previous.filter(entry=>entry!==item);
+  try{this.save();}catch{this.items=previous;throw new AppError('Recording files were deleted, but the list could not be saved. Retry to remove the entry.',507);}
+  return {ok:true,id};
+ }
  media(id){const item=this.items.find(i=>i.id===id);if(!item||item.status!=='completed')throw new AppError('Finish the recording before downloading it.',409);return path.join(this.location(item),id+'.'+item.format);}
  async shutdown(){this.closed=true;clearInterval(this.timer);await Promise.allSettled([...this.active.keys()].map(id=>this.finish(id)).concat([...this.finalizing.values()]));}
 }

@@ -39,7 +39,7 @@ try{
   const count=key=>Number(new RegExp('^# '+key+' (\\d+)\\s*$','m').exec(tail)?.[1]??-1);
   const cycle={cycle:index,seconds:Math.round((Date.now()-started)/100)/10,exitCode:code,tests:count('tests'),passed:count('pass'),failed:count('fail'),cancelled:count('cancelled'),skipped:count('skipped')};
   report.cycles.push(cycle);save();console.log(JSON.stringify(cycle));
-  if(code!==0||timedOut||cycle.failed!==0||cycle.cancelled!==0||cycle.tests<1){console.error(tail);throw Error(`Review cycle ${index} failed${timedOut?' (timeout)':''}; see ${logFile}`);}
+  if(code!==0||timedOut||cycle.failed!==0||cycle.cancelled!==0||cycle.tests<1){await new Promise(resolve=>process.stderr.write(tail,resolve));throw Error(`Review cycle ${index} failed${timedOut?' (timeout)':''}; see ${logFile}`);}
   report.cyclesCompleted=index;save();
  }
  if(fingerprint()!==sourceHash)throw Error('Source changed during review; restart the cycles on the final source.');
