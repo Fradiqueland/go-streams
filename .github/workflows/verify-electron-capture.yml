@@ -1,0 +1,55 @@
+name: Verify native Electron display capture
+on:
+  pull_request:
+    paths: ['app/electron/**', 'app/public/recorder.js', 'app/public/live-capture.js', 'app/scripts/verify-electron-capture.cjs', 'app/package.json', '.github/workflows/verify-electron-capture.yml']
+  push:
+    branches: [main]
+    paths: ['app/electron/**', 'app/public/recorder.js', 'app/public/live-capture.js', 'app/scripts/verify-electron-capture.cjs', 'app/package.json', '.github/workflows/verify-electron-capture.yml']
+permissions:
+  contents: read
+concurrency:
+  group: native-capture-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Prepare verified Electron runtime
+        shell: pwsh
+        run: |
+          $captureRoot = Join-Path $env:RUNNER_TEMP 'streamland-native-capture'
+          New-Item -ItemType Directory -Path $captureRoot | Out-Null
+          $toolchain = Get-Content app/electron/toolchain.json -Raw | ConvertFrom-Json
+          Invoke-WebRequest -Uri $toolchain.url -OutFile "$captureRoot/electron.zip"
+          if ((Get-FileHash "$captureRoot/electron.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $toolchain.sha256) { throw 'Electron checksum mismatch' }
+          Expand-Archive "$captureRoot/electron.zip" "$captureRoot/runtime"
+          New-Item -ItemType Directory -Path "$captureRoot/runtime/resources/app" | Out-Null
+          '{"name":"streamland-native-capture-check","version":"1.0.0","main":"main.cjs"}' | Set-Content "$captureRoot/runtime/resources/app/package.json"
+          "require(require('node:path').join(process.env.GITHUB_WORKSPACE,'app/scripts/verify-electron-capture.cjs'));" | Set-Content "$captureRoot/runtime/resources/app/main.cjs"
+      - name: Verify real recorder and live screen capture
+        shell: pwsh
+        run: |
+          $captureRoot = Join-Path $env:RUNNER_TEMP 'streamland-native-capture'
+          $env:STREAMLAND_CAPTURE_TEST_ROOT = $captureRoot
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $captureProcess = Start-Process "$captureRoot/runtime/electron.exe" -PassThru -Wait -WindowStyle Hidden
+          $captureResult = Get-Content "$captureRoot/result.json" -Raw | ConvertFrom-Json
+          $captureResult | ConvertTo-Json -Depth 12
+          if (-not $captureResult.passed -or $captureResult.error -or $captureResult.captures.Count -ne 2 -or -not $captureResult.freshSelectionForEachCapture -or -not $captureResult.ownFixtureSurfaceOnly) { throw 'Native display capture verification failed' }
+          if (@($captureResult.captures | Where-Object { $_.recordedBytes -le 0 -or -not $_.liveTrack }).Count -ne 0) { throw 'Native capture did not produce recorded bytes' }
+      - name: Upload native capture report
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: Streamland-Native-Electron-Capture
+          path: ${{ runner.temp }}/streamland-native-capture/result.json
+          if-no-files-found: error
+          retention-days: 30
+
