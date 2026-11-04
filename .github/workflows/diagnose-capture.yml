@@ -37,6 +37,7 @@ jobs:
           const candidate=new Module(policyPath,module);candidate.filename=policyPath;candidate.paths=Module._nodeModulePaths(path.dirname(policyPath));
           candidate._compile(source.replace('request.securityOrigin!==base','!appUrl(request.securityOrigin,base)'),policyPath);
           app.setPath('userData',path.join(root,'profile'));app.enableSandbox();
+          app.on('window-all-closed',()=>{});
           const proof={electron:process.versions.electron,results:[]};
           const save=()=>fs.writeFileSync(path.join(root,'proof.json'),JSON.stringify(proof,null,2));
           const watchdog=setTimeout(()=>{proof.timeout=true;save();app.exit(2);},60000);
@@ -46,7 +47,7 @@ jobs:
             for(const [name,policy]of [['original',original],['normalized-origin',candidate.exports]]){
               const record={name,events:[]};proof.results.push(record);
               const ses=session.fromPath(path.join(root,name));
-              const win=new BrowserWindow({show:false,width:640,height:480,webPreferences:{session:ses,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false,offscreen:true}});
+              const win=new BrowserWindow({show:true,width:640,height:480,webPreferences:{session:ses,nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}});
               const wrapped={
                 setPermissionCheckHandler:fn=>ses.setPermissionCheckHandler((...args)=>{const allowed=fn(...args);record.events.push({kind:'check',permission:args[1],origin:args[2],allowed});return allowed;}),
                 setPermissionRequestHandler:fn=>ses.setPermissionRequestHandler(fn),
@@ -57,6 +58,9 @@ jobs:
               };
               policy.wireCapturePermissions(wrapped,{contents:win.webContents,base,confirmMedia:async()=>false,getSources:async()=>[win.webContents.mainFrame],chooseSource:async sources=>sources[0]});
               await win.loadURL(base+'/');
+              win.show();win.focus();win.webContents.focus();
+              await new Promise(resolve=>setTimeout(resolve,500));
+              record.document=await win.webContents.executeJavaScript('({focused:document.hasFocus(),secure:isSecureContext})');
               record.result=await Promise.race([
                 win.webContents.executeJavaScript("(async()=>{try{const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:false,systemAudio:'include'});const result={ok:true,tracks:stream.getVideoTracks().map(t=>({kind:t.kind,state:t.readyState}))};stream.getTracks().forEach(t=>t.stop());return result;}catch(e){return {ok:false,name:e.name,message:e.message};}})()",true),
                 new Promise(resolve=>setTimeout(()=>resolve({timeout:true}),15000))
@@ -73,5 +77,6 @@ jobs:
           $probeRoot = Join-Path $env:RUNNER_TEMP 'streamland-capture-probe'
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           $probeProcess = Start-Process "$probeRoot/runtime/electron.exe" -PassThru -Wait -WindowStyle Hidden
-          Get-Content "$probeRoot/proof.json" -Raw
-          if ($probeProcess.ExitCode -ne 0) { throw "Capture probe failed: $($probeProcess.ExitCode)" }
+          $captureProof = Get-Content "$probeRoot/proof.json" -Raw | ConvertFrom-Json
+          $captureProof | ConvertTo-Json -Depth 12
+          if ($captureProof.error -or $captureProof.timeout -or $captureProof.results.Count -ne 2 -or $captureProof.results[0].result.ok -or -not $captureProof.results[1].result.ok) { throw "Native capture comparison did not pass" }
