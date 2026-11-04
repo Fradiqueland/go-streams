@@ -49,7 +49,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.2
         with:
           name: Streamland-Native-Electron-Capture
-          path: ${{ runner.temp }}/streamland-native-capture/result.json
+          path: |
+            ${{ runner.temp }}/streamland-native-capture/result.json
+            ${{ runner.temp }}/streamland-native-capture/capture-picker-pt.png
           if-no-files-found: error
           retention-days: 30
 

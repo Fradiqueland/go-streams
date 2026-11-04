@@ -1,4 +1,4 @@
-const {app,BrowserWindow,session,dialog,shell,Menu,desktopCapturer}=require('electron');
+const {app,BrowserWindow,session,dialog,shell,Menu,desktopCapturer,ipcMain}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
@@ -6,7 +6,8 @@ const {execFileSync}=require('node:child_process');
 const net=require('node:net');
 const {userPaths,migrateData,migratePreferences,discoverLegacy}=require('./data-policy.cjs');
 const {rendererPreferences,activateWindow,wireNavigation,activeWork,prepareRendererClose,cancelRendererClose,shutdownCoordinator}=require('./window-policy.cjs');
-const {wireCapturePermissions,chooseCaptureSource}=require('./capture-policy.cjs');
+const {wireCapturePermissions}=require('./capture-policy.cjs');
+const {openCapturePicker,nativeText,supported}=require('./capture-picker.cjs');
 
 app.setName('Streamland');
 app.setAppUserModelId('net.antoniofradique.gostreams');
@@ -43,10 +44,12 @@ async function start(){
  const root=path.resolve(__dirname,'..');
  const {createApplication}=await import(pathToFileURL(path.join(root,'src','server.mjs')).href);
  backend=await createApplication({directory:paths.data,port,picker:async()=>{
-  const result=await dialog.showOpenDialog(window,{title:'Import videos',properties:['openFile','multiSelections'],filters:[{name:'Videos',extensions:['mp4','mkv','mov','webm','avi','m4v','ts']}]});
+  const locale=await interfaceLanguage(),t=(en,pt)=>nativeText(locale,pt,en);
+  const result=await dialog.showOpenDialog(window,{title:t('Import videos','Importar vídeos'),buttonLabel:t('Add','Adicionar'),properties:['openFile','multiSelections'],filters:[{name:t('Videos','Vídeos'),extensions:['mp4','mkv','mov','webm','avi','m4v','ts']}]});
   return result.canceled?[]:result.filePaths;
  },folderPicker:async({directory})=>{
-  const result=await dialog.showOpenDialog(window,{title:'Choose a folder for local recordings',defaultPath:directory,properties:['openDirectory','createDirectory']});
+  const locale=await interfaceLanguage(),t=(en,pt)=>nativeText(locale,pt,en);
+  const result=await dialog.showOpenDialog(window,{title:t('Choose a folder for local recordings','Escolha uma pasta para as gravações locais'),buttonLabel:t('Choose folder','Escolher pasta'),defaultPath:directory,properties:['openDirectory','createDirectory']});
   return result.canceled?null:result.filePaths[0]||null;
  }});
  // The loopback origin stays fixed so user preferences survive every upgrade.
@@ -54,12 +57,13 @@ async function start(){
  window=new BrowserWindow({width:1440,height:960,minWidth:760,minHeight:520,show:false,title:'Streamland',icon:path.join(root,'public','icon.ico'),autoHideMenuBar:true,backgroundColor:'#f5f6fa',webPreferences:rendererPreferences(browserSession)});
  wireCapturePermissions(browserSession,{contents:window.webContents,base:backend.base,
   confirmMedia:async types=>{
-   const devices=types.includes('video')?(types.includes('audio')?'camera and microphone':'camera'):'microphone';
-   const result=await dialog.showMessageBox(window,{type:'question',title:'Streamland - Live capture',message:`Allow Streamland to use your ${devices} for the local preview?`,detail:'Broadcasting starts only after you select destinations and press Start live broadcast.',buttons:['Cancel','Allow'],defaultId:0,cancelId:0});
+   const locale=await interfaceLanguage(),t=(en,pt)=>nativeText(locale,pt,en);
+   const message=types.includes('video')?(types.includes('audio')?t('Allow camera and microphone access for the local preview?','Permitir acesso à câmara e ao microfone para a pré-visualização local?'):t('Allow camera access for the local preview?','Permitir acesso à câmara para a pré-visualização local?')):t('Allow microphone access for the local preview?','Permitir acesso ao microfone para a pré-visualização local?');
+   const result=await dialog.showMessageBox(window,{type:'question',title:'Streamland',message,detail:t('Broadcasting starts only after you confirm the destinations.','A transmissão só começa depois de confirmar os destinos.'),buttons:[t('Cancel','Cancelar'),t('Allow','Permitir')],defaultId:0,cancelId:0});
    return result.response===1;
   },
-  getSources:()=>desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:0,height:0}}),
-  chooseSource:(sources,{systemAudio})=>chooseCaptureSource(sources,{systemAudio,showMessageBox:options=>dialog.showMessageBox(window,options)})
+  getSources:()=>desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:480,height:270}}),
+  chooseSource:async(sources,{systemAudio})=>openCapturePicker({parent:window,BrowserWindow,ipcMain,sources,systemAudio,locale:await interfaceLanguage()})
  });
  Menu.setApplicationMenu(null);
  wireNavigation(window.webContents,{base:backend.base,openExternal:url=>shell.openExternal(url),httpUrls:()=>backend.store.data.channels.flatMap(channel=>[channel.channelUrl,channel.producerUrl]).filter(Boolean)});
@@ -86,6 +90,10 @@ async function start(){
  window.once('ready-to-show',()=>{if(!smoke)activateWindow(window);});
  await window.loadURL(backend.url);
  if(smoke)await smokeCheck(browserSession);
+}
+async function interfaceLanguage(){
+ if(!window||window.isDestroyed())return 'en';
+ try{const value=await window.webContents.executeJavaScript("localStorage.getItem('go-streams-language')");return supported.includes(value)?value:'en';}catch{return 'en';}
 }
 async function smokeRecordingDownloads(browserSession,runProcess){
  const id=require('node:crypto').randomUUID(),recordings=backend.recordings,source=path.join(recordings.root,id+'.mp4'),downloads=[];

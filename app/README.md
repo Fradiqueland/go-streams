@@ -12,6 +12,8 @@ A intro começa automaticamente ao iniciar. **Parar** reproduz o encerramento an
 
 As gravações concluídas e interrompidas têm **Apagar gravação**, com confirmação antes de eliminar definitivamente o ficheiro e os dados de recuperação na pasta original. Não é possível apagar uma gravação em curso ou em finalização. Os vídeos originais da biblioteca são preservados.
 
+No Windows Electron, o seletor de partilha apresenta miniaturas em grelha, filtros de ecrãs/janelas, pesquisa e confirmação explícita em **Partilhar origem selecionada**. O seletor, as permissões de câmara/microfone, as novas opções de intro/encerramento e eliminação, e os créditos do autor seguem o idioma escolhido entre os dez disponíveis, incluindo árabe da direita para a esquerda. Os nomes das janelas são os fornecidos pelo sistema operativo.
+
 ## Correção da captura de ecrã no Electron (1.2.1)
 
 A preparação da pré-visualização do gravador e do estúdio ao vivo aceita o endereço local normalizado devolvido pelo Electron. A comparação anterior rejeitava a barra final do endereço, causando `Invalid capture constraints`. Mantêm-se a seleção da origem e as proteções de autorização. O teste nativo captura e grava a própria janela de ensaio, sem selecionar dispositivos físicos.

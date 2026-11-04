@@ -1,8 +1,9 @@
 // Run as an isolated Electron application in CI. Capture only this fixture's
 // own WebContents; no desktop, camera, microphone or system audio is selected.
-const {app,BrowserWindow,session}=require('electron');
+const {app,BrowserWindow,session,ipcMain,nativeImage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {wireCapturePermissions}=require('../electron/capture-policy.cjs');
+const {openCapturePicker,pickerLabels}=require('../electron/capture-picker.cjs');
 const root=process.env.STREAMLAND_CAPTURE_TEST_ROOT;
 if(!root||!path.isAbsolute(root))throw Error('An explicit capture test directory is required.');
 fs.mkdirSync(root,{recursive:true});app.setPath('userData',path.join(root,'profile'));app.enableSandbox();
@@ -36,6 +37,23 @@ app.whenReady().then(async()=>{
   chooseSource:async sources=>{selections++;return sources[0];}
  });
  await win.loadURL(base+'/');win.show();win.focus();win.webContents.focus();
+ const syntheticSources=[{id:'screen:fixture',name:'Fixture screen'},...Array.from({length:23},(_,i)=>({id:'window:fixture-'+(i+1),name:'Test source '+(i+1)}))].map(source=>({...source,thumbnail:nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1kAAAAASUVORK5CYII=')}));
+ report.pickerLanguages=[];
+ for(const locale of ['pt-PT','fr','ar']){
+  const picking=openCapturePicker({parent:win,BrowserWindow,ipcMain,sources:syntheticSources,systemAudio:true,locale});let picker;const deadline=Date.now()+10000;
+  while(Date.now()<deadline){picker=BrowserWindow.getAllWindows().find(candidate=>candidate!==win&&!candidate.isDestroyed());if(picker&&await picker.webContents.executeJavaScript("document.querySelectorAll('.source').length===24").catch(()=>false))break;await new Promise(resolve=>setTimeout(resolve,50));}
+  if(!picker||Date.now()>=deadline)throw Error('Capture source picker did not render.');
+  const labels=pickerLabels(locale),state=await picker.webContents.executeJavaScript("({heading:document.querySelector('h1').textContent,dir:document.documentElement.dir,disabled:document.querySelector('#share').disabled})");
+  if(state.heading!==labels.heading||state.dir!==(locale==='ar'?'rtl':'ltr')||!state.disabled)throw Error('Capture picker locale or consent state is incorrect.');
+  ipcMain.emit('streamland-picker-select',{sender:win.webContents},syntheticSources[0].id);
+  if(picker.isDestroyed())throw Error('An unrelated renderer selected a capture source.');
+  await picker.webContents.executeJavaScript("const search=document.querySelector('#search');search.value='Test source 23';search.dispatchEvent(new Event('input'));document.querySelector('.source').click()");
+  if(locale==='pt-PT')fs.writeFileSync(path.join(root,'capture-picker-pt.png'),(await picker.webContents.capturePage()).toPNG());
+  await picker.webContents.executeJavaScript(locale==='ar'?"document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))":"document.querySelector('#share').click()");
+  const selected=await picking;if(locale==='ar'?selected!==null:selected!==syntheticSources.at(-1))throw Error('Capture picker search, selection or cancellation failed.');report.pickerLanguages.push(locale);
+ }
+ report.sourcePickerLayout=true;report.sourcePickerSearch=true;report.sourcePickerConsent=true;report.sourcePickerRTL=true;
+ win.show();win.focus();win.webContents.focus();
  await new Promise(resolve=>setTimeout(resolve,500));
  for(const [surface,options]of [['recorder',{video:{frameRate:30},audio:false,systemAudio:'include'}],['liveStudio',{video:{frameRate:30},audio:false}]]){
   const captured=await win.webContents.executeJavaScript(`(async()=>{

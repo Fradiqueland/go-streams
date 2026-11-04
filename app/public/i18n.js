@@ -3,6 +3,7 @@ export const languages=[['en','English','en-GB'],['es','Español','es-ES'],['fr'
 export function savedLanguage(storage){try{if(storage===undefined)storage=globalThis.localStorage;const value=storage?.getItem('go-streams-language');return languages.some(([code])=>code===value)?value:'en';}catch{return 'en';}}
 let current=savedLanguage();
 export function language(){return current;}
+export function localized(en,pt){return current==='pt-PT'?pt:current==='en'?en:catalogs[current]?.[pt]??en;}
 export function localeTag(){return languages.find(([code])=>code===current)?.[2]||'en-GB';}
 export function setLanguage(code,{persist=true,storage}={}){
  if(!languages.some(([value])=>value===code))throw Error('Unsupported language');
@@ -20,5 +21,6 @@ export function applyLocale(doc=globalThis.document){
  doc.title=tr('Streamland — Estúdio local');const root=doc.documentElement;if(root){root.lang=localeTag();root.dir=current==='ar'?'rtl':'ltr';}
  for(const el of doc.querySelectorAll('[data-i18n]'))el.textContent=tr(el.dataset.i18n);
  for(const el of doc.querySelectorAll('[data-i18n-label]'))el.setAttribute('aria-label',tr(el.dataset.i18nLabel));
+ for(const el of doc.querySelectorAll('[data-i18n-title]'))el.setAttribute('title',tr(el.dataset.i18nTitle));
  const select=doc.getElementById('language-select');if(select){select.innerHTML=languages.map(([code,label])=>`<option value="${code}">${label}</option>`).join('');select.value=current;select.setAttribute('aria-label',tr('Idioma'));}
 }

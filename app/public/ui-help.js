@@ -1,6 +1,6 @@
-import {language} from './i18n.js';
+import {language,localized} from './i18n.js';
 
-export const uiText=(en,pt)=>language()==='pt-PT'?pt:en;
+export const uiText=localized;
 const say=pair=>pair?uiText(...pair):'';
 const actions={
  'go-live':['Choose a prepared video or playlist and its destinations. Nothing is broadcast until you confirm.','Escolha um vídeo ou playlist e os destinos. Nada é transmitido antes da sua confirmação.'],

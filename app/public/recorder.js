@@ -1,9 +1,9 @@
-import {language,localeTag} from './i18n.js';
+import {language,localeTag,localized} from './i18n.js';
 import {ProductionTools,layoutRects} from './live-production.js';
 import {RecordingUpload} from './recording-upload.js';
 export {RecordingUpload} from './recording-upload.js';
 import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
-const t=(en,pt)=>language()==='pt-PT'?pt:en;
+const t=localized;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
 

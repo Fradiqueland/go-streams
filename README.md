@@ -12,6 +12,8 @@ The intro plays automatically after starting. Stop plays the outro before finali
 
 Completed and interrupted local recordings offer **Delete recording**, with confirmation before permanent deletion. Active/finalizing recordings cannot be deleted. The operation removes only that recording's finished file and recovery data in its original folder, and its list entry. Imported library originals are preserved.
 
+The Windows Electron screen picker now shows a thumbnail grid, screen/window filters, search and an explicit Share button. Its controls, camera/microphone permissions, new intro/outro and deletion controls, and sidebar author credits follow the selected interface language across all ten available languages, including right-to-left Arabic. Window titles remain the names supplied by the operating system.
+
 ## Electron screen capture correction (1.2.1)
 
 Preparing screen preview now accepts the canonical local origin URL returned by Electron, including its trailing slash. The previous literal comparison rejected valid recorder and live screen requests with `Invalid capture constraints`. Cross-origin, embedded-frame and missing-gesture requests remain blocked; each capture still requires source selection. Native CI verifies actual Electron capture and recorded bytes from its own test window without selecting desktop, camera, microphone or system audio.

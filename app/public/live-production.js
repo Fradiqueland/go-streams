@@ -1,7 +1,7 @@
-import {language} from './i18n.js';
+import {language,localized} from './i18n.js';
 import {RecordingUpload} from './recording-upload.js';
 import {ProductionBumpers} from './production-bumpers.js';
-const t=(en,pt)=>language()==='pt-PT'?pt:en;
+const t=localized;
 const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const defaults={layout:'pip',background:'#111827',accent:'#e70952',name:'',title:'',banner:'',ticker:'',mirror:false,logo:'',backgroundImage:'',notes:'',micVolume:1,screenVolume:1};
 const volume=value=>Number.isFinite(value)?Math.max(0,Math.min(1.5,value)):1;
