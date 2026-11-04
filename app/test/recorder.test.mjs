@@ -5,7 +5,7 @@ import path from 'node:path';
 import {Readable} from 'node:stream';
 import {Store,Vault,Studio,runProcess} from '../src/core.mjs';
 import {LocalRecordings} from '../src/local-recordings.mjs';
-import {cropRect,cameraRect,cameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from '../public/recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition,frameSize,containedRect,selectionRect,recordingAspects} from '../public/recorder-geometry.js';
 import {RecordingUpload,countdown,RecorderPanel} from '../public/recorder.js';
 import {uiHarness} from './ui-harness.mjs';
 
@@ -51,16 +51,6 @@ test('aspect selector is editable with prepared video and disabled for countdown
  panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,false);
  for(const state of [{starting:true},{id:'recording'},{finishing:true},{preparing:true}]){Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false},state);panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,true);}
  Object.assign(panel,{starting:false,id:null,finishing:false,preparing:false});panel.$('[name="mode"]').value='audio';panel.controls();assert.equal(panel.$('[name="aspect"]').disabled,true);
-});
-
-test('preview watermark tracks the contained video rectangle for landscape, portrait and square output',()=>{
- const panel=new RecorderPanel({api(){},toast(){}}),stage={left:10,top:20,width:640,height:360},fields=new Map();
- panel.element={isConnected:true};panel.$=selector=>{if(!fields.has(selector))fields.set(selector,{style:{},getBoundingClientRect:()=>stage});return fields.get(selector);};
- for(const [width,height]of [[1920,1080],[1080,1920],[1080,1080]]){
-  panel.canvas={width,height};panel.positionBoxes();const view=containedRect(stage,width,height),mark=watermarkRect(width,height),scale=view.width/width,style=panel.$('.recorder-watermark').style;
-  assert.equal(mark.width%2,0);assert.equal(mark.x+mark.width,width-Math.max(8,Math.round(Math.min(width,height)*.02)));
-  assert.equal(parseFloat(style.left),view.left-stage.left+mark.x*scale);assert.equal(parseFloat(style.top),view.top-stage.top+mark.y*scale);assert.equal(parseFloat(style.width),mark.width*scale);assert.equal(parseFloat(style.height),mark.height*scale);
- }
 });
 
 test('cancelled countdown settles promptly without starting a recording',async()=>{

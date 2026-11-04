@@ -25,10 +25,6 @@ export function frameSize(width,height,crop={},quality=1080,aspect='original'){
  const r=cropRect(crop),w=Math.max(2,width*r.width),h=Math.max(2,height*r.height),ratio=Math.min(1,quality/h,quality*16/9/w);
  return {width:Math.max(2,Math.floor(w*ratio/2)*2),height:Math.max(2,Math.floor(h*ratio/2)*2)};
 }
-export function watermarkRect(width,height){
- const w=Math.max(2,Math.round(width*.15/2)*2),h=Math.max(1,Math.round(w*948/1660)),margin=Math.max(8,Math.round(Math.min(width,height)*.02));
- return {x:width-w-margin,y:margin,width:w,height:h};
-}
 export function containedRect(box,width,height){
  const ratio=Math.min(box.width/width,box.height/height),w=width*ratio,h=height*ratio;
  return {left:box.left+(box.width-w)/2,top:box.top+(box.height-h)/2,width:w,height:h};

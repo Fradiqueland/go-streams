@@ -2,7 +2,7 @@ import {language,localeTag,localized} from './i18n.js';
 import {ProductionTools,layoutRects} from './live-production.js';
 import {RecordingUpload} from './recording-upload.js';
 export {RecordingUpload} from './recording-upload.js';
-import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects,watermarkRect} from './recorder-geometry.js';
+import {cropRect,cameraRect,cameraPosition as normalizedCameraPosition,resizedCameraPosition,frameSize,containedRect,selectionRect,recordingAspects} from './recorder-geometry.js';
 const t=localized;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const elapsed=ms=>{const s=Math.floor(ms/1000);return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s/60)%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;};
@@ -106,7 +106,6 @@ export class RecorderPanel {
   this.$('.recorder-camera-controls').hidden=!cameraOverlay;
   this.$('.recorder-camera-box').hidden=!cameraOverlay;
   this.$('.recorder-audio-only').hidden=!prepared||this.config?.mode!=='audio';
-  this.$('.recorder-watermark').hidden=!prepared||this.config?.mode==='audio';
   this.$('.recorder-frame-size').hidden=!prepared||this.config?.mode==='audio';
   if(this.production?.element){
    this.production.element.hidden=mode==='audio';
@@ -220,8 +219,6 @@ export class RecorderPanel {
   if(!this.canvas||!this.output||this.config?.mode==='audio'){this.toast(t('Open a video preview first.','Abra primeiro uma pré-visualização de vídeo.'),true);return;}
   this.draw();
   const canvas=document.createElement('canvas');canvas.width=this.canvas.width;canvas.height=this.canvas.height;const ctx=canvas.getContext('2d');ctx.drawImage(this.canvas,0,0);
-  const mark=this.$('.recorder-watermark');if(!mark?.complete||!mark.naturalWidth)await mark?.decode();
-  if(mark?.complete&&mark.naturalWidth){const r=watermarkRect(canvas.width,canvas.height);ctx.globalAlpha=.5;ctx.drawImage(mark,r.x,r.y,r.width,r.height);ctx.globalAlpha=1;}
   const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error(t('The PNG image could not be created. Try again.','Não foi possível criar a imagem PNG. Tente novamente.'))),'image/png'));
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Streamland-frame-'+new Date().toISOString().replace(/[:.]/g,'-')+'.png';try{link.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),10000);}
  }
@@ -232,7 +229,6 @@ export class RecorderPanel {
   const stage=this.$('.recorder-stage'),view=containedRect(stage.getBoundingClientRect(),this.canvas.width,this.canvas.height),base=stage.getBoundingClientRect(),camera=cameraRect(this.cameraPosition,view.width,view.height);
   const place=(el,r)=>{el.style.left=r.x+'px';el.style.top=r.y+'px';el.style.width=r.width+'px';el.style.height=r.height+'px';};
   place(this.$('.recorder-camera-box'),{...camera,x:view.left-base.left+camera.x,y:view.top-base.top+camera.y});
-  const watermark=watermarkRect(this.canvas.width,this.canvas.height),scale=view.width/this.canvas.width;place(this.$('.recorder-watermark'),{x:view.left-base.left+watermark.x*scale,y:view.top-base.top+watermark.y*scale,width:watermark.width*scale,height:watermark.height*scale});
   if(this.screenVideo?.videoWidth){const source=this.$('.recorder-source-stage'),b=source.getBoundingClientRect(),r=containedRect(b,this.screenVideo.videoWidth,this.screenVideo.videoHeight);place(this.$('.recorder-crop-box'),{x:r.left-b.left+this.crop.x*r.width,y:r.top-b.top+this.crop.y*r.height,width:this.crop.width*r.width,height:this.crop.height*r.height});}
  }
  pointerSession(event,move){

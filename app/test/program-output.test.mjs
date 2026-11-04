@@ -12,7 +12,7 @@ import {outputDimensions} from '../src/encoding.mjs';
 for(const [aspect,dimensions,hints,sar] of [['16:9'],['9:16'],['16:9',[320,180]],['16:9',[180,320],[320,180]],['16:9',[320,180],undefined,4/3]])test('composed output retains geometry and alpha: '+aspect+(hints?' display dimensions':dimensions?' source dimensions':'')+(sar?' non-square pixels':''),async t=>{
  const parent=path.resolve('.tmp');fs.mkdirSync(parent,{recursive:true});const dir=fs.mkdtempSync(path.join(parent,'program-check-'));
  t.after(()=>{assert.ok(dir.startsWith(parent+path.sep));fs.rmSync(dir,{recursive:true,force:true});});
- const [width,height]=dimensions||outputDimensions('720p',aspect),size=Math.round(width*.15/2)*2,margin=Math.max(8,Math.round(Math.min(width,height)*.02));
+ const [width,height]=dimensions||outputDimensions('720p',aspect),size=Math.round(width*.08/2)*2,margin=Math.max(8,Math.round(Math.min(width,height)*.02));
  const picture=path.join(dir,'program.png'),raw=path.join(dir,'program.rgba'),scaled=path.join(dir,'image.rgba');
  const args=['-v','error','-f','lavfi','-i',`color=c=blue:s=${width}x${height}:r=30`];
  appendProgramOutput(args,['-map','[cover]','-vf',`scale=${width}:${height},setsar=${sar||1}`],'720p',aspect,'[0:v:0]drawbox=x=0:y=0:w=iw:h=ih:color=red:t=fill[cover]',hints||dimensions);
@@ -22,13 +22,13 @@ for(const [aspect,dimensions,hints,sar] of [['16:9'],['9:16'],['16:9',[320,180]]
  const imageHeight=sar?Math.round(size*sar*948/1660):-1;
  await runProcess('ffmpeg',['-v','error','-i',fileURLToPath(new URL('../src/assets/program.png',import.meta.url)),'-vf',`scale=${size}:${imageHeight}`,'-frames:v','1','-pix_fmt','rgba','-f','rawvideo','-y',scaled]);
  const frame=fs.readFileSync(raw),image=fs.readFileSync(scaled),base=[...frame.subarray(0,3)],x=width-size-margin;
- let eligible=0;for(let offset=0;offset<image.length;offset+=4)if(image[offset+3]===255&&Math.max(...image.subarray(offset,offset+3))>=120)eligible++;
+ let eligible=0;for(let offset=0;offset<image.length;offset+=4)if(image[offset+3]>=64&&Math.max(...image.subarray(offset,offset+3))>=120)eligible++;
  const target=Math.min(50,eligible);assert.ok(target>=10);
  let compared=0;
  for(let offset=0;offset<image.length;offset+=4){
-  if(image[offset+3]!==255||Math.max(...image.subarray(offset,offset+3))<120)continue;
+  if(image[offset+3]<64||Math.max(...image.subarray(offset,offset+3))<120)continue;
   const pixel=offset/4,at=((margin+Math.floor(pixel/size))*width+x+pixel%size)*4;
-  for(let c=0;c<3;c++)assert.ok(Math.abs(frame[at+c]-(image[offset+c]+base[c])/2)<=6,`channel ${c}, actual ${frame[at+c]}, expected ${(image[offset+c]+base[c])/2}`);
+  for(let c=0;c<3;c++)assert.ok(Math.abs(frame[at+c]-(image[offset+c]*(image[offset+3]/510)+base[c]*(1-image[offset+3]/510)))<=6,`channel ${c}, actual ${frame[at+c]}, expected ${image[offset+c]*(image[offset+3]/510)+base[c]*(1-image[offset+3]/510)}`);
   if(++compared===target)break;
  }
  assert.equal(compared,target);
