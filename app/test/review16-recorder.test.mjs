@@ -59,7 +59,7 @@ test('strict stop joining an automatic upload failure receives its error even af
 
 test('production recording reuses the exact composed output and selected capture codec without a capture-feed session',async t=>{
  const f=recordingFixture(t,{getRecordingConfig:()=>({mimeType:'video/webm;codecs=vp8,opus',videoBitsPerSecond:2500000,audioBitsPerSecond:128000})});await f.tools.startRecording();
- assert.equal(f.recorders[0].stream,f.stream);assert.deepEqual(f.recorders[0].options,{mimeType:'video/webm;codecs=vp8,opus',videoBitsPerSecond:2500000,audioBitsPerSecond:128000});assert.deepEqual(f.requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/recordings',kind:'video',format:'mp4'}}]);await f.tools.stopRecording();
+ assert.equal(f.recorders[0].stream,f.stream);assert.deepEqual(f.recorders[0].options,{mimeType:'video/webm;codecs=vp8,opus',videoBitsPerSecond:2500000,audioBitsPerSecond:128000});assert.deepEqual(f.requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/recordings',kind:'video',format:'mp4',context:'live'}}]);await f.tools.stopRecording();
 });
 
 test('an inactive MediaRecorder error still drains its final data and stop events before preserving the error',async t=>{
@@ -95,7 +95,7 @@ test('an upload failure waits for browser stop and retains the error instead of 
 
 test('cancelling while recording creation is pending discards the empty backend job without constructing a browser recorder',async t=>{
  const pending=deferred(),f=recordingFixture(t,{api:route=>route.endsWith('/start')?pending.promise:{}}),starting=f.tools.startRecording(),stopping=f.tools.stopRecording();pending.resolve({id:'cancelled'});await Promise.all([starting,stopping]);
- assert.deepEqual(f.requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/recordings',kind:'video',format:'mp4'}},{route:'/api/recordings/cancelled/finish',body:{discardEmpty:true}}]);assert.equal(f.recorders.length,0);assert.equal(f.messages.length,0);assert.equal(f.tools.recording,false);
+ assert.deepEqual(f.requests,[{route:'/api/recordings/start',body:{confirmed:true,directory:'/recordings',kind:'video',format:'mp4',context:'live'}},{route:'/api/recordings/cancelled/finish',body:{discardEmpty:true}}]);assert.equal(f.recorders.length,0);assert.equal(f.messages.length,0);assert.equal(f.tools.recording,false);
 });
 
 for(const phase of ['construct','start'])test('a browser '+phase+' failure discards the empty recording without waiting for an impossible stop event',async t=>{
